@@ -1,0 +1,309 @@
+package fr.astragames.app.data.local
+
+import androidx.room.Dao
+import androidx.room.Insert
+import androidx.room.OnConflictStrategy
+import androidx.room.Query
+import androidx.room.Transaction
+import kotlinx.coroutines.flow.Flow
+
+@Dao
+interface AstraDao {
+    @Query("SELECT * FROM games WHERE hidden = 0 ORDER BY title COLLATE NOCASE")
+    fun observeGames(): Flow<List<GameEntity>>
+
+    @Query("SELECT * FROM games WHERE id = :id LIMIT 1")
+    fun observeGame(id: String): Flow<GameEntity?>
+
+    @Query("SELECT * FROM games WHERE id = :id LIMIT 1")
+    suspend fun getGame(id: String): GameEntity?
+
+    @Query("SELECT id FROM games")
+    suspend fun getGameIds(): List<String>
+
+    @Query("SELECT * FROM games WHERE sourceId = :sourceId")
+    suspend fun getGamesForSource(sourceId: String): List<GameEntity>
+
+    @Query("SELECT * FROM games WHERE fingerprint = :fingerprint LIMIT 1")
+    suspend fun findGameByFingerprint(fingerprint: String): GameEntity?
+
+    @Query("SELECT * FROM games WHERE documentUri = :documentUri LIMIT 1")
+    suspend fun findGameByDocumentUri(documentUri: String): GameEntity?
+
+    @Query("SELECT games.* FROM games JOIN game_search ON games.id = game_search.gameId WHERE game_search MATCH :ftsQuery AND games.hidden = 0 ORDER BY games.title COLLATE NOCASE")
+    fun searchGames(ftsQuery: String): Flow<List<GameEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertGameRaw(game: GameEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSearchRaw(search: GameSearchEntity)
+
+    @Transaction
+    suspend fun upsertGame(game: GameEntity) {
+        insertGameRaw(game)
+        deleteSearch(game.id)
+        insertSearchRaw(game.toSearchEntity())
+    }
+
+    @Query("DELETE FROM game_search WHERE gameId = :gameId")
+    suspend fun deleteSearch(gameId: String)
+
+    @Query("UPDATE games SET missing = 1 WHERE sourceId = :sourceId")
+    suspend fun markSourceGamesMissing(sourceId: String)
+
+    @Query("UPDATE games SET missing = 0 WHERE id = :id")
+    suspend fun markGameFound(id: String)
+
+    @Query("SELECT COUNT(*) FROM games WHERE sourceId = :sourceId AND missing = 1")
+    suspend fun countMissing(sourceId: String): Int
+
+    @Query("UPDATE games SET favorite = NOT favorite WHERE id = :id")
+    suspend fun toggleFavorite(id: String)
+
+    @Query("UPDATE games SET lastPlayedAt = :at, playCount = playCount + 1, missing = 0 WHERE id = :id")
+    suspend fun recordLaunch(id: String, at: Long)
+
+    @Query("UPDATE games SET coverUri = :coverUri WHERE id = :id")
+    suspend fun setCover(id: String, coverUri: String?)
+
+    @Query("UPDATE games SET libraryFolderId = :folderId WHERE id = :id")
+    suspend fun setGameFolder(id: String, folderId: String?)
+
+    @Query("UPDATE games SET title = :title, originalTitle = :originalTitle, developer = :developer, version = :version, productCode = :productCode, language = :language, description = :description WHERE id = :id")
+    suspend fun updateGameFieldsRaw(
+        id: String,
+        title: String,
+        originalTitle: String?,
+        developer: String?,
+        version: String?,
+        productCode: String?,
+        language: String?,
+        description: String?
+    )
+
+    @Transaction
+    suspend fun updateGameFields(
+        id: String,
+        title: String,
+        originalTitle: String?,
+        developer: String?,
+        version: String?,
+        productCode: String?,
+        language: String?,
+        description: String?
+    ) {
+        updateGameFieldsRaw(id, title, originalTitle, developer, version, productCode, language, description)
+        val updatedGame = getGame(id)
+        if (updatedGame != null) upsertGame(updatedGame)
+    }
+
+    @Query("DELETE FROM games WHERE id = :id")
+    suspend fun deleteGame(id: String)
+
+    @Query("DELETE FROM play_sessions WHERE gameId = :gameId")
+    suspend fun deletePlaySessions(gameId: String)
+
+    @Query("DELETE FROM metadata WHERE gameId = :gameId")
+    suspend fun deleteMetadata(gameId: String)
+
+    @Query("DELETE FROM cover_candidates WHERE gameId = :gameId")
+    suspend fun deleteCoverCandidates(gameId: String)
+
+    @Transaction
+    suspend fun deleteGameCompletely(gameId: String) {
+        clearGameTags(gameId)
+        deleteSearch(gameId)
+        deletePlaySessions(gameId)
+        deleteMetadata(gameId)
+        deleteCoverCandidates(gameId)
+        deleteLaunchProfile(gameId)
+        deleteGame(gameId)
+    }
+
+    @Query("SELECT * FROM game_sources ORDER BY displayName COLLATE NOCASE")
+    fun observeSources(): Flow<List<GameSourceEntity>>
+
+    @Query("SELECT * FROM game_sources WHERE id = :id LIMIT 1")
+    suspend fun getSource(id: String): GameSourceEntity?
+
+    @Query("SELECT * FROM game_sources WHERE enabled = 1")
+    suspend fun getEnabledSources(): List<GameSourceEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSource(source: GameSourceEntity)
+
+    @Query("UPDATE game_sources SET enabled = NOT enabled WHERE id = :id")
+    suspend fun toggleSource(id: String)
+
+    @Query("UPDATE game_sources SET recursive = NOT recursive WHERE id = :id")
+    suspend fun toggleSourceRecursive(id: String)
+
+    @Query("UPDATE game_sources SET lastScanStatus = 'PARTIAL', lastError = 'Scan interrompu' WHERE lastScanStatus = 'RUNNING'")
+    suspend fun recoverInterruptedScans()
+
+    @Query("DELETE FROM game_sources WHERE id = :id")
+    suspend fun deleteSource(id: String)
+
+    @Query("DELETE FROM games WHERE sourceId = :sourceId")
+    suspend fun deleteGamesForSource(sourceId: String)
+
+    @Query("SELECT id FROM games WHERE sourceId = :sourceId")
+    suspend fun getGameIdsForSource(sourceId: String): List<String>
+
+    @Query("DELETE FROM game_tags WHERE gameId IN (:gameIds)")
+    suspend fun deleteGameTagRefsForGames(gameIds: List<String>)
+
+    @Query("DELETE FROM game_search WHERE gameId IN (:gameIds)")
+    suspend fun deleteSearchForGames(gameIds: List<String>)
+
+    @Transaction
+    suspend fun deleteSourceAndGames(sourceId: String) {
+        val gameIds = getGameIdsForSource(sourceId)
+        if (gameIds.isNotEmpty()) {
+            deleteGameTagRefsForGames(gameIds)
+            deleteSearchForGames(gameIds)
+            deleteGamesForSource(sourceId)
+        }
+        deleteSource(sourceId)
+    }
+
+    @Query("SELECT * FROM source_exclusions WHERE enabled = 1 AND (sourceId IS NULL OR sourceId = :sourceId)")
+    suspend fun getExclusions(sourceId: String): List<SourceExclusionEntity>
+
+    @Query("SELECT * FROM tags ORDER BY groupName, name COLLATE NOCASE")
+    fun observeTags(): Flow<List<TagEntity>>
+
+    @Query("SELECT * FROM tags ORDER BY groupName, name COLLATE NOCASE")
+    suspend fun getTags(): List<TagEntity>
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertTags(tags: List<TagEntity>): List<Long>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertTag(tag: TagEntity)
+
+    @Query("DELETE FROM game_tags WHERE tagId IN (:tagIds)")
+    suspend fun deleteGameTagRefs(tagIds: List<String>)
+
+    @Query("DELETE FROM tags WHERE id IN (:tagIds)")
+    suspend fun deleteTagsRaw(tagIds: List<String>)
+
+    @Transaction
+    suspend fun deleteTags(tagIds: List<String>) {
+        if (tagIds.isEmpty()) return
+        deleteGameTagRefs(tagIds)
+        deleteTagsRaw(tagIds)
+    }
+
+    @Query("UPDATE tags SET groupName = :categoryName WHERE id IN (:tagIds)")
+    suspend fun moveTagsToCategory(tagIds: List<String>, categoryName: String?)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun addGameTag(ref: GameTagCrossRef)
+
+    @Query("DELETE FROM game_tags WHERE gameId = :gameId AND tagId = :tagId")
+    suspend fun removeGameTag(gameId: String, tagId: String)
+
+    @Query("SELECT tags.* FROM tags JOIN game_tags ON tags.id = game_tags.tagId WHERE game_tags.gameId = :gameId ORDER BY tags.name")
+    fun observeTagsForGame(gameId: String): Flow<List<TagEntity>>
+
+    @Query("SELECT tagId FROM game_tags WHERE gameId = :gameId")
+    suspend fun getTagIdsForGame(gameId: String): List<String>
+
+    @Query("SELECT * FROM game_tags")
+    fun observeGameTagRefs(): Flow<List<GameTagCrossRef>>
+
+    @Query("DELETE FROM game_tags WHERE gameId = :gameId")
+    suspend fun clearGameTags(gameId: String)
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    suspend fun insertGameTags(refs: List<GameTagCrossRef>)
+
+    @Transaction
+    suspend fun replaceGameTags(gameId: String, tagIds: Set<String>) {
+        clearGameTags(gameId)
+        insertGameTags(tagIds.map { GameTagCrossRef(gameId, it) })
+    }
+
+    @Query("SELECT * FROM tag_categories ORDER BY sortOrder, name COLLATE NOCASE")
+    fun observeTagCategories(): Flow<List<TagCategoryEntity>>
+
+    @Query("SELECT * FROM tag_categories ORDER BY sortOrder, name COLLATE NOCASE")
+    suspend fun getTagCategories(): List<TagCategoryEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertTagCategory(category: TagCategoryEntity)
+
+    @Query("UPDATE tags SET groupName = :newName WHERE groupName = :oldName")
+    suspend fun renameTagCategoryReferences(oldName: String, newName: String)
+
+    @Query("UPDATE tags SET groupName = NULL WHERE groupName = :name")
+    suspend fun clearTagCategoryReferences(name: String)
+
+    @Query("DELETE FROM tag_categories WHERE id = :id")
+    suspend fun deleteTagCategoryRaw(id: String)
+
+    @Query("SELECT * FROM library_folders ORDER BY sortOrder, name COLLATE NOCASE")
+    fun observeFolders(): Flow<List<LibraryFolderEntity>>
+
+    @Query("SELECT * FROM library_folders ORDER BY sortOrder, name COLLATE NOCASE")
+    suspend fun getFolders(): List<LibraryFolderEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertFolder(folder: LibraryFolderEntity)
+
+    @Query("DELETE FROM library_folders WHERE id = :id")
+    suspend fun deleteFolder(id: String)
+
+    @Query("UPDATE library_folders SET parentId = :newParentId WHERE parentId = :folderId")
+    suspend fun moveChildFolders(folderId: String, newParentId: String?)
+
+    @Query("UPDATE games SET libraryFolderId = NULL WHERE libraryFolderId = :folderId")
+    suspend fun clearGamesFromFolder(folderId: String)
+
+    @Insert
+    suspend fun insertPlaySession(session: PlaySessionEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertScanHistory(history: ScanHistoryEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertScanReportItems(items: List<ScanReportItemEntity>)
+
+    @Query("SELECT * FROM scan_history WHERE sourceId = :sourceId AND finishedAt IS NOT NULL ORDER BY finishedAt DESC LIMIT 1")
+    suspend fun getLatestScanHistory(sourceId: String): ScanHistoryEntity?
+
+    @Query("SELECT * FROM scan_report_items WHERE scanId = :scanId ORDER BY rowid")
+    suspend fun getScanReportItems(scanId: String): List<ScanReportItemEntity>
+
+    @Query("SELECT * FROM launch_profiles WHERE gameId = :gameId LIMIT 1")
+    fun observeLaunchProfile(gameId: String): Flow<LaunchProfileEntity?>
+
+    @Query("SELECT * FROM launch_profiles WHERE gameId = :gameId LIMIT 1")
+    suspend fun getLaunchProfile(gameId: String): LaunchProfileEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertLaunchProfile(profile: LaunchProfileEntity)
+
+    @Query("DELETE FROM launch_profiles WHERE gameId = :gameId")
+    suspend fun deleteLaunchProfile(gameId: String)
+
+    @Query("SELECT * FROM deleted_games ORDER BY deletedAt DESC")
+    fun observeDeletedGames(): Flow<List<DeletedGameEntity>>
+
+    @Query("SELECT * FROM deleted_games WHERE sourceId = :sourceId")
+    suspend fun getDeletedGamesForSource(sourceId: String): List<DeletedGameEntity>
+
+    @Query("SELECT * FROM deleted_games WHERE documentUri = :documentUri LIMIT 1")
+    suspend fun findDeletedGameByDocumentUri(documentUri: String): DeletedGameEntity?
+
+    @Query("SELECT * FROM deleted_games WHERE fingerprint = :fingerprint LIMIT 1")
+    suspend fun findDeletedGameByFingerprint(fingerprint: String): DeletedGameEntity?
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertDeletedGame(game: DeletedGameEntity)
+
+    @Query("DELETE FROM deleted_games WHERE id = :id")
+    suspend fun restoreDeletedGame(id: String)
+}

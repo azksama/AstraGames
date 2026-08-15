@@ -1,0 +1,17 @@
+<resources>
+    <style name="Theme.AstraGames" parent="android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowActionModeOverlay">true</item>
+    </style>
+
+    <style name="Theme.AstraGames.Cropper" parent="Theme.AppCompat.DayNight.DarkActionBar">
+        <item name="colorPrimary">#182C44</item>
+        <item name="colorPrimaryDark">#0D1928</item>
+        <item name="colorAccent">#70D7FF</item>
+        <item name="actionMenuTextColor">#FFFFFF</item>
+        <item name="android:windowActionModeOverlay">false</item>
+    </style>
+</resources>
