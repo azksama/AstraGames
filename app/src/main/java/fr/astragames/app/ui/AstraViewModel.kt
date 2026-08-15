@@ -16,7 +16,6 @@ import fr.astragames.app.core.model.ThemeMode
 import fr.astragames.app.core.model.ScanReport
 import fr.astragames.app.core.metadata.CoverCandidate
 import fr.astragames.app.core.metadata.F95ZoneMetadata
-import fr.astragames.app.core.metadata.F95ThreadSearchResult
 import fr.astragames.app.core.search.TagMatcher
 import fr.astragames.app.core.search.DuplicateDetector
 import fr.astragames.app.core.search.DuplicateDetector.DuplicateGroup
@@ -126,9 +125,7 @@ data class F95ImportState(
     val loading: Boolean = false,
     val metadata: F95ZoneMetadata? = null,
     val error: String? = null,
-    val searchLoading: Boolean = false,
-    val searchResults: List<F95ThreadSearchResult> = emptyList(),
-    val searchError: String? = null
+    val browserUrl: String? = null
 )
 
 sealed interface UiEvent {
@@ -595,19 +592,11 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             mutableF95Import.value = mutableF95Import.value.copy(loading = false, error = error.message ?: "Import F95Zone impossible.")
         }
     }
-    fun searchF95Threads(gameId: String, title: String) = viewModelScope.launch {
+    fun prepareF95Search(gameId: String, title: String) {
         mutableF95Import.value = mutableF95Import.value.copy(
-            gameId = gameId, searchLoading = true, searchResults = emptyList(), searchError = null
+            gameId = gameId,
+            browserUrl = app.container.f95Zone.googleSearchUrl(title)
         )
-        runCatching { app.container.f95Zone.searchThreads(title) }
-            .onSuccess { results -> mutableF95Import.value = mutableF95Import.value.copy(
-                searchLoading = false,
-                searchResults = results,
-                searchError = if (results.isEmpty()) "Aucune fiche F95Zone trouvée." else null
-            ) }
-            .onFailure { error -> mutableF95Import.value = mutableF95Import.value.copy(
-                searchLoading = false, searchError = error.message ?: "Recherche F95Zone impossible."
-            ) }
     }
     fun applyF95Tags(gameId: String, selectedTags: Set<String>) = viewModelScope.launch {
         val imported = repository.importF95Tags(gameId, selectedTags)
