@@ -62,19 +62,28 @@ class F95ZoneProviderTest {
         assertEquals("https://f95zone.to/images/cover-1920.jpg", metadata.images.single().imageUrl)
     }
 
-    @Test fun extractsOnlyF95ThreadsFromSearchResultsAndUnwrapsRedirects() {
-        val results = F95ZoneProvider().parseSearchHtml(
-            """
-            <div class="result">
-              <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Ff95zone.to%2Fthreads%2Fwind-waiting-island.123%2F">Wind Waiting Island [v1.2]</a>
-              <a class="result__snippet">Game thread on F95Zone.</a>
-            </div>
-            <div class="result"><a class="result__a" href="https://example.com/threads/nope">Other site</a></div>
-            """.trimIndent()
+    @Test fun buildsGoogleSearchWithSafeSearchDisabled() {
+        assertEquals(
+            "https://www.google.com/search?hl=fr&safe=off&q=Wind+Waiting+Island+f95zone",
+            F95ZoneProvider().googleSearchUrl("Wind Waiting Island")
         )
+    }
 
-        assertEquals(1, results.size)
-        assertEquals("Wind Waiting Island [v1.2]", results.single().title)
-        assertEquals("https://f95zone.to/threads/wind-waiting-island.123/", results.single().url)
+    @Test fun extractsDirectAndGoogleWrappedThreadLinks() {
+        val thread = "https://f95zone.to/threads/wind-waiting-island.123/"
+        assertEquals(thread, extractF95ThreadUrl(thread))
+        assertEquals(
+            thread,
+            extractF95ThreadUrl("https://www.google.com/url?q=https%3A%2F%2Ff95zone.to%2Fthreads%2Fwind-waiting-island.123%2F&sa=U")
+        )
+        assertEquals(
+            thread,
+            extractF95ThreadUrl("/url?url=https%3A%2F%2Ff95zone.to%2Fthreads%2Fwind-waiting-island.123%2F")
+        )
+    }
+
+    @Test fun rejectsNonThreadSearchLinks() {
+        assertEquals(null, extractF95ThreadUrl("https://f95zone.to/forums/games.2/"))
+        assertEquals(null, extractF95ThreadUrl("https://example.com/threads/fake.123/"))
     }
 }

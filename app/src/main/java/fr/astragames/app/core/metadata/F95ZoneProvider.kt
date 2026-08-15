@@ -7,6 +7,7 @@ import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
 import java.net.URI
 import java.net.URLDecoder
+import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 
 data class F95ZoneMetadata(
@@ -15,23 +16,11 @@ data class F95ZoneMetadata(
     val images: List<CoverCandidate>
 )
 
-data class F95ThreadSearchResult(
-    val title: String,
-    val url: String,
-    val snippet: String
-)
-
 class F95ZoneProvider {
-    suspend fun searchThreads(gameTitle: String): List<F95ThreadSearchResult> = withContext(Dispatchers.IO) {
-        val query = "${gameTitle.trim()} f95zone".trim()
+    fun googleSearchUrl(gameTitle: String): String {
         require(gameTitle.isNotBlank()) { "Le nom du jeu est vide." }
-        val document = Jsoup.connect("https://html.duckduckgo.com/html/")
-            .userAgent("Mozilla/5.0 (Android) AstraGames/1.0")
-            .header("Accept-Language", "fr-FR,fr;q=0.9,en;q=0.7")
-            .timeout(20_000)
-            .data("q", query)
-            .post()
-        parseSearch(document)
+        val query = URLEncoder.encode("${gameTitle.trim()} f95zone", StandardCharsets.UTF_8.name())
+        return "https://www.google.com/search?hl=fr&safe=off&q=$query"
     }
 
     suspend fun fetch(rawUrl: String): F95ZoneMetadata = withContext(Dispatchers.IO) {
@@ -51,38 +40,6 @@ class F95ZoneProvider {
     internal fun parseHtml(html: String, baseUrl: String): F95ZoneMetadata {
         val url = validate(baseUrl)
         return parse(Jsoup.parse(html, url.toString()), url)
-    }
-
-    internal fun parseSearchHtml(html: String): List<F95ThreadSearchResult> =
-        parseSearch(Jsoup.parse(html, "https://html.duckduckgo.com/html/"))
-
-    private fun parseSearch(document: Document): List<F95ThreadSearchResult> = document
-        .select(".result")
-        .mapNotNull { result ->
-            val anchor = result.selectFirst("a.result__a") ?: return@mapNotNull null
-            val url = unwrapSearchRedirect(anchor.absUrl("href").ifBlank { anchor.attr("href") })
-            val uri = runCatching { URI(url) }.getOrNull() ?: return@mapNotNull null
-            val host = uri.host?.lowercase().orEmpty()
-            if (uri.scheme != "https" || (host != "f95zone.to" && !host.endsWith(".f95zone.to")) || !uri.path.startsWith("/threads/")) {
-                return@mapNotNull null
-            }
-            F95ThreadSearchResult(
-                title = anchor.text().trim().ifBlank { uri.path.substringAfter("/threads/").substringBefore('/') },
-                url = URI(uri.scheme, uri.authority, uri.path, null, null).toString(),
-                snippet = result.selectFirst(".result__snippet")?.text()?.trim().orEmpty()
-            )
-        }
-        .distinctBy { it.url }
-        .take(10)
-
-    private fun unwrapSearchRedirect(value: String): String {
-        val uri = runCatching { URI(value) }.getOrNull() ?: return value
-        val encoded = uri.rawQuery.orEmpty().split('&')
-            .firstOrNull { it.substringBefore('=') == "uddg" }
-            ?.substringAfter('=', "")
-            ?.takeIf(String::isNotBlank)
-            ?: return value
-        return runCatching { URLDecoder.decode(encoded, StandardCharsets.UTF_8.name()) }.getOrDefault(value)
     }
 
     private fun parse(document: Document, url: URI): F95ZoneMetadata {
@@ -174,4 +131,33 @@ class F95ZoneProvider {
         }
         return uri
     }
+}
+
+internal fun extractF95ThreadUrl(rawValue: String): String? {
+    var candidate = rawValue.trim()
+    if (candidate.startsWith('/')) candidate = "https://www.google.com$candidate"
+
+    repeat(3) {
+        val uri = runCatching { URI(candidate) }.getOrNull() ?: return null
+        val host = uri.host?.lowercase().orEmpty()
+        if (
+            uri.scheme.equals("https", ignoreCase = true) &&
+            (host == "f95zone.to" || host.endsWith(".f95zone.to")) &&
+            uri.path.orEmpty().startsWith("/threads/")
+        ) {
+            return URI("https", uri.authority, uri.path, uri.query, null).toString()
+        }
+
+        val redirected = uri.rawQuery.orEmpty().split('&')
+            .firstNotNullOfOrNull { parameter ->
+                val key = parameter.substringBefore('=')
+                if (key != "q" && key != "url") return@firstNotNullOfOrNull null
+                parameter.substringAfter('=', "").takeIf(String::isNotBlank)
+            }
+            ?: return null
+        candidate = runCatching {
+            URLDecoder.decode(redirected, StandardCharsets.UTF_8.name())
+        }.getOrNull() ?: return null
+    }
+    return null
 }

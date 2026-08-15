@@ -61,6 +61,7 @@ import androidx.navigation.compose.*
 import androidx.navigation.navArgument
 import coil3.compose.AsyncImage
 import fr.astragames.app.core.metadata.CoverCandidate
+import fr.astragames.app.core.metadata.extractF95ThreadUrl
 import fr.astragames.app.core.model.*
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.DeletedGameEntity
@@ -1184,7 +1185,7 @@ private fun GameDetailScreen(
         onPickCover(item.id); pickCover = false
     }, { vm.removeCover(item.id); pickCover = false }, { pickCover = false; vm.clearCoverSearch() })
     if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, { vm.fetchF95Metadata(item.id, it) }, {
-        vm.searchF95Threads(item.id, item.title)
+        vm.prepareF95Search(item.id, item.title)
     }, { tags, image ->
         vm.applyF95Tags(item.id, tags)
         image?.let { vm.chooseF95Cover(item.id, it) }
@@ -1570,7 +1571,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
         onPickCover(game.id); showCover = false
     }, { vm.removeCover(game.id); showCover = false }, { showCover = false; vm.clearCoverSearch() })
     if (showF95) F95ImportSheet(game, state.tags, f95State, { vm.fetchF95Metadata(game.id, it) }, {
-        vm.searchF95Threads(game.id, game.title)
+        vm.prepareF95Search(game.id, game.title)
     }, { tags, image ->
         importedF95TagNames = tags.map { it.trim().lowercase() }.toSet()
         vm.applyF95Tags(game.id, tags)
@@ -1671,7 +1672,7 @@ private fun F95ImportSheet(
     existingTags: List<TagEntity>,
     state: F95ImportState,
     onFetch: (String) -> Unit,
-    onSearch: () -> Unit,
+    onPrepareSearch: () -> Unit,
     onComplete: (Set<String>, CoverCandidate?) -> Unit,
     onDismiss: () -> Unit
 ) {
@@ -1680,11 +1681,12 @@ private fun F95ImportSheet(
     var step by remember(game.id) { mutableIntStateOf(0) }
     var selectedTags by remember(metadata?.sourceUrl) { mutableStateOf(metadata?.tags?.toSet().orEmpty()) }
     var selectedImage by remember(metadata?.sourceUrl) { mutableStateOf<CoverCandidate?>(null) }
+    var showGoogleSearch by remember(game.id) { mutableStateOf(false) }
     val existingNames = remember(existingTags) { existingTags.map { it.normalizedName }.toSet() }
     LaunchedEffect(metadata?.sourceUrl) {
         if (metadata != null) step = 1
     }
-    LaunchedEffect(game.id) { onSearch() }
+    LaunchedEffect(game.id) { onPrepareSearch() }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -1715,37 +1717,21 @@ private fun F95ImportSheet(
                         label = { Text("Lien du thread") }, placeholder = { Text("https://f95zone.to/threads/…") },
                         leadingIcon = { Icon(Icons.Default.Link, null) }
                     )
-                    OutlinedButton(onClick = onSearch, Modifier.fillMaxWidth(), enabled = !state.searchLoading) {
-                        if (state.searchLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Search, null)
-                        Spacer(Modifier.width(7.dp)); Text("Rechercher la fiche")
-                    }
-                    state.searchError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    if (state.searchResults.isNotEmpty()) {
-                        Text("Résultats pour « ${game.title} f95zone »", style = MaterialTheme.typography.titleSmall)
-                        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
-                            items(state.searchResults, key = { it.url }) { result ->
-                                ListItem(
-                                    modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable {
-                                        url = result.url
-                                        onFetch(result.url)
-                                    },
-                                    headlineContent = { Text(result.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                                    supportingContent = result.snippet.takeIf(String::isNotBlank)?.let { snippet ->
-                                        { Text(snippet, maxLines = 2, overflow = TextOverflow.Ellipsis) }
-                                    },
-                                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
-                                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-                                )
-                                Spacer(Modifier.height(6.dp))
-                            }
-                        }
-                    }
                     if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
                     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(
                         onClick = { onFetch(url) }, enabled = url.isNotBlank() && !state.loading,
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
+                        modifier = Modifier.fillMaxWidth()
                     ) { Icon(Icons.Default.Search, null); Spacer(Modifier.width(6.dp)); Text("Analyser le lien") }
+                    OutlinedButton(
+                        onClick = { showGoogleSearch = true },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        enabled = state.browserUrl != null && !state.loading
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
+                        Spacer(Modifier.width(7.dp))
+                        Text("Rechercher la fiche sur Google")
+                    }
                 }
                 1 -> Column(Modifier.fillMaxWidth()) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1802,6 +1788,76 @@ private fun F95ImportSheet(
             }
         }
     }
+    if (showGoogleSearch && state.browserUrl != null) GoogleF95PickerDialog(
+        searchUrl = state.browserUrl,
+        onThreadSelected = { selectedUrl ->
+            showGoogleSearch = false
+            url = selectedUrl
+            onFetch(selectedUrl)
+        },
+        onDismiss = { showGoogleSearch = false }
+    )
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun GoogleF95PickerDialog(searchUrl: String, onThreadSelected: (String) -> Unit, onDismiss: () -> Unit) {
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var selectionError by remember { mutableStateOf<String?>(null) }
+    val latestSelection by rememberUpdatedState(onThreadSelected)
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                CompactHeader(
+                    "Rechercher sur Google",
+                    "Appui long sur le bon résultat F95Zone",
+                    onBack = onDismiss
+                )
+                AndroidView(
+                    factory = { context ->
+                        WebView(context).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.loadsImagesAutomatically = true
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                    val host = request.url.host.orEmpty().lowercase()
+                                    return host != "google.com" && !host.endsWith(".google.com")
+                                }
+                            }
+                            setOnLongClickListener {
+                                val hit = hitTestResult
+                                if (hit.type !in setOf(WebView.HitTestResult.SRC_ANCHOR_TYPE, WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)) {
+                                    return@setOnLongClickListener false
+                                }
+                                val threadUrl = hit.extra?.let(::extractF95ThreadUrl)
+                                if (threadUrl == null) {
+                                    selectionError = "Ce lien n’est pas un thread F95Zone valide. Maintenez le titre d’un résultat F95Zone."
+                                } else {
+                                    selectionError = null
+                                    latestSelection(threadUrl)
+                                }
+                                true
+                            }
+                            loadUrl(searchUrl)
+                            webView = this
+                        }
+                    },
+                    update = { webView = it },
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
+                selectionError?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)
+                    )
+                }
+            }
+        }
+    }
+    DisposableEffect(Unit) { onDispose { webView?.destroy() } }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
