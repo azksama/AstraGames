@@ -55,6 +55,25 @@ class AstraDatabaseTest {
         assertEquals("F95Zone", assigned.single { it.name == "2d game" }.groupName)
     }
 
+    @Test fun textualTagListReusesExistingTagsAndCreatesMissingOnes() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dao = database.dao()
+        dao.upsertGame(game())
+        dao.upsertTag(TagEntity("adventure", "Adventure", "adventure", "Genres"))
+        val repository = GameRepository(
+            context,
+            dao,
+            RecursiveSourceScanner(context, dao, FileAccessResolver(context)),
+            BackupManager(context, database)
+        )
+
+        assertEquals(3, repository.importTextTags("g1", "[Adventure] [Fantasy] [female protagonist]"))
+        val assigned = dao.observeTagsForGame("g1").first()
+
+        assertEquals(setOf("Adventure", "Fantasy", "female protagonist"), assigned.map { it.name }.toSet())
+        assertEquals("adventure", assigned.single { it.name == "Adventure" }.id)
+    }
+
     @Test fun deletedGamesCanBePersistedAndRestoredForScanning() = runTest {
         val dao = database.dao()
         val deleted = DeletedGameEntity("d1", "Astra Quest", "content://game", null, "fingerprint", "s1", 42)

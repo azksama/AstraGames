@@ -17,4 +17,15 @@ class SearchAndTagTest {
         assertTrue(TagMatcher.matches(setOf("horror", "rpg"), game, TagMatchMode.ANY))
         assertFalse(TagMatcher.matches(setOf("english"), game, TagMatchMode.EXCLUDE))
     }
+
+    @Test fun textualTagsSupportCommasBracketsAndDeduplication() {
+        assertEquals(
+            listOf("adventure", "fantasy", "female protagonist"),
+            parseTextTagList("[adventure] [fantasy] [female protagonist] adventure")
+        )
+        assertEquals(
+            listOf("female protagonist", "adventure", "fantasy"),
+            parseTextTagList("female protagonist, adventure; fantasy")
+        )
+    }
 }

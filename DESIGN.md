@@ -1,8 +1,8 @@
-# Astra Games - direction produit et interface
+# Astra - direction produit et interface
 
 ## Lecture du produit
 
-Astra Games est une médiathèque Android pour des catalogues très volumineux. L'interface doit donner la priorité aux jaquettes, rendre les états de scan explicites et rester utilisable avec une seule source comme avec plusieurs milliers de jeux.
+Astra est une médiathèque Android pour des catalogues très volumineux. L'interface doit donner la priorité aux jaquettes, rendre les états de scan explicites et rester utilisable avec une seule source comme avec plusieurs milliers de jeux.
 
 ## Système visuel
 

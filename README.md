@@ -1,6 +1,6 @@
-# Astra Games
+# Astra
 
-Astra Games est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
+Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
 
 ## Fonctions incluses
 
@@ -18,16 +18,17 @@ Astra Games est une application Android native qui indexe plusieurs dossiers de 
 - sélection rapide et groupée des tags pour chaque jeu, sans affectation globale implicite ;
 - dossiers et sous-dossiers Astra virtuels navigables, renommables et supprimables sans supprimer les jeux ;
 - panneau de filtres compact par moteur, source, dossier Astra, dossier système réel, tags, état et tri, incluant automatiquement les sous-dossiers ;
-- collections intelligentes intégrées et personnalisables avec règles moteur, tag, dossier, favori, jaquette, dates et durée de jeu, combinables en ET/OU ;
+- collections intelligentes intégrées et personnalisables avec règles moteur, tag recherchable et trié alphabétiquement, dossier, favori, jaquette, dates et durée de jeu, combinables en ET/OU ;
 - résolution guidée des doublons : comparaison côte à côte, choix du principal, fusion des métadonnées et de l’historique, récupération des sauvegardes et stratégie de conflits ;
 - suivi du temps de jeu par sessions et affichage de la durée cumulée ;
 - gestionnaire de runtimes JoiPlay avec détection du lanceur et des plugins RPG Maker/Ren’Py installés ;
 - suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
 - sauvegarde et restauration ZIP du catalogue, des profils et des jaquettes, avec raccourci vers le dossier choisi ;
-- recherche de jaquettes par scraping de Google Images, avec navigateur interactif de secours, choix local et recadrage libre via URI Android sécurisée ;
+- choix manuel de jaquettes dans Google Images avec SafeSearch non forcé, sélection de l’image affichée, menu au long appui, choix local et recadrage libre ;
 - import F95Zone pendant l'ajout ou l'édition : recherche automatique du thread, lien conservé dans la fiche, sélection des tags puis choix d'une image recadrable ;
 - assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
+- ajout textuel de tags par virgules ou crochets pendant la configuration et l’édition, avec réutilisation automatique des tags existants ;
 - thèmes clair, sombre, système et couleurs dynamiques ;
 - navigation compacte flottante à trois entrées, glissement horizontal rapide entre les écrans principaux et interface adaptée aux tablettes/pliables ;
 - Baseline Profile embarqué et module de génération Macrobenchmark pour accélérer le démarrage et les parcours principaux ;
@@ -39,7 +40,7 @@ Astra Games est une application Android native qui indexe plusieurs dossiers de 
 
 ## Jaquettes et F95Zone
 
-La recherche Google Images se fait directement depuis l'application, sans clé API. Si Google exige JavaScript, Astra ouvre son sélecteur web intégré afin de choisir l'aperçu haute définition avant recadrage ; le choix local reste disponible. L'import F95Zone recherche automatiquement `nom du jeu + f95zone`, accepte exclusivement les liens HTTPS `f95zone.to/threads/…`, conserve le thread choisi dans la fiche et affiche les tags puis les images avant l'application des données.
+Google Images n’est jamais lancé automatiquement : l’utilisateur ouvre explicitement le navigateur intégré, touche un résultat puis utilise l’image affichée ou le menu au long appui. La requête demande `safe=off`, mais un SafeSearch verrouillé par le compte, l’appareil ou le réseau reste sous le contrôle de Google. L’import F95Zone recherche automatiquement `nom du jeu + f95zone` via une recherche indépendante, accepte exclusivement les liens HTTPS `f95zone.to/threads/…`, conserve le thread choisi dans la fiche et affiche les tags puis les images avant l’application des données.
 
 ## Architecture
 

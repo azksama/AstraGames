@@ -17,7 +17,7 @@ import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
-/** Sauvegarde portable du catalogue Room et des jaquettes gérées par Astra Games. */
+/** Sauvegarde portable du catalogue Room et des jaquettes gérées par Astra. */
 class BackupManager(
     private val context: Context,
     private val database: AstraDatabase
@@ -53,7 +53,7 @@ class BackupManager(
             try {
                 extractArchive(archiveUri, work)
                 val importedDatabase = File(work, DATABASE_ENTRY)
-                require(importedDatabase.isFile) { "Cette archive ne contient pas de catalogue Astra Games." }
+                require(importedDatabase.isFile) { "Cette archive ne contient pas de catalogue Astra." }
                 val db = database.openHelper.writableDatabase
                 val escapedPath = importedDatabase.absolutePath.replace("'", "''")
                 db.execSQL("ATTACH DATABASE '$escapedPath' AS imported")
