@@ -127,10 +127,10 @@ class BackupManager(
         private const val DATABASE_NAME = "astra_games.db"
         private const val DATABASE_ENTRY = "database/astra_games.db"
         private const val COVERS_DIRECTORY = "covers"
-        private const val DATABASE_VERSION = 4
+        private const val DATABASE_VERSION = 5
         private val RESTORED_TABLES = listOf(
             "game_tags", "play_sessions", "metadata", "cover_candidates", "collection_rules",
-            "scan_report_items", "launch_profiles", "deleted_games", "game_search", "games",
+            "scan_report_items", "launch_profiles", "deleted_games", "ignored_duplicate_groups", "game_search", "games",
             "source_exclusions", "game_sources", "tags", "tag_categories", "library_folders",
             "collections", "scan_history"
         )

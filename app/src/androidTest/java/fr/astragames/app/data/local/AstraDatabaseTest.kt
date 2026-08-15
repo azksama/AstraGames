@@ -7,11 +7,13 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import fr.astragames.app.core.filesystem.FileAccessResolver
 import fr.astragames.app.data.backup.BackupManager
 import fr.astragames.app.data.repository.GameRepository
+import fr.astragames.app.data.repository.SaveConflictStrategy
 import fr.astragames.app.data.scanner.RecursiveSourceScanner
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -84,6 +86,58 @@ class AstraDatabaseTest {
         assertEquals("Custom.exe", dao.getLaunchProfile("g1")?.executableName)
         assertEquals(4, dao.getLatestScanHistory("s1")?.visitedFolders)
         assertEquals("ADDED", dao.getScanReportItems("scan-1").single().status)
+    }
+
+    @Test fun smartCollectionsPlayStatsAndIgnoredDuplicatesArePersisted() = runTest {
+        val dao = database.dao()
+        dao.replaceCollection(
+            CollectionEntity("c1", "Mes RPG favoris", matchMode = "ALL"),
+            listOf(
+                CollectionRuleEntity("r1", "c1", "ENGINE", "IS", "RPG_MAKER_MV"),
+                CollectionRuleEntity("r2", "c1", "FAVORITE", "IS", "true")
+            )
+        )
+        dao.insertPlaySession(PlaySessionEntity("p1", "g1", 100, endedAt = 5_100, durationMs = 5_000))
+        dao.ignoreDuplicateGroup(IgnoredDuplicateGroupEntity("fingerprint:fp", 200))
+
+        assertEquals("ALL", dao.observeCollections().first().single().matchMode)
+        assertEquals(2, dao.observeCollectionRules().first().size)
+        assertEquals(5_000, dao.observePlayStats().first().single().totalDurationMs)
+        assertEquals("fingerprint:fp", dao.observeIgnoredDuplicateGroups().first().single().groupKey)
+    }
+
+    @Test fun duplicateMergeKeepsTheChosenRecordAndCombinesItsHistory() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dao = database.dao()
+        dao.upsertGame(game().copy(description = null, playCount = 2))
+        dao.upsertGame(
+            game().copy(
+                id = "g2", title = "Wind Waiting Island copy", documentUri = "content://g2",
+                description = "Description importée", coverUri = "content://cover-g2", favorite = true,
+                playCount = 3, fingerprint = "fp"
+            )
+        )
+        dao.upsertTag(TagEntity("t1", "RPG", "rpg"))
+        dao.upsertTag(TagEntity("t2", "Aventure", "aventure"))
+        dao.replaceGameTags("g1", setOf("t1"))
+        dao.replaceGameTags("g2", setOf("t2"))
+        dao.insertPlaySession(PlaySessionEntity("p1", "g1", 100, 1_100, 1_000))
+        dao.insertPlaySession(PlaySessionEntity("p2", "g2", 200, 2_200, 2_000))
+        val repository = GameRepository(
+            context, dao, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database)
+        )
+
+        repository.mergeDuplicate("g1", "g2", migrateSaves = false, SaveConflictStrategy.KEEP_PRIMARY, deleteSecondaryFiles = false)
+
+        val merged = dao.getGame("g1")!!
+        assertEquals("Description importée", merged.description)
+        assertEquals("content://cover-g2", merged.coverUri)
+        assertEquals(true, merged.favorite)
+        assertEquals(5, merged.playCount)
+        assertEquals(setOf("t1", "t2"), dao.getTagIdsForGame("g1").toSet())
+        assertEquals(3_000, dao.observePlayStats().first().single().totalDurationMs)
+        assertEquals("DUPLICATE_MERGED", dao.observeDeletedGames().first().single().reason)
+        assertNull(dao.getGame("g2"))
     }
 
     private fun game() = GameEntity(

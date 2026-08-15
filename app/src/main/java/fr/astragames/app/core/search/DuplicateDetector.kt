@@ -4,19 +4,21 @@ import fr.astragames.app.data.local.GameEntity
 import java.text.Normalizer
 
 object DuplicateDetector {
-    fun groups(games: List<GameEntity>): List<List<GameEntity>> {
+    data class DuplicateGroup(val key: String, val games: List<GameEntity>)
+
+    fun groups(games: List<GameEntity>): List<DuplicateGroup> {
         val groupedIds = mutableSetOf<String>()
-        val result = mutableListOf<List<GameEntity>>()
-        games.groupBy { it.fingerprint }.values.filter { it.size > 1 }.forEach { group ->
-            result += group.sortedBy { it.title.lowercase() }
+        val result = mutableListOf<DuplicateGroup>()
+        games.groupBy { it.fingerprint }.filterValues { it.size > 1 }.forEach { (fingerprint, group) ->
+            result += DuplicateGroup("fingerprint:$fingerprint", group.sortedBy { it.title.lowercase() })
             groupedIds += group.map { it.id }
         }
         games.filterNot { it.id in groupedIds }
             .groupBy { normalizeTitle(it.title) }
             .filterKeys { it.length >= 4 }
-            .values.filter { it.size > 1 }
-            .forEach { result += it.sortedBy { game -> game.title.lowercase() } }
-        return result.sortedByDescending { it.size }
+            .filterValues { it.size > 1 }
+            .forEach { (title, group) -> result += DuplicateGroup("title:$title", group.sortedBy { game -> game.title.lowercase() }) }
+        return result.sortedByDescending { it.games.size }
     }
 
     internal fun normalizeTitle(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)

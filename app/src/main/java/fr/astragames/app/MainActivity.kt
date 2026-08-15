@@ -56,6 +56,11 @@ class MainActivity : ComponentActivity() {
                 viewModel.cropRequests.collect { request -> launchCrop(request.gameId, request.source) }
             }
         }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.openFolderRequests.collect(::openDocumentFolder)
+            }
+        }
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             AstraTheme(state.settings.themeMode, state.settings.dynamicColor) {
@@ -73,6 +78,11 @@ class MainActivity : ComponentActivity() {
                 )
             }
         }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        viewModel.finishActivePlaySession()
     }
 
     private fun launchCrop(gameId: String, source: Uri?) {
@@ -103,6 +113,20 @@ class MainActivity : ComponentActivity() {
         }
         runCatching { startActivity(viewIntent) }.onFailure {
             backupFolderPicker.launch(uri)
+        }
+    }
+
+    private fun openDocumentFolder(uri: Uri) {
+        val intent = Intent(Intent.ACTION_VIEW).apply {
+            setDataAndType(uri, DocumentsContract.Document.MIME_TYPE_DIR)
+            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+        }
+        runCatching { startActivity(intent) }.onFailure {
+            val picker = Intent(Intent.ACTION_OPEN_DOCUMENT_TREE).apply {
+                putExtra(DocumentsContract.EXTRA_INITIAL_URI, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_GRANT_WRITE_URI_PERMISSION)
+            }
+            runCatching { startActivity(picker) }
         }
     }
 }

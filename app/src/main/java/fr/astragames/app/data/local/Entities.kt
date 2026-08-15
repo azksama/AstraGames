@@ -145,7 +145,8 @@ data class CollectionEntity(
     @androidx.room.PrimaryKey val id: String,
     val name: String,
     val builtinKey: String? = null,
-    val sortOrder: Int = 0
+    val sortOrder: Int = 0,
+    val matchMode: String = "ALL"
 )
 
 @Entity(tableName = "collection_rules", indices = [Index("collectionId")])
@@ -211,6 +212,18 @@ data class DeletedGameEntity(
     val sourceId: String,
     val deletedAt: Long,
     val reason: String = "USER_DELETED"
+)
+
+@Entity(tableName = "ignored_duplicate_groups")
+data class IgnoredDuplicateGroupEntity(
+    @androidx.room.PrimaryKey val groupKey: String,
+    val ignoredAt: Long
+)
+
+data class GamePlayStat(
+    val gameId: String,
+    val totalDurationMs: Long,
+    val lastSessionAt: Long?
 )
 
 data class TagCount(val tag: TagEntity, val gameCount: Int)

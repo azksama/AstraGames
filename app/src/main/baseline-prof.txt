@@ -1,0 +1,8 @@
+HSPLfr/astragames/app/MainActivity;->**(**)**
+HSPLfr/astragames/app/AstraApplication;->**(**)**
+HSPLfr/astragames/app/ui/AstraAppKt;->**(**)**
+HSPLfr/astragames/app/ui/AstraViewModel;->**(**)**
+HSPLfr/astragames/app/data/local/AstraDatabase;->**(**)**
+HSPLfr/astragames/app/data/local/AstraDao_Impl;->**(**)**
+HSPLfr/astragames/app/data/repository/GameRepository;->**(**)**
+HSPLfr/astragames/app/data/scanner/RecursiveSourceScanner;->**(**)**

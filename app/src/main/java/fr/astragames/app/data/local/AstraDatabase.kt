@@ -14,9 +14,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LibraryFolderEntity::class, PlaySessionEntity::class, MetadataEntity::class,
         CoverCandidateEntity::class, CollectionEntity::class, CollectionRuleEntity::class,
         ScanHistoryEntity::class, ScanReportItemEntity::class, LaunchProfileEntity::class,
-        DeletedGameEntity::class
+        DeletedGameEntity::class, IgnoredDuplicateGroupEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = true
 )
 abstract class AstraDatabase : RoomDatabase() {
@@ -27,7 +27,7 @@ abstract class AstraDatabase : RoomDatabase() {
             context.applicationContext,
             AstraDatabase::class.java,
             "astra_games.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4).fallbackToDestructiveMigration(false).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).fallbackToDestructiveMigration(false).build()
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -66,6 +66,15 @@ abstract class AstraDatabase : RoomDatabase() {
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_deleted_games_fingerprint ON deleted_games (`fingerprint`)")
                 db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS index_deleted_games_documentUri ON deleted_games (`documentUri`)")
+            }
+        }
+
+        private val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE collections ADD COLUMN matchMode TEXT NOT NULL DEFAULT 'ALL'")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS ignored_duplicate_groups (`groupKey` TEXT NOT NULL, `ignoredAt` INTEGER NOT NULL, PRIMARY KEY(`groupKey`))"
+                )
             }
         }
     }
