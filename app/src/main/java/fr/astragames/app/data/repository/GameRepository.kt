@@ -213,6 +213,7 @@ class GameRepository(
             version = primary.version ?: secondary.version,
             productCode = primary.productCode ?: secondary.productCode,
             language = primary.language ?: secondary.language,
+            f95Url = primary.f95Url ?: secondary.f95Url,
             releaseDate = primary.releaseDate ?: secondary.releaseDate,
             dateAdded = minOf(primary.dateAdded, secondary.dateAdded),
             lastPlayedAt = listOfNotNull(primary.lastPlayedAt, secondary.lastPlayedAt).maxOrNull(),
@@ -412,9 +413,11 @@ class GameRepository(
         dao.updateGameFields(
             gameId, title, edits.originalTitle.cleanOrNull(), edits.developer.cleanOrNull(),
             edits.version.cleanOrNull(), edits.productCode.cleanOrNull(), edits.language.cleanOrNull(),
-            edits.description.cleanOrNull()
+            edits.description.cleanOrNull(), edits.f95Url.cleanF95UrlOrNull()
         )
     }
+
+    suspend fun setF95Url(gameId: String, url: String?) = dao.setF95Url(gameId, url.cleanF95UrlOrNull())
 
     suspend fun importF95Tags(gameId: String, tagNames: Collection<String>): Int {
         val categoryName = "F95Zone"
@@ -470,6 +473,15 @@ class GameRepository(
 
     private fun String?.cleanOrNull() = this?.trim()?.ifBlank { null }
 
+    private fun String?.cleanF95UrlOrNull(): String? {
+        val clean = cleanOrNull() ?: return null
+        val uri = runCatching { Uri.parse(clean) }.getOrNull() ?: return null
+        val host = uri.host?.lowercase().orEmpty()
+        return clean.takeIf {
+            uri.scheme == "https" && (host == "f95zone.to" || host.endsWith(".f95zone.to")) && uri.path.orEmpty().startsWith("/threads/")
+        }
+    }
+
     companion object {
         private val SAVE_FOLDER_NAMES = setOf("save", "saves", "savedata", "savegames", "persistent")
         private val SAVE_EXTENSIONS = setOf("rpgsave", "rvdata", "rvdata2", "rxdata", "save", "sav")
@@ -483,7 +495,8 @@ data class GameEdits(
     val version: String?,
     val productCode: String?,
     val language: String?,
-    val description: String?
+    val description: String?,
+    val f95Url: String?
 )
 
 data class CollectionRuleDraft(val field: String, val operator: String, val value: String)

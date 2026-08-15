@@ -15,7 +15,25 @@ data class F95ZoneMetadata(
     val images: List<CoverCandidate>
 )
 
+data class F95ThreadSearchResult(
+    val title: String,
+    val url: String,
+    val snippet: String
+)
+
 class F95ZoneProvider {
+    suspend fun searchThreads(gameTitle: String): List<F95ThreadSearchResult> = withContext(Dispatchers.IO) {
+        val query = "${gameTitle.trim()} f95zone".trim()
+        require(gameTitle.isNotBlank()) { "Le nom du jeu est vide." }
+        val document = Jsoup.connect("https://html.duckduckgo.com/html/")
+            .userAgent("Mozilla/5.0 (Android) AstraGames/1.0")
+            .header("Accept-Language", "fr-FR,fr;q=0.9,en;q=0.7")
+            .timeout(20_000)
+            .data("q", query)
+            .post()
+        parseSearch(document)
+    }
+
     suspend fun fetch(rawUrl: String): F95ZoneMetadata = withContext(Dispatchers.IO) {
         val url = validate(rawUrl)
         val document = Jsoup.connect(url.toString())
@@ -33,6 +51,38 @@ class F95ZoneProvider {
     internal fun parseHtml(html: String, baseUrl: String): F95ZoneMetadata {
         val url = validate(baseUrl)
         return parse(Jsoup.parse(html, url.toString()), url)
+    }
+
+    internal fun parseSearchHtml(html: String): List<F95ThreadSearchResult> =
+        parseSearch(Jsoup.parse(html, "https://html.duckduckgo.com/html/"))
+
+    private fun parseSearch(document: Document): List<F95ThreadSearchResult> = document
+        .select(".result")
+        .mapNotNull { result ->
+            val anchor = result.selectFirst("a.result__a") ?: return@mapNotNull null
+            val url = unwrapSearchRedirect(anchor.absUrl("href").ifBlank { anchor.attr("href") })
+            val uri = runCatching { URI(url) }.getOrNull() ?: return@mapNotNull null
+            val host = uri.host?.lowercase().orEmpty()
+            if (uri.scheme != "https" || (host != "f95zone.to" && !host.endsWith(".f95zone.to")) || !uri.path.startsWith("/threads/")) {
+                return@mapNotNull null
+            }
+            F95ThreadSearchResult(
+                title = anchor.text().trim().ifBlank { uri.path.substringAfter("/threads/").substringBefore('/') },
+                url = URI(uri.scheme, uri.authority, uri.path, null, null).toString(),
+                snippet = result.selectFirst(".result__snippet")?.text()?.trim().orEmpty()
+            )
+        }
+        .distinctBy { it.url }
+        .take(10)
+
+    private fun unwrapSearchRedirect(value: String): String {
+        val uri = runCatching { URI(value) }.getOrNull() ?: return value
+        val encoded = uri.rawQuery.orEmpty().split('&')
+            .firstOrNull { it.substringBefore('=') == "uddg" }
+            ?.substringAfter('=', "")
+            ?.takeIf(String::isNotBlank)
+            ?: return value
+        return runCatching { URLDecoder.decode(encoded, StandardCharsets.UTF_8.name()) }.getOrDefault(value)
     }
 
     private fun parse(document: Document, url: URI): F95ZoneMetadata {

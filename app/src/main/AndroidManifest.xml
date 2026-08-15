@@ -52,7 +52,6 @@
         </provider>
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
-            android:screenOrientation="portrait"
             android:theme="@style/Theme.AstraGames.Cropper" />
         <activity
             android:name=".MainActivity"

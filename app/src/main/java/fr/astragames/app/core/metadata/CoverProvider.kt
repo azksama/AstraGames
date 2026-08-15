@@ -40,10 +40,14 @@ class GoogleCoverProvider(
 ) : CoverProvider {
     val configured: Boolean = true
 
-    override suspend fun search(game: GameEntity): List<CoverCandidate> = withContext(Dispatchers.IO) {
+    fun searchUrl(game: GameEntity): String {
         val engine = game.engine.lowercase().replace('_', ' ')
         val query = "${game.title} $engine game"
-        val endpoint = "https://www.google.com/search?tbm=isch&safe=active&hl=fr&q=${encoded(query)}"
+        return "https://www.google.com/search?udm=2&safe=active&hl=fr&q=${encoded(query)}"
+    }
+
+    override suspend fun search(game: GameEntity): List<CoverCandidate> = withContext(Dispatchers.IO) {
+        val endpoint = searchUrl(game)
         val response = Jsoup.connect(endpoint)
             .userAgent(BROWSER_USER_AGENT)
             .header("Accept-Language", "fr-FR,fr;q=0.9,en;q=0.7")
@@ -54,8 +58,12 @@ class GoogleCoverProvider(
             .ignoreHttpErrors(true)
             .execute()
         check(response.statusCode() in 200..299) { "Google Images est inaccessible (${response.statusCode()})." }
-        parseHtml(response.body(), endpoint).ifEmpty {
-            error("Google n'a renvoyé aucune image exploitable. Réessayez dans quelques instants.")
+        val body = response.body()
+        parseHtml(body, endpoint).ifEmpty {
+            if (body.contains("/httpservice/retry/enablejs") || body.contains("enablejs")) {
+                error("Google demande un navigateur interactif pour afficher les images.")
+            }
+            error("Google n'a renvoyé aucune image exploitable.")
         }
     }
 

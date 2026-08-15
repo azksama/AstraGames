@@ -61,14 +61,14 @@ class BackupManager(
                     val version = db.query("PRAGMA imported.user_version").use { cursor ->
                         if (cursor.moveToFirst()) cursor.getInt(0) else 0
                     }
-                    require(version == DATABASE_VERSION) {
-                        "Sauvegarde incompatible (version $version, version attendue $DATABASE_VERSION)."
+                    require(version in SUPPORTED_DATABASE_VERSIONS) {
+                        "Sauvegarde incompatible (version $version, versions acceptées ${SUPPORTED_DATABASE_VERSIONS.joinToString()})."
                     }
                     db.beginTransaction()
                     try {
                         RESTORED_TABLES.forEach { table -> db.execSQL("DELETE FROM `$table`") }
                         RESTORED_TABLES.reversed().forEach { table ->
-                            db.execSQL("INSERT INTO `$table` SELECT * FROM imported.`$table`")
+                            copyTableByColumnName(db, table)
                         }
                         db.setTransactionSuccessful()
                     } finally {
@@ -123,11 +123,25 @@ class BackupManager(
         }
     }
 
+    private fun copyTableByColumnName(db: androidx.sqlite.db.SupportSQLiteDatabase, table: String) {
+        fun columns(schema: String): List<String> = db.query("PRAGMA $schema.table_info('$table')").use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) add(cursor.getString(1))
+            }
+        }
+        val imported = columns("imported").toSet()
+        val common = columns("main").filter { it in imported }
+        require(common.isNotEmpty()) { "La table $table est absente de la sauvegarde." }
+        val names = common.joinToString(", ") { "`$it`" }
+        db.execSQL("INSERT INTO `$table` ($names) SELECT $names FROM imported.`$table`")
+    }
+
     companion object {
         private const val DATABASE_NAME = "astra_games.db"
         private const val DATABASE_ENTRY = "database/astra_games.db"
         private const val COVERS_DIRECTORY = "covers"
-        private const val DATABASE_VERSION = 5
+        private const val DATABASE_VERSION = 6
+        private val SUPPORTED_DATABASE_VERSIONS = setOf(5, DATABASE_VERSION)
         private val RESTORED_TABLES = listOf(
             "game_tags", "play_sessions", "metadata", "cover_candidates", "collection_rules",
             "scan_report_items", "launch_profiles", "deleted_games", "ignored_duplicate_groups", "game_search", "games",
