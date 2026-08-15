@@ -61,4 +61,20 @@ class F95ZoneProviderTest {
 
         assertEquals("https://f95zone.to/images/cover-1920.jpg", metadata.images.single().imageUrl)
     }
+
+    @Test fun extractsOnlyF95ThreadsFromSearchResultsAndUnwrapsRedirects() {
+        val results = F95ZoneProvider().parseSearchHtml(
+            """
+            <div class="result">
+              <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Ff95zone.to%2Fthreads%2Fwind-waiting-island.123%2F">Wind Waiting Island [v1.2]</a>
+              <a class="result__snippet">Game thread on F95Zone.</a>
+            </div>
+            <div class="result"><a class="result__a" href="https://example.com/threads/nope">Other site</a></div>
+            """.trimIndent()
+        )
+
+        assertEquals(1, results.size)
+        assertEquals("Wind Waiting Island [v1.2]", results.single().title)
+        assertEquals("https://f95zone.to/threads/wind-waiting-island.123/", results.single().url)
+    }
 }

@@ -67,10 +67,13 @@ interface AstraDao {
     @Query("UPDATE games SET coverUri = :coverUri WHERE id = :id")
     suspend fun setCover(id: String, coverUri: String?)
 
+    @Query("UPDATE games SET f95Url = :f95Url WHERE id = :id")
+    suspend fun setF95Url(id: String, f95Url: String?)
+
     @Query("UPDATE games SET libraryFolderId = :folderId WHERE id = :id")
     suspend fun setGameFolder(id: String, folderId: String?)
 
-    @Query("UPDATE games SET title = :title, originalTitle = :originalTitle, developer = :developer, version = :version, productCode = :productCode, language = :language, description = :description WHERE id = :id")
+    @Query("UPDATE games SET title = :title, originalTitle = :originalTitle, developer = :developer, version = :version, productCode = :productCode, language = :language, description = :description, f95Url = :f95Url WHERE id = :id")
     suspend fun updateGameFieldsRaw(
         id: String,
         title: String,
@@ -79,7 +82,8 @@ interface AstraDao {
         version: String?,
         productCode: String?,
         language: String?,
-        description: String?
+        description: String?,
+        f95Url: String?
     )
 
     @Transaction
@@ -91,9 +95,10 @@ interface AstraDao {
         version: String?,
         productCode: String?,
         language: String?,
-        description: String?
+        description: String?,
+        f95Url: String?
     ) {
-        updateGameFieldsRaw(id, title, originalTitle, developer, version, productCode, language, description)
+        updateGameFieldsRaw(id, title, originalTitle, developer, version, productCode, language, description, f95Url)
         val updatedGame = getGame(id)
         if (updatedGame != null) upsertGame(updatedGame)
     }
@@ -314,11 +319,11 @@ interface AstraDao {
     @Query("UPDATE games SET libraryFolderId = :folderId WHERE id IN (:ids)")
     suspend fun setGamesFolder(ids: List<String>, folderId: String?)
 
-    @Query("UPDATE games SET title = :title, originalTitle = :originalTitle, aliases = :aliases, coverUri = :coverUri, bannerUri = :bannerUri, iconUri = :iconUri, description = :description, developer = :developer, version = :version, productCode = :productCode, language = :language, releaseDate = :releaseDate, dateAdded = :dateAdded, lastPlayedAt = :lastPlayedAt, playCount = :playCount, favorite = :favorite, keywords = :keywords WHERE id = :id")
+    @Query("UPDATE games SET title = :title, originalTitle = :originalTitle, aliases = :aliases, coverUri = :coverUri, bannerUri = :bannerUri, iconUri = :iconUri, description = :description, developer = :developer, version = :version, productCode = :productCode, language = :language, f95Url = :f95Url, releaseDate = :releaseDate, dateAdded = :dateAdded, lastPlayedAt = :lastPlayedAt, playCount = :playCount, favorite = :favorite, keywords = :keywords WHERE id = :id")
     suspend fun updateMergedGame(
         id: String, title: String, originalTitle: String?, aliases: String,
         coverUri: String?, bannerUri: String?, iconUri: String?, description: String?, developer: String?,
-        version: String?, productCode: String?, language: String?, releaseDate: Long?, dateAdded: Long,
+        version: String?, productCode: String?, language: String?, f95Url: String?, releaseDate: Long?, dateAdded: Long,
         lastPlayedAt: Long?, playCount: Int, favorite: Boolean, keywords: String
     )
 

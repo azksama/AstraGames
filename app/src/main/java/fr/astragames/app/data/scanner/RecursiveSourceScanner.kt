@@ -219,6 +219,7 @@ class RecursiveSourceScanner(
                     version = existing?.version ?: normalized.version,
                     productCode = existing?.productCode ?: normalized.productCode,
                     language = existing?.language,
+                    f95Url = existing?.f95Url,
                     releaseDate = existing?.releaseDate,
                     dateAdded = existing?.dateAdded ?: now,
                     lastModified = directory.lastModified(),

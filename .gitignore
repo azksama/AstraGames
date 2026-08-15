@@ -17,3 +17,4 @@ captures/
 .env.*
 !.env.example
 .DS_Store
+.codex-remote-attachments/

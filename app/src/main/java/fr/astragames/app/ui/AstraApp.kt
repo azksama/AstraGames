@@ -1,5 +1,10 @@
 package fr.astragames.app.ui
 
+import android.annotation.SuppressLint
+import android.webkit.JavascriptInterface
+import android.webkit.WebResourceRequest
+import android.webkit.WebView
+import android.webkit.WebViewClient
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -40,6 +45,9 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -253,7 +261,10 @@ private fun AppNavHost(
             SettingsScreen(state, vm, onPickSource, { nav.navigate(Destination.TAGS.route) }, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
         }
         composable("game/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
-            GameDetailScreen(it.arguments?.getString("id").orEmpty(), state, vm, nav::popBackStack, onPickCover)
+            GameDetailScreen(
+                it.arguments?.getString("id").orEmpty(), state, vm, nav::popBackStack, onPickCover,
+                onSearchTag = { tagId -> vm.searchByTag(tagId); navigate(nav, Destination.SEARCH.route) }
+            )
         }
     }
 }
@@ -373,75 +384,85 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
 
 @Composable
 private fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
-    var folderMenu by remember { mutableStateOf(false) }
-    var systemFolderMenu by remember { mutableStateOf(false) }
-    var sortMenu by remember { mutableStateOf(false) }
+    var showFilters by remember { mutableStateOf(false) }
+    val activeCount = with(state.filters) {
+        listOfNotNull(sourceId, folderId, systemFolderId, engine, tagIds.takeIf { it.isNotEmpty() }, missingOnly.takeIf { it }, sort.takeIf { it != LibrarySort.TITLE }).size
+    }
     LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         item { FilterChip(state.filters.favoritesOnly, vm::toggleFavoriteFilter, { Text("Favoris") }, leadingIcon = { Icon(Icons.Default.Star, null) }) }
         item {
-            Box {
-                FilterChip(
-                    selected = state.filters.folderId != null,
-                    onClick = { folderMenu = true },
-                    label = { Text(state.folders.firstOrNull { it.id == state.filters.folderId }?.name ?: "Tous les dossiers") },
-                    leadingIcon = { Icon(Icons.Default.Folder, null) },
-                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }
-                )
-                DropdownMenu(folderMenu, { folderMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Tous les dossiers") },
-                        leadingIcon = { if (state.filters.folderId == null) Icon(Icons.Default.Check, null) },
-                        onClick = { vm.filterFolder(null); folderMenu = false }
-                    )
-                    state.folders.forEach { folder -> DropdownMenuItem(
-                        text = { Text(folder.name) },
-                        leadingIcon = { if (state.filters.folderId == folder.id) Icon(Icons.Default.Check, null) },
-                        onClick = { vm.filterFolder(folder.id); folderMenu = false }
-                    ) }
+            FilterChip(
+                selected = activeCount > 0,
+                onClick = { showFilters = true },
+                label = { Text(if (activeCount == 0) "Filtres" else "Filtres ($activeCount)") },
+                leadingIcon = { Icon(Icons.Default.Tune, null) }
+            )
+        }
+    }
+    if (showFilters) LibraryFiltersDialog(state, vm) { showFilters = false }
+}
+
+@Composable
+private fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDismiss: () -> Unit) {
+    var pickTags by remember { mutableStateOf(false) }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                Column(Modifier.fillMaxHeight().widthIn(max = 760.dp).align(Alignment.Center)) {
+                    CompactHeader("Filtres", "${state.filteredGames.size} jeu(x)", onBack = onDismiss) {
+                        TextButton(onClick = vm::clearFilters) { Text("Réinitialiser") }
+                    }
+                    LazyColumn(
+                        Modifier.weight(1f),
+                        contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 24.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
+                    ) {
+                        item { FilterSwitch("Favoris uniquement", state.filters.favoritesOnly, vm::toggleFavoriteFilter) }
+                        item { FilterSwitch("Jeux introuvables", state.filters.missingOnly, vm::toggleMissingFilter) }
+                        item { FilterChoiceSection("Moteur", listOf(null to "Tous") + GameEngine.entries.map { it to it.name.readableEngine() }, state.filters.engine, vm::filterEngine) }
+                        item { FilterChoiceSection("Source", listOf(null to "Toutes") + state.sources.map { it.id to it.displayName }, state.filters.sourceId, vm::filterSource) }
+                        item { FilterChoiceSection("Dossier Astra", listOf(null to "Tous") + state.folders.map { it.id to it.name }, state.filters.folderId, vm::filterFolder) }
+                        item { FilterChoiceSection("Dossier système", listOf(null to "Tous") + state.systemFolders.map { it.id to it.label }, state.filters.systemFolderId, vm::filterSystemFolder) }
+                        item { FilterChoiceSection("Tri", LibrarySort.entries.map { it to it.label() }, state.filters.sort, vm::setSort) }
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Tags", style = MaterialTheme.typography.titleMedium)
+                                OutlinedButton(onClick = { pickTags = true }, Modifier.fillMaxWidth()) {
+                                    Icon(Icons.Default.Style, null); Spacer(Modifier.width(8.dp)); Text("${state.filters.tagIds.size} tag(s) sélectionné(s)")
+                                }
+                                if (state.filters.tagIds.isNotEmpty()) FilterChoiceSection(
+                                    "Correspondance",
+                                    listOf(TagMatchMode.ALL to "Tous", TagMatchMode.ANY to "Au moins un", TagMatchMode.EXCLUDE to "Exclure"),
+                                    state.filters.tagMode,
+                                    vm::setTagMode
+                                )
+                            }
+                        }
+                    }
+                    Button(onClick = onDismiss, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) { Text("Afficher les jeux") }
                 }
             }
         }
-        item {
-            Box {
-                val selected = state.systemFolders.firstOrNull { it.id == state.filters.systemFolderId }
-                FilterChip(
-                    selected = selected != null,
-                    onClick = { systemFolderMenu = true },
-                    label = { Text(selected?.label ?: "Dossiers système", maxLines = 1) },
-                    leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
-                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }
-                )
-                DropdownMenu(systemFolderMenu, { systemFolderMenu = false }) {
-                    DropdownMenuItem(
-                        text = { Text("Tous les dossiers système") },
-                        leadingIcon = { if (state.filters.systemFolderId == null) Icon(Icons.Default.Check, null) },
-                        onClick = { vm.filterSystemFolder(null); systemFolderMenu = false }
-                    )
-                    state.systemFolders.forEach { folder -> DropdownMenuItem(
-                        text = { Text(folder.label, maxLines = 2) },
-                        leadingIcon = { if (state.filters.systemFolderId == folder.id) Icon(Icons.Default.Check, null) },
-                        onClick = { vm.filterSystemFolder(folder.id); systemFolderMenu = false }
-                    ) }
-                }
-            }
-        }
-        item {
-            Box {
-                FilterChip(false, { sortMenu = true }, { Text(state.filters.sort.label()) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null) })
-                DropdownMenu(sortMenu, { sortMenu = false }) {
-                    LibrarySort.entries.forEach { sort -> DropdownMenuItem(
-                        text = { Text(sort.label()) },
-                        leadingIcon = { if (state.filters.sort == sort) Icon(Icons.Default.Check, null) },
-                        onClick = { vm.setSort(sort); sortMenu = false }
-                    ) }
-                }
-            }
-        }
-        items(state.sources, key = { it.id }) { source ->
-            FilterChip(state.filters.sourceId == source.id, { vm.filterSource(if (state.filters.sourceId == source.id) null else source.id) }, { Text(source.displayName, maxLines = 1) })
-        }
-        if (state.filters.sourceId != null || state.filters.folderId != null || state.filters.systemFolderId != null || state.filters.engine != null || state.filters.favoritesOnly) item {
-            TextButton(onClick = vm::clearFilters) { Text("Effacer") }
+    }
+    if (pickTags) GameTagPickerSheet(state.tags, state.tagCategories, state.filters.tagIds, {
+        vm.setTagFilters(it); pickTags = false
+    }, { pickTags = false })
+}
+
+@Composable
+private fun FilterSwitch(label: String, checked: Boolean, onToggle: () -> Unit) = ListItem(
+    headlineContent = { Text(label) },
+    trailingContent = { Switch(checked, { onToggle() }) },
+    modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onToggle),
+    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+)
+
+@Composable
+private fun <T> FilterChoiceSection(title: String, choices: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            items(choices) { choice -> FilterChip(choice.first == selected, { onSelect(choice.first) }, { Text(choice.second, maxLines = 1) }) }
         }
     }
 }
@@ -474,7 +495,7 @@ private fun GameCollection(
                     IconButton(onClick = { onFavorite(game.id) }, Modifier.size(36.dp)) {
                         Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", Modifier.size(20.dp), tint = if (game.favorite) Color.Red else LocalContentColor.current)
                     }
-                    if (onQuickGame != null) IconButton(onClick = { onQuickGame(game.id) }) { Icon(Icons.Default.MoreVert, "Actions rapides") }
+                    if (onQuickGame != null) IconButton(onClick = { onQuickGame(game.id) }, Modifier.size(36.dp)) { Icon(Icons.Default.MoreVert, "Actions rapides", Modifier.size(20.dp)) }
                 } },
                 colors = ListItemDefaults.colors(containerColor = if (game.id in selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
             )
@@ -492,17 +513,34 @@ private fun GameGridCard(
         Box {
             GameCover(game, Modifier.fillMaxWidth().aspectRatio(.72f))
             if (selected) Surface(Modifier.matchParentSize(), RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .28f), border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary)) {}
-            IconButton(
+            CoverActionButton(
                 onClick = { onFavorite(game.id) },
-                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(36.dp).background(MaterialTheme.colorScheme.surface.copy(.88f), RoundedCornerShape(50))
-            ) { Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", Modifier.size(20.dp), tint = if (game.favorite) Color.Red else LocalContentColor.current) }
-            if (onQuickGame != null) IconButton(
+                modifier = Modifier.align(Alignment.TopEnd).padding(1.dp),
+                description = "Favori"
+            ) { Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null, Modifier.size(16.dp), tint = if (game.favorite) Color.Red else LocalContentColor.current) }
+            if (onQuickGame != null) CoverActionButton(
                 onClick = { onQuickGame(game.id) },
-                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).background(MaterialTheme.colorScheme.surface.copy(.88f), RoundedCornerShape(50))
-            ) { Icon(Icons.Default.MoreVert, "Actions rapides") }
+                modifier = Modifier.align(Alignment.BottomEnd).padding(1.dp),
+                description = "Actions rapides"
+            ) { Icon(Icons.Default.MoreVert, null, Modifier.size(17.dp)) }
         }
         Spacer(Modifier.height(7.dp)); Text(game.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(game.engine.readableEngine(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+}
+
+@Composable
+private fun CoverActionButton(
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    description: String,
+    icon: @Composable () -> Unit
+) {
+    Box(modifier.size(40.dp).semantics { contentDescription = description }.clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+        Surface(
+            Modifier.size(28.dp), shape = RoundedCornerShape(50),
+            color = MaterialTheme.colorScheme.surface.copy(alpha = .9f), tonalElevation = 2.dp
+        ) { Box(contentAlignment = Alignment.Center) { icon() } }
     }
 }
 
@@ -988,13 +1026,19 @@ private fun SettingsScreen(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun GameDetailScreen(id: String, state: AstraUiState, vm: AstraViewModel, onBack: () -> Unit, onPickCover: (String) -> Unit) {
+private fun GameDetailScreen(
+    id: String, state: AstraUiState, vm: AstraViewModel, onBack: () -> Unit,
+    onPickCover: (String) -> Unit, onSearchTag: (String) -> Unit
+) {
     val game by remember(id) { vm.game(id) }.collectAsStateWithLifecycle(null)
     val assignedTags by remember(id) { vm.gameTags(id) }.collectAsStateWithLifecycle(emptyList())
     val launchProfile by remember(id) { vm.launchProfile(id) }.collectAsStateWithLifecycle(null)
     val compatibilityByGame by vm.compatibility.collectAsStateWithLifecycle()
     val coverState by vm.coverSearch.collectAsStateWithLifecycle()
     val f95State by vm.f95Import.collectAsStateWithLifecycle()
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val uriHandler = LocalUriHandler.current
     var edit by remember { mutableStateOf(false) }
     var pickTags by remember { mutableStateOf(false) }
     var pickCover by remember { mutableStateOf(false) }
@@ -1020,7 +1064,7 @@ private fun GameDetailScreen(id: String, state: AstraUiState, vm: AstraViewModel
     ) { padding ->
         if (item == null) CenterMessage("Chargement…", Modifier.padding(padding).fillMaxSize(), loading = true)
         else LazyColumn(
-            Modifier.padding(padding), contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
+            Modifier.padding(padding), contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -1031,7 +1075,14 @@ private fun GameDetailScreen(id: String, state: AstraUiState, vm: AstraViewModel
                         )
                     )
                     Column(Modifier.weight(1f)) {
-                        Text(item.title, style = MaterialTheme.typography.headlineSmall)
+                        Text(
+                            item.title,
+                            Modifier.clickable {
+                                clipboard.setText(AnnotatedString(item.title))
+                                android.widget.Toast.makeText(context, "Nom du jeu copié", android.widget.Toast.LENGTH_SHORT).show()
+                            },
+                            style = MaterialTheme.typography.headlineSmall
+                        )
                         Spacer(Modifier.height(6.dp)); AssistChip(onClick = {}, label = { Text(item.engine.readableEngine()) })
                         item.developer?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         item.version?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -1039,8 +1090,11 @@ private fun GameDetailScreen(id: String, state: AstraUiState, vm: AstraViewModel
                 }
             }
             item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Jouer") }
-                FilledTonalIconButton(onClick = { vm.toggleFavorite(item.id) }, modifier = Modifier.size(40.dp)) {
+                Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f).height(40.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Jouer") }
+                FilledTonalButton(
+                    onClick = { vm.toggleFavorite(item.id) }, modifier = Modifier.height(40.dp),
+                    contentPadding = PaddingValues(horizontal = 12.dp)
+                ) {
                     Icon(if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", Modifier.size(20.dp), tint = if (item.favorite) Color.Red else LocalContentColor.current)
                 }
             } }
@@ -1087,9 +1141,21 @@ private fun GameDetailScreen(id: String, state: AstraUiState, vm: AstraViewModel
                     Text("Tags", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); TextButton(onClick = { pickTags = true }) { Icon(Icons.Default.Add, null); Text("Choisir") }
                 }
                 if (assignedTags.isEmpty()) Text("Aucun tag associé", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                else LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(assignedTags, key = { it.id }) { AssistChip(onClick = { pickTags = true }, label = { Text(it.name) }) } }
+                else LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(assignedTags, key = { it.id }) { tag -> AssistChip(onClick = { onSearchTag(tag.id) }, label = { Text(tag.name) }) } }
             }
-            item { HorizontalDivider(); Text("Informations", style = MaterialTheme.typography.titleMedium) }
+            item.f95Url?.let { f95Url ->
+                item {
+                    OutlinedButton(onClick = { uriHandler.openUri(f95Url) }, Modifier.fillMaxWidth()) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir la fiche F95Zone")
+                    }
+                }
+            }
+            item {
+                Spacer(Modifier.height(8.dp))
+                HorizontalDivider()
+                Spacer(Modifier.height(10.dp))
+                Text("Informations", style = MaterialTheme.typography.titleMedium)
+            }
             item {
                 InfoLine("Lancements", item.playCount.toString())
                 InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
@@ -1118,7 +1184,9 @@ private fun GameDetailScreen(id: String, state: AstraUiState, vm: AstraViewModel
     if (item != null && pickCover) CoverPickerSheet(item, coverState, { vm.chooseRemoteCover(item.id, it) }, {
         onPickCover(item.id); pickCover = false
     }, { vm.removeCover(item.id); pickCover = false }, { vm.searchCovers(item.id) }, { pickCover = false; vm.clearCoverSearch() })
-    if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, { vm.fetchF95Metadata(item.id, it) }, { tags, image ->
+    if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, { vm.fetchF95Metadata(item.id, it) }, {
+        vm.searchF95Threads(item.id, item.title)
+    }, { tags, image ->
         vm.applyF95Tags(item.id, tags)
         image?.let { vm.chooseF95Cover(item.id, it) }
         importF95 = false
@@ -1442,6 +1510,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     var title by remember(game.id) { mutableStateOf(game.title) }
     var description by remember(game.id) { mutableStateOf(game.description.orEmpty()) }
     var developer by remember(game.id) { mutableStateOf(game.developer.orEmpty()) }
+    var version by remember(game.id) { mutableStateOf(game.version.orEmpty()) }
     var language by remember(game.id) { mutableStateOf(game.language.orEmpty()) }
     var selectedTags by remember(game.id, assigned) { mutableStateOf(assigned.map { it.id }.toSet()) }
     var showTags by remember { mutableStateOf(false) }
@@ -1474,6 +1543,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
                 }
                 item { EditField(title, { title = it }, "Nom") }
                 item { EditField(developer, { developer = it }, "Développeur") }
+                item { EditField(version, { version = it }, "Version") }
                 item { EditField(language, { language = it }, "Langue") }
                 item { EditField(description, { description = it }, "Description", false) }
                 item { OutlinedButton(onClick = { showTags = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Style, null); Spacer(Modifier.width(6.dp)); Text("Tags (${selectedTags.size})") } }
@@ -1482,7 +1552,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
             Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Button(
                     onClick = {
-                        vm.updateGame(game.id, GameEdits(title, game.originalTitle, developer, game.version, game.productCode, language, description))
+                        vm.updateGame(game.id, GameEdits(title, game.originalTitle, developer, version, game.productCode, language, description, game.f95Url))
                         vm.setGameTags(game.id, selectedTags); vm.completeGameSetup(game.id)
                     }, modifier = Modifier.fillMaxWidth(), enabled = title.isNotBlank()
                 ) { Text(if (state.setupQueue.size == 1) "Terminer" else "Enregistrer et suivant") }
@@ -1494,7 +1564,9 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     if (showCover) CoverPickerSheet(game, coverState, { vm.chooseRemoteCover(game.id, it) }, {
         onPickCover(game.id); showCover = false
     }, { vm.removeCover(game.id); showCover = false }, { vm.searchCovers(game.id) }, { showCover = false; vm.clearCoverSearch() })
-    if (showF95) F95ImportSheet(game, state.tags, f95State, { vm.fetchF95Metadata(game.id, it) }, { tags, image ->
+    if (showF95) F95ImportSheet(game, state.tags, f95State, { vm.fetchF95Metadata(game.id, it) }, {
+        vm.searchF95Threads(game.id, game.title)
+    }, { tags, image ->
         importedF95TagNames = tags.map { it.trim().lowercase() }.toSet()
         vm.applyF95Tags(game.id, tags)
         image?.let { vm.chooseF95Cover(game.id, it) }
@@ -1508,6 +1580,7 @@ private fun EditGameDialog(game: GameEntity, onSave: (GameEdits) -> Unit, onF95:
     var developer by remember(game) { mutableStateOf(game.developer.orEmpty()) }; var version by remember(game) { mutableStateOf(game.version.orEmpty()) }
     var code by remember(game) { mutableStateOf(game.productCode.orEmpty()) }; var language by remember(game) { mutableStateOf(game.language.orEmpty()) }
     var description by remember(game) { mutableStateOf(game.description.orEmpty()) }
+    var f95Url by remember(game) { mutableStateOf(game.f95Url.orEmpty()) }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("Modifier le jeu") },
         text = { LazyColumn(Modifier.heightIn(max = 520.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -1515,9 +1588,10 @@ private fun EditGameDialog(game: GameEntity, onSave: (GameEdits) -> Unit, onF95:
             item { EditField(title, { title = it }, "Titre") }; item { EditField(original, { original = it }, "Titre original") }
             item { EditField(developer, { developer = it }, "Développeur") }; item { EditField(version, { version = it }, "Version") }
             item { EditField(code, { code = it }, "Code produit") }; item { EditField(language, { language = it }, "Langue") }
+            item { EditField(f95Url, { f95Url = it }, "Lien F95Zone") }
             item { EditField(description, { description = it }, "Description", false) }
         } },
-        confirmButton = { TextButton(onClick = { onSave(GameEdits(title, original, developer, version, code, language, description)) }, enabled = title.isNotBlank()) { Text("Enregistrer") } },
+        confirmButton = { TextButton(onClick = { onSave(GameEdits(title, original, developer, version, code, language, description, f95Url)) }, enabled = title.isNotBlank()) { Text("Enregistrer") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
     )
 }
@@ -1577,10 +1651,11 @@ private fun F95ImportSheet(
     existingTags: List<TagEntity>,
     state: F95ImportState,
     onFetch: (String) -> Unit,
+    onSearch: () -> Unit,
     onComplete: (Set<String>, CoverCandidate?) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var url by remember(game.id) { mutableStateOf("") }
+    var url by remember(game.id) { mutableStateOf(game.f95Url.orEmpty()) }
     val metadata = state.metadata
     var step by remember(game.id) { mutableIntStateOf(0) }
     var selectedTags by remember(metadata?.sourceUrl) { mutableStateOf(metadata?.tags?.toSet().orEmpty()) }
@@ -1589,6 +1664,7 @@ private fun F95ImportSheet(
     LaunchedEffect(metadata?.sourceUrl) {
         if (metadata != null) step = 1
     }
+    LaunchedEffect(game.id) { onSearch() }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -1619,11 +1695,33 @@ private fun F95ImportSheet(
                         label = { Text("Lien du thread") }, placeholder = { Text("https://f95zone.to/threads/…") },
                         leadingIcon = { Icon(Icons.Default.Link, null) }
                     )
-                    when {
-                        state.loading -> CenterMessage("Analyse de la page…", Modifier.weight(1f), true)
-                        state.error != null -> CenterMessage(state.error, Modifier.weight(1f))
-                        else -> CenterMessage("Chargez le thread pour récupérer ses tags et ses images.", Modifier.weight(1f))
+                    OutlinedButton(onClick = onSearch, Modifier.fillMaxWidth(), enabled = !state.searchLoading) {
+                        if (state.searchLoading) CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Search, null)
+                        Spacer(Modifier.width(7.dp)); Text("Rechercher la fiche")
                     }
+                    state.searchError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                    if (state.searchResults.isNotEmpty()) {
+                        Text("Résultats pour « ${game.title} f95zone »", style = MaterialTheme.typography.titleSmall)
+                        LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp)) {
+                            items(state.searchResults, key = { it.url }) { result ->
+                                ListItem(
+                                    modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable {
+                                        url = result.url
+                                        onFetch(result.url)
+                                    },
+                                    headlineContent = { Text(result.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                                    supportingContent = result.snippet.takeIf(String::isNotBlank)?.let { snippet ->
+                                        { Text(snippet, maxLines = 2, overflow = TextOverflow.Ellipsis) }
+                                    },
+                                    trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null) },
+                                    colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+                                )
+                                Spacer(Modifier.height(6.dp))
+                            }
+                        }
+                    }
+                    if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
+                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                     Button(
                         onClick = { onFetch(url) }, enabled = url.isNotBlank() && !state.loading,
                         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp)
@@ -1692,10 +1790,10 @@ private fun CoverPickerSheet(
     game: GameEntity, state: CoverSearchState, onCandidate: (CoverCandidate) -> Unit,
     onLocal: () -> Unit, onRemove: () -> Unit, onRetry: () -> Unit, onDismiss: () -> Unit
 ) {
+    var showGoogleBrowser by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
             Text("Jaquette de ${game.title}", style = MaterialTheme.typography.titleLarge)
-            Text("10 premiers résultats Google Images : nom + moteur + « game ».", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = onLocal, Modifier.weight(1f)) { Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text("Image locale") }
                 if (game.coverUri != null) TextButton(onClick = onRemove) { Text("Supprimer") }
@@ -1706,7 +1804,7 @@ private fun CoverPickerSheet(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(state.error, color = MaterialTheme.colorScheme.error)
                         if (state.configured) TextButton(onClick = onRetry) { Text("Réessayer") }
-                        Text("Une image locale reste disponible.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        state.browserUrl?.let { TextButton(onClick = { showGoogleBrowser = true }) { Text("Ouvrir Google Images") } }
                     }
                 }
                 else -> LazyVerticalGrid(
@@ -1716,7 +1814,96 @@ private fun CoverPickerSheet(
             }
         }
     }
+    if (showGoogleBrowser && state.browserUrl != null) GoogleImagePickerDialog(
+        searchUrl = state.browserUrl,
+        onCandidate = { showGoogleBrowser = false; onCandidate(it) },
+        onDismiss = { showGoogleBrowser = false }
+    )
 }
+
+private class GoogleImageBridge(private val onSelected: (String, String?) -> Unit) {
+    @JavascriptInterface
+    fun select(encodedUrl: String, encodedTitle: String) {
+        val url = android.net.Uri.decode(encodedUrl)
+        val title = android.net.Uri.decode(encodedTitle).ifBlank { null }
+        android.os.Handler(android.os.Looper.getMainLooper()).post { onSelected(url, title) }
+    }
+}
+
+@SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+@Composable
+private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandidate) -> Unit, onDismiss: () -> Unit) {
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    val latestCandidate by rememberUpdatedState(onCandidate)
+    val bridge = remember(searchUrl) {
+        GoogleImageBridge { url, title ->
+            if (url.startsWith("https://")) latestCandidate(
+                CoverCandidate(
+                    imageUrl = url,
+                    thumbnailUrl = url,
+                    source = android.net.Uri.parse(url).host?.removePrefix("www.").orEmpty(),
+                    contextUrl = searchUrl,
+                    matchedTitle = title,
+                    confidence = 1f
+                )
+            )
+        }
+    }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                CompactHeader("Google Images", "Touchez une image pour afficher son aperçu", onBack = onDismiss)
+                AndroidView(
+                    factory = { context ->
+                        WebView(context).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.loadsImagesAutomatically = true
+                            addJavascriptInterface(bridge, "AstraImage")
+                            webViewClient = object : WebViewClient() {
+                                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
+                                    val host = request.url.host.orEmpty().lowercase()
+                                    return host != "google.com" && !host.endsWith(".google.com")
+                                }
+                            }
+                            loadUrl(searchUrl)
+                            webView = this
+                        }
+                    },
+                    update = { webView = it },
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
+                Button(
+                    onClick = { webView?.evaluateJavascript(GOOGLE_IMAGE_SELECTION_SCRIPT, null) },
+                    modifier = Modifier.fillMaxWidth().padding(12.dp)
+                ) { Icon(Icons.Default.Crop, null); Spacer(Modifier.width(8.dp)); Text("Utiliser l’image affichée") }
+            }
+        }
+    }
+    DisposableEffect(Unit) { onDispose { webView?.removeJavascriptInterface("AstraImage"); webView?.destroy() } }
+}
+
+private val GOOGLE_IMAGE_SELECTION_SCRIPT = """
+    (function() {
+      const candidates = [];
+      document.querySelectorAll('[aria-selected="true"] [data-iurl], [data-iurl][aria-selected="true"]').forEach(function(node) {
+        candidates.push({url: node.getAttribute('data-iurl'), title: node.getAttribute('aria-label') || '', score: 2000000000000});
+      });
+      document.images.forEach(function(img) {
+        const rect = img.getBoundingClientRect();
+        const visible = rect.width > 80 && rect.height > 80 && rect.bottom > 0 && rect.top < window.innerHeight;
+        const preview = img.matches('.iPVvYb, .sFlh5c, .n3VNCb') || img.closest('[aria-selected="true"]');
+        const score = (preview ? 1000000000000 : 0) + (visible ? 10000000000 : 0) + (img.naturalWidth || 0) * (img.naturalHeight || 0);
+        [img.currentSrc, img.src, img.getAttribute('data-src')].forEach(function(url) {
+          if (url) candidates.push({url: url, title: img.alt || '', score: score});
+        });
+      });
+      const valid = candidates.filter(function(item) { return item.url && item.url.indexOf('https://') === 0; });
+      const originals = valid.filter(function(item) { return item.url.indexOf('google.') < 0 && item.url.indexOf('gstatic.') < 0; });
+      const best = (originals.length ? originals : valid).sort(function(a, b) { return b.score - a.score; })[0];
+      if (best) AstraImage.select(encodeURIComponent(best.url), encodeURIComponent(best.title || ''));
+    })();
+""".trimIndent()
 
 @Composable
 private fun CoverCandidateCard(candidate: CoverCandidate, selected: Boolean = false, onClick: () -> Unit) {

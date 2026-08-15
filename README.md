@@ -17,15 +17,15 @@ Astra Games est une application Android native qui indexe plusieurs dossiers de 
 - création, édition, suppression, tri et classement multiple des tags par catégories ;
 - sélection rapide et groupée des tags pour chaque jeu, sans affectation globale implicite ;
 - dossiers et sous-dossiers Astra virtuels navigables, renommables et supprimables sans supprimer les jeux ;
-- filtres de bibliothèque par dossier Astra et par dossier système réel, incluant automatiquement leurs sous-dossiers ;
+- panneau de filtres compact par moteur, source, dossier Astra, dossier système réel, tags, état et tri, incluant automatiquement les sous-dossiers ;
 - collections intelligentes intégrées et personnalisables avec règles moteur, tag, dossier, favori, jaquette, dates et durée de jeu, combinables en ET/OU ;
 - résolution guidée des doublons : comparaison côte à côte, choix du principal, fusion des métadonnées et de l’historique, récupération des sauvegardes et stratégie de conflits ;
 - suivi du temps de jeu par sessions et affichage de la durée cumulée ;
 - gestionnaire de runtimes JoiPlay avec détection du lanceur et des plugins RPG Maker/Ren’Py installés ;
 - suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
 - sauvegarde et restauration ZIP du catalogue, des profils et des jaquettes, avec raccourci vers le dossier choisi ;
-- recherche de 10 jaquettes par scraping de Google Images, choix local et recadrage libre via URI Android sécurisée ;
-- import F95Zone pendant l'ajout ou l'édition : sélection des tags puis choix d'une image recadrable ;
+- recherche de jaquettes par scraping de Google Images, avec navigateur interactif de secours, choix local et recadrage libre via URI Android sécurisée ;
+- import F95Zone pendant l'ajout ou l'édition : recherche automatique du thread, lien conservé dans la fiche, sélection des tags puis choix d'une image recadrable ;
 - assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
 - thèmes clair, sombre, système et couleurs dynamiques ;
@@ -39,7 +39,7 @@ Astra Games est une application Android native qui indexe plusieurs dossiers de 
 
 ## Jaquettes et F95Zone
 
-La recherche Google Images se fait directement depuis l'application, sans clé API. Comme tout scraping, sa disponibilité dépend du HTML et des protections momentanément servis par Google ; le choix et le recadrage d'une image locale restent toujours disponibles. L'import F95Zone accepte exclusivement les liens HTTPS `f95zone.to/threads/…` et affiche les tags puis les images avant l'application des données.
+La recherche Google Images se fait directement depuis l'application, sans clé API. Si Google exige JavaScript, Astra ouvre son sélecteur web intégré afin de choisir l'aperçu haute définition avant recadrage ; le choix local reste disponible. L'import F95Zone recherche automatiquement `nom du jeu + f95zone`, accepte exclusivement les liens HTTPS `f95zone.to/threads/…`, conserve le thread choisi dans la fiche et affiche les tags puis les images avant l'application des données.
 
 ## Architecture
 

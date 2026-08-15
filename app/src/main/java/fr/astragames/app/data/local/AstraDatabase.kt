@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         ScanHistoryEntity::class, ScanReportItemEntity::class, LaunchProfileEntity::class,
         DeletedGameEntity::class, IgnoredDuplicateGroupEntity::class
     ],
-    version = 5,
+    version = 6,
     exportSchema = true
 )
 abstract class AstraDatabase : RoomDatabase() {
@@ -27,7 +27,7 @@ abstract class AstraDatabase : RoomDatabase() {
             context.applicationContext,
             AstraDatabase::class.java,
             "astra_games.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5).fallbackToDestructiveMigration(false).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).fallbackToDestructiveMigration(false).build()
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -75,6 +75,12 @@ abstract class AstraDatabase : RoomDatabase() {
                 db.execSQL(
                     "CREATE TABLE IF NOT EXISTS ignored_duplicate_groups (`groupKey` TEXT NOT NULL, `ignoredAt` INTEGER NOT NULL, PRIMARY KEY(`groupKey`))"
                 )
+            }
+        }
+
+        private val MIGRATION_5_6 = object : Migration(5, 6) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("ALTER TABLE games ADD COLUMN f95Url TEXT")
             }
         }
     }

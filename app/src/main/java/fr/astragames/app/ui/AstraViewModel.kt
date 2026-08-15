@@ -16,6 +16,7 @@ import fr.astragames.app.core.model.ThemeMode
 import fr.astragames.app.core.model.ScanReport
 import fr.astragames.app.core.metadata.CoverCandidate
 import fr.astragames.app.core.metadata.F95ZoneMetadata
+import fr.astragames.app.core.metadata.F95ThreadSearchResult
 import fr.astragames.app.core.search.TagMatcher
 import fr.astragames.app.core.search.DuplicateDetector
 import fr.astragames.app.core.search.DuplicateDetector.DuplicateGroup
@@ -114,7 +115,8 @@ data class CoverSearchState(
     val downloading: Boolean = false,
     val results: List<CoverCandidate> = emptyList(),
     val error: String? = null,
-    val configured: Boolean = false
+    val configured: Boolean = false,
+    val browserUrl: String? = null
 )
 
 data class CropRequest(val gameId: String, val source: Uri)
@@ -123,7 +125,10 @@ data class F95ImportState(
     val gameId: String? = null,
     val loading: Boolean = false,
     val metadata: F95ZoneMetadata? = null,
-    val error: String? = null
+    val error: String? = null,
+    val searchLoading: Boolean = false,
+    val searchResults: List<F95ThreadSearchResult> = emptyList(),
+    val searchError: String? = null
 )
 
 sealed interface UiEvent {
@@ -280,9 +285,15 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun setSort(sort: LibrarySort) { filters.value = filters.value.copy(sort = sort) }
     fun filterEngine(engine: GameEngine?) { filters.value = filters.value.copy(engine = engine) }
     fun toggleFavoriteFilter() { filters.value = filters.value.copy(favoritesOnly = !filters.value.favoritesOnly) }
+    fun toggleMissingFilter() { filters.value = filters.value.copy(missingOnly = !filters.value.missingOnly) }
     fun toggleTagFilter(id: String) {
         val next = filters.value.tagIds.toMutableSet().apply { if (!add(id)) remove(id) }
         filters.value = filters.value.copy(tagIds = next)
+    }
+    fun setTagFilters(ids: Set<String>) { filters.value = filters.value.copy(tagIds = ids) }
+    fun setTagMode(mode: TagMatchMode) { filters.value = filters.value.copy(tagMode = mode) }
+    fun searchByTag(id: String) {
+        filters.value = LibraryFilters(query = "", tagIds = setOf(id), tagMode = TagMatchMode.ALL)
     }
     fun clearFilters() { filters.value = LibraryFilters(query = filters.value.query) }
 
@@ -517,7 +528,8 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun searchCovers(gameId: String) = viewModelScope.launch {
         val game = repository.getGame(gameId) ?: return@launch
         mutableCoverSearch.value = CoverSearchState(
-            gameId = gameId, loading = true, configured = app.container.covers.configured
+            gameId = gameId, loading = true, configured = app.container.covers.configured,
+            browserUrl = app.container.covers.searchUrl(game)
         )
         runCatching { app.container.covers.search(game) }
             .onSuccess { results ->
@@ -552,10 +564,28 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         mutableCoverSearch.value = CoverSearchState(configured = app.container.covers.configured)
     }
     fun fetchF95Metadata(gameId: String, url: String) = viewModelScope.launch {
-        mutableF95Import.value = F95ImportState(gameId = gameId, loading = true)
-        runCatching { app.container.f95Zone.fetch(url) }
-            .onSuccess { mutableF95Import.value = F95ImportState(gameId = gameId, metadata = it) }
-            .onFailure { mutableF95Import.value = F95ImportState(gameId = gameId, error = it.message ?: "Import F95Zone impossible.") }
+        mutableF95Import.value = mutableF95Import.value.copy(gameId = gameId, loading = true, metadata = null, error = null)
+        val result = runCatching { app.container.f95Zone.fetch(url) }
+        result.onSuccess { metadata ->
+            repository.setF95Url(gameId, metadata.sourceUrl)
+            mutableF95Import.value = mutableF95Import.value.copy(loading = false, metadata = metadata, error = null)
+        }.onFailure { error ->
+            mutableF95Import.value = mutableF95Import.value.copy(loading = false, error = error.message ?: "Import F95Zone impossible.")
+        }
+    }
+    fun searchF95Threads(gameId: String, title: String) = viewModelScope.launch {
+        mutableF95Import.value = mutableF95Import.value.copy(
+            gameId = gameId, searchLoading = true, searchResults = emptyList(), searchError = null
+        )
+        runCatching { app.container.f95Zone.searchThreads(title) }
+            .onSuccess { results -> mutableF95Import.value = mutableF95Import.value.copy(
+                searchLoading = false,
+                searchResults = results,
+                searchError = if (results.isEmpty()) "Aucune fiche F95Zone trouvée." else null
+            ) }
+            .onFailure { error -> mutableF95Import.value = mutableF95Import.value.copy(
+                searchLoading = false, searchError = error.message ?: "Recherche F95Zone impossible."
+            ) }
     }
     fun applyF95Tags(gameId: String, selectedTags: Set<String>) = viewModelScope.launch {
         val imported = repository.importF95Tags(gameId, selectedTags)

@@ -30,6 +30,7 @@ data class GameEntity(
     val version: String? = null,
     val productCode: String? = null,
     val language: String? = null,
+    val f95Url: String? = null,
     val releaseDate: Long? = null,
     val dateAdded: Long,
     val lastModified: Long,
