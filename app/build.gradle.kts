@@ -3,6 +3,7 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("org.jetbrains.kotlin.kapt")
     id("org.jetbrains.kotlin.plugin.compose")
+    id("androidx.baselineprofile")
     jacoco
 }
 
@@ -14,8 +15,8 @@ android {
         applicationId = "fr.astragames.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -82,6 +83,7 @@ dependencies {
     kapt("androidx.room:room-compiler:2.8.4")
     implementation("androidx.datastore:datastore-preferences:1.2.1")
     implementation("androidx.work:work-runtime-ktx:2.11.2")
+    implementation("androidx.profileinstaller:profileinstaller:1.4.1")
     implementation("androidx.documentfile:documentfile:1.1.0")
     implementation("io.coil-kt.coil3:coil-compose:3.4.0")
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.4.0")
@@ -97,4 +99,10 @@ dependencies {
     androidTestImplementation("androidx.compose.ui:ui-test-junit4")
     androidTestImplementation("androidx.room:room-testing:2.8.4")
     androidTestImplementation("org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2")
+    baselineProfile(project(":baselineprofile"))
+}
+
+baselineProfile {
+    automaticGenerationDuringBuild = false
+    saveInSrc = true
 }

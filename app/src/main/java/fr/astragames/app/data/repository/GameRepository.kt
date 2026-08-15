@@ -7,6 +7,10 @@ import androidx.documentfile.provider.DocumentFile
 import fr.astragames.app.data.local.AstraDao
 import fr.astragames.app.data.backup.BackupManager
 import fr.astragames.app.data.local.DeletedGameEntity
+import fr.astragames.app.data.local.CollectionEntity
+import fr.astragames.app.data.local.CollectionRuleEntity
+import fr.astragames.app.data.local.IgnoredDuplicateGroupEntity
+import fr.astragames.app.data.local.PlaySessionEntity
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.GameSourceEntity
 import fr.astragames.app.data.local.LibraryFolderEntity
@@ -35,6 +39,10 @@ class GameRepository(
     val tagCategories: Flow<List<TagCategoryEntity>> = dao.observeTagCategories()
     val folders: Flow<List<LibraryFolderEntity>> = dao.observeFolders()
     val deletedGames: Flow<List<DeletedGameEntity>> = dao.observeDeletedGames()
+    val collections: Flow<List<CollectionEntity>> = dao.observeCollections()
+    val collectionRules: Flow<List<CollectionRuleEntity>> = dao.observeCollectionRules()
+    val playStats = dao.observePlayStats()
+    val ignoredDuplicateGroups = dao.observeIgnoredDuplicateGroups()
     fun gameTagRefs() = dao.observeGameTagRefs()
     fun search(query: String) = dao.searchGames(fr.astragames.app.core.search.SearchParser.toFtsQuery(query))
 
@@ -120,6 +128,114 @@ class GameRepository(
 
     suspend fun setGameFolder(id: String, folderId: String?) = dao.setGameFolder(id, folderId)
 
+    suspend fun setGamesFolder(ids: Set<String>, folderId: String?) {
+        if (ids.isNotEmpty()) dao.setGamesFolder(ids.toList(), folderId)
+    }
+
+    suspend fun setGamesFavorite(ids: Set<String>, favorite: Boolean) {
+        if (ids.isNotEmpty()) dao.setGamesFavorite(ids.toList(), favorite)
+    }
+
+    suspend fun addTagsToGames(ids: Set<String>, tagIds: Set<String>) {
+        ids.forEach { gameId ->
+            dao.insertGameTags(tagIds.map { fr.astragames.app.data.local.GameTagCrossRef(gameId, it) })
+        }
+    }
+
+    suspend fun createOrUpdateCollection(
+        collectionId: String?, name: String, matchMode: String, rules: List<CollectionRuleDraft>
+    ) {
+        val clean = name.trim()
+        require(clean.isNotBlank()) { "Donnez un nom à la collection." }
+        require(rules.isNotEmpty()) { "Ajoutez au moins une règle." }
+        val id = collectionId ?: UUID.randomUUID().toString()
+        dao.replaceCollection(
+            CollectionEntity(id, clean, sortOrder = 0, matchMode = if (matchMode == "ANY") "ANY" else "ALL"),
+            rules.map { rule -> CollectionRuleEntity(UUID.randomUUID().toString(), id, rule.field, rule.operator, rule.value) }
+        )
+    }
+
+    suspend fun deleteCollection(id: String) = dao.deleteCollection(id)
+
+    suspend fun startPlaySession(gameId: String) {
+        finishActivePlaySession()
+        dao.insertPlaySession(PlaySessionEntity(UUID.randomUUID().toString(), gameId, System.currentTimeMillis()))
+    }
+
+    suspend fun finishActivePlaySession() {
+        val active = dao.getActivePlaySession() ?: return
+        val now = System.currentTimeMillis()
+        val duration = (now - active.startedAt).coerceIn(0, 12 * 60 * 60 * 1000L)
+        dao.finishPlaySession(active.id, now, duration)
+    }
+
+    suspend fun ignoreDuplicateGroup(groupKey: String) =
+        dao.ignoreDuplicateGroup(IgnoredDuplicateGroupEntity(groupKey, System.currentTimeMillis()))
+
+    suspend fun previewDuplicateMerge(primaryId: String, secondaryId: String): DuplicateMergePreview {
+        val primary = dao.getGame(primaryId) ?: error("Jeu principal introuvable.")
+        val secondary = dao.getGame(secondaryId) ?: error("Jeu secondaire introuvable.")
+        val primarySaves = findSaveFiles(primary)
+        val secondarySaves = findSaveFiles(secondary)
+        val primaryPaths = primarySaves.associateBy { it.relativePath.lowercase() }
+        return DuplicateMergePreview(
+            primary, secondary, primarySaves, secondarySaves,
+            secondarySaves.filter { it.relativePath.lowercase() in primaryPaths }
+        )
+    }
+
+    suspend fun mergeDuplicate(
+        primaryId: String,
+        secondaryId: String,
+        migrateSaves: Boolean,
+        saveStrategy: SaveConflictStrategy,
+        deleteSecondaryFiles: Boolean
+    ): DuplicateMergeResult {
+        val preview = previewDuplicateMerge(primaryId, secondaryId)
+        if (migrateSaves) migrateSaveFiles(preview, saveStrategy)
+        if (deleteSecondaryFiles) deleteGameFolder(preview.secondary)
+
+        val primary = preview.primary
+        val secondary = preview.secondary
+        val mergedCoverUri = primary.coverUri ?: secondary.coverUri
+        val primaryTags = dao.getTagIdsForGame(primary.id).toSet()
+        val secondaryTags = dao.getTagIdsForGame(secondary.id).toSet()
+        dao.updateMergedGame(
+            id = primary.id,
+            title = primary.title,
+            originalTitle = primary.originalTitle ?: secondary.originalTitle,
+            aliases = (primary.aliases.split('|') + secondary.aliases.split('|')).map(String::trim).filter(String::isNotBlank).distinct().joinToString(" | "),
+            coverUri = mergedCoverUri,
+            bannerUri = primary.bannerUri ?: secondary.bannerUri,
+            iconUri = primary.iconUri ?: secondary.iconUri,
+            description = primary.description?.takeIf(String::isNotBlank) ?: secondary.description,
+            developer = primary.developer ?: secondary.developer,
+            version = primary.version ?: secondary.version,
+            productCode = primary.productCode ?: secondary.productCode,
+            language = primary.language ?: secondary.language,
+            releaseDate = primary.releaseDate ?: secondary.releaseDate,
+            dateAdded = minOf(primary.dateAdded, secondary.dateAdded),
+            lastPlayedAt = listOfNotNull(primary.lastPlayedAt, secondary.lastPlayedAt).maxOrNull(),
+            playCount = primary.playCount + secondary.playCount,
+            favorite = primary.favorite || secondary.favorite,
+            keywords = (primary.keywords.split(' ') + secondary.keywords.split(' ')).filter(String::isNotBlank).distinct().joinToString(" ")
+        )
+        dao.replaceGameTags(primary.id, primaryTags + secondaryTags)
+        dao.movePlaySessions(primary.id, secondary.id)
+        if (!deleteSecondaryFiles) dao.upsertDeletedGame(
+            DeletedGameEntity(
+                UUID.randomUUID().toString(), secondary.title, secondary.documentUri, secondary.physicalPath,
+                secondary.fingerprint, secondary.sourceId, System.currentTimeMillis(), "DUPLICATE_MERGED"
+            )
+        )
+        if (secondary.coverUri != null && secondary.coverUri != mergedCoverUri) {
+            removeManagedCover(secondary.coverUri)
+        }
+        dao.deleteGameCompletely(secondary.id)
+        dao.getGame(primary.id)?.let { merged -> dao.upsertGame(merged) }
+        return DuplicateMergeResult(preview.secondarySaves.size, preview.conflictingSaves.size)
+    }
+
     suspend fun deleteGame(id: String, deleteAssociatedFiles: Boolean) {
         val game = dao.getGame(id) ?: return
         if (deleteAssociatedFiles) {
@@ -149,10 +265,91 @@ class GameRepository(
     suspend fun createBackup(treeUri: Uri): String = backupManager.create(treeUri)
     suspend fun restoreBackup(uri: Uri) = backupManager.restore(uri)
 
+    suspend fun findSaveFolderUri(gameId: String): Uri? {
+        val game = dao.getGame(gameId) ?: return null
+        val root = DocumentFile.fromSingleUri(context, Uri.parse(game.documentUri)) ?: return null
+        fun find(folder: DocumentFile, depth: Int): DocumentFile? {
+            if (depth > 6) return null
+            val children = runCatching { folder.listFiles().toList() }.getOrDefault(emptyList())
+            children.firstOrNull { it.isDirectory && it.name.orEmpty().lowercase() in SAVE_FOLDER_NAMES }?.let { return it }
+            return children.asSequence().filter(DocumentFile::isDirectory).mapNotNull { find(it, depth + 1) }.firstOrNull()
+        }
+        return find(root, 0)?.uri ?: root.uri
+    }
+
     private fun removeManagedCover(value: String?) {
         value?.let(Uri::parse)?.path?.let(::File)
             ?.takeIf { it.parentFile == File(context.filesDir, "covers") }
             ?.let { runCatching { it.delete() } }
+    }
+
+    private fun deleteGameFolder(game: GameEntity) {
+        val uri = Uri.parse(game.documentUri)
+        require(uri.scheme == "content") { "La suppression physique nécessite un dossier Android SAF." }
+        val folder = DocumentFile.fromSingleUri(context, uri)
+            ?.takeIf { it.exists() && it.isDirectory } ?: error("Le dossier secondaire est introuvable.")
+        check(folder.delete()) { "Android n’a pas autorisé la suppression du dossier secondaire." }
+    }
+
+    private fun findSaveFiles(game: GameEntity): List<SaveFileDescriptor> {
+        val root = DocumentFile.fromSingleUri(context, Uri.parse(game.documentUri)) ?: return emptyList()
+        val result = mutableListOf<SaveFileDescriptor>()
+        fun walk(folder: DocumentFile, path: String, insideSaveFolder: Boolean, depth: Int) {
+            if (depth > 7 || result.size >= 1_000) return
+            folder.listFiles().forEach { child ->
+                val name = child.name.orEmpty()
+                val relative = listOf(path, name).filter(String::isNotBlank).joinToString("/")
+                val inSave = insideSaveFolder || name.lowercase() in SAVE_FOLDER_NAMES
+                if (child.isDirectory) walk(child, relative, inSave, depth + 1)
+                else if (inSave || name.substringAfterLast('.', "").lowercase() in SAVE_EXTENSIONS) {
+                    result += SaveFileDescriptor(relative, child.uri.toString(), child.length(), child.lastModified())
+                }
+            }
+        }
+        runCatching { walk(root, "", false, 0) }
+        return result
+    }
+
+    private fun migrateSaveFiles(preview: DuplicateMergePreview, strategy: SaveConflictStrategy) {
+        val primaryRoot = DocumentFile.fromSingleUri(context, Uri.parse(preview.primary.documentUri))
+            ?: error("Le dossier du jeu principal est inaccessible.")
+        preview.secondarySaves.forEach { save ->
+            val source = DocumentFile.fromSingleUri(context, Uri.parse(save.documentUri)) ?: return@forEach
+            val parts = save.relativePath.split('/').filter(String::isNotBlank)
+            if (parts.isEmpty()) return@forEach
+            var targetFolder = primaryRoot
+            parts.dropLast(1).forEach { part ->
+                targetFolder = targetFolder.findFile(part)?.takeIf { it.isDirectory }
+                    ?: targetFolder.createDirectory(part) ?: error("Impossible de créer le dossier de sauvegarde $part")
+            }
+            val originalName = parts.last()
+            val existing = targetFolder.findFile(originalName)
+            val targetName = when {
+                existing == null -> originalName
+                strategy == SaveConflictStrategy.KEEP_PRIMARY -> return@forEach
+                strategy == SaveConflictStrategy.REPLACE_WITH_SECONDARY -> originalName.also { check(existing.delete()) }
+                else -> uniqueSaveName(targetFolder, originalName, preview.secondary.title)
+            }
+            val target = targetFolder.createFile(source.type ?: "application/octet-stream", targetName)
+                ?: error("Impossible de créer $targetName dans le dossier principal.")
+            context.contentResolver.openInputStream(source.uri)?.use { input ->
+                context.contentResolver.openOutputStream(target.uri, "w")?.use(input::copyTo)
+                    ?: error("Impossible d’écrire la sauvegarde $targetName")
+            } ?: error("Impossible de lire la sauvegarde ${save.relativePath}")
+        }
+    }
+
+    private fun uniqueSaveName(folder: DocumentFile, original: String, gameTitle: String): String {
+        val extension = original.substringAfterLast('.', "").takeIf(String::isNotBlank)
+        val base = if (extension == null) original else original.removeSuffix(".$extension")
+        val suffix = gameTitle.replace(Regex("[^A-Za-z0-9]+"), "-").trim('-').take(24).ifBlank { "doublon" }
+        var candidate = "$base-astra-$suffix${extension?.let { ".$it" }.orEmpty()}"
+        var index = 2
+        while (folder.findFile(candidate) != null) {
+            candidate = "$base-astra-$suffix-$index${extension?.let { ".$it" }.orEmpty()}"
+            index++
+        }
+        return candidate
     }
 
     suspend fun toggleGameTag(gameId: String, tagId: String, selected: Boolean) {
@@ -272,6 +469,11 @@ class GameRepository(
         .replace(Regex("\\p{Mn}+"), "").lowercase()
 
     private fun String?.cleanOrNull() = this?.trim()?.ifBlank { null }
+
+    companion object {
+        private val SAVE_FOLDER_NAMES = setOf("save", "saves", "savedata", "savegames", "persistent")
+        private val SAVE_EXTENSIONS = setOf("rpgsave", "rvdata", "rvdata2", "rxdata", "save", "sav")
+    }
 }
 
 data class GameEdits(
@@ -283,3 +485,19 @@ data class GameEdits(
     val language: String?,
     val description: String?
 )
+
+data class CollectionRuleDraft(val field: String, val operator: String, val value: String)
+
+enum class SaveConflictStrategy { KEEP_PRIMARY, REPLACE_WITH_SECONDARY, KEEP_BOTH }
+
+data class SaveFileDescriptor(val relativePath: String, val documentUri: String, val size: Long, val lastModified: Long)
+
+data class DuplicateMergePreview(
+    val primary: GameEntity,
+    val secondary: GameEntity,
+    val primarySaves: List<SaveFileDescriptor>,
+    val secondarySaves: List<SaveFileDescriptor>,
+    val conflictingSaves: List<SaveFileDescriptor>
+)
+
+data class DuplicateMergeResult(val savesConsidered: Int, val saveConflicts: Int)

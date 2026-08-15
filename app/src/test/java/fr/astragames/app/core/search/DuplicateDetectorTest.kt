@@ -8,14 +8,14 @@ import org.junit.Test
 class DuplicateDetectorTest {
     @Test fun groupsIdenticalFingerprints() {
         val groups = DuplicateDetector.groups(listOf(game("1", "Alpha", "same"), game("2", "Beta", "same")))
-        assertEquals(setOf("1", "2"), groups.single().map { it.id }.toSet())
+        assertEquals(setOf("1", "2"), groups.single().games.map { it.id }.toSet())
     }
 
     @Test fun ignoresPlatformAndVersionSuffixesInTitles() {
         val groups = DuplicateDetector.groups(
             listOf(game("1", "Astra Quest v1.2 Windows", "one"), game("2", "Astra Quest 1.3 x64", "two"))
         )
-        assertEquals(2, groups.single().size)
+        assertEquals(2, groups.single().games.size)
     }
 
     @Test fun doesNotGroupDistinctGames() {

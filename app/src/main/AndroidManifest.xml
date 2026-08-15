@@ -6,6 +6,8 @@
     <queries>
         <package android:name="cyou.joiplay.joiplay" />
         <package android:name="cyou.joiplay.runtime.rpgmaker" />
+        <package android:name="cyou.joiplay.runtime.renpy" />
+        <package android:name="cyou.joiplay.runtime.renpy8" />
         <intent>
             <action android:name="cyou.joiplay.runtime.rpgmmv.run" />
         </intent>

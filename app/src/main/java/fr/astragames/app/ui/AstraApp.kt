@@ -1,8 +1,12 @@
 package fr.astragames.app.ui
 
+import androidx.compose.animation.AnimatedContentTransitionScope
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -21,6 +25,7 @@ import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.automirrored.filled.Sort
 import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material.icons.automirrored.filled.DriveFileMove
+import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -32,6 +37,10 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
 import androidx.compose.ui.text.style.TextOverflow
@@ -48,12 +57,19 @@ import fr.astragames.app.core.metadata.CoverCandidate
 import fr.astragames.app.core.model.*
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.DeletedGameEntity
+import fr.astragames.app.data.local.CollectionEntity
+import fr.astragames.app.data.local.CollectionRuleEntity
 import fr.astragames.app.data.local.GameSourceEntity
 import fr.astragames.app.data.local.LibraryFolderEntity
 import fr.astragames.app.data.local.LaunchProfileEntity
 import fr.astragames.app.data.local.TagCategoryEntity
 import fr.astragames.app.data.local.TagEntity
 import fr.astragames.app.data.repository.GameEdits
+import fr.astragames.app.data.repository.CollectionRuleDraft
+import fr.astragames.app.data.repository.DuplicateMergePreview
+import fr.astragames.app.data.repository.SaveConflictStrategy
+import fr.astragames.app.core.search.DuplicateDetector.DuplicateGroup
+import fr.astragames.app.launcher.JoiPlayRuntimeInfo
 import kotlinx.coroutines.flow.collectLatest
 import java.text.DateFormat
 import java.text.Normalizer
@@ -68,6 +84,7 @@ private enum class Destination(val route: String, val description: String, val v
 private val menuDestinations = Destination.entries.filter { it.visibleInMenu }
 private val topLevelRoutes = Destination.entries.map { it.route }.toSet()
 private val PageBottomPadding = 32.dp
+private const val PageTransitionDurationMillis = 150
 
 @Composable
 fun AstraApp(
@@ -180,8 +197,10 @@ private fun CompactNavigationRail(route: String, nav: NavHostController) {
 @Composable
 private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> Unit) {
     Surface(
-        Modifier.size(46.dp).clickable(onClick = onClick), RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent
+        onClick = onClick,
+        modifier = Modifier.size(46.dp),
+        shape = RoundedCornerShape(16.dp),
+        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
@@ -210,7 +229,22 @@ private fun AppNavHost(
     onPickSource: () -> Unit, onPickTags: () -> Unit, onPickCover: (String) -> Unit,
     onPickBackupFolder: () -> Unit, onRestoreBackup: () -> Unit, onOpenBackupFolder: () -> Unit
 ) {
-    NavHost(nav, startDestination = Destination.LIBRARY.route) {
+    NavHost(
+        navController = nav,
+        startDestination = Destination.LIBRARY.route,
+        enterTransition = {
+            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(PageTransitionDurationMillis))
+        },
+        exitTransition = {
+            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(PageTransitionDurationMillis))
+        },
+        popEnterTransition = {
+            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(PageTransitionDurationMillis))
+        },
+        popExitTransition = {
+            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(PageTransitionDurationMillis))
+        }
+    ) {
         composable(Destination.LIBRARY.route) { LibraryScreen(state, vm, { nav.navigate("game/$it") }, onPickSource) }
         composable(Destination.SEARCH.route) { SearchScreen(state, vm, { nav.navigate("game/$it") }) }
         composable(Destination.COLLECTIONS.route) { CollectionsScreen(state, vm) { nav.navigate("game/$it") } }
@@ -263,10 +297,22 @@ private fun OnboardingScreen(hasSource: Boolean, onPickSource: () -> Unit, onFin
 @Composable
 private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit, onPickSource: () -> Unit) {
     var columnsMenu by remember { mutableStateOf(false) }
+    var selectedGames by remember { mutableStateOf(emptySet<String>()) }
+    var quickGame by remember { mutableStateOf<GameEntity?>(null) }
+    var bulkFolder by remember { mutableStateOf(false) }
+    var bulkTags by remember { mutableStateOf(false) }
+    var bulkDelete by remember { mutableStateOf(false) }
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            CompactHeader("Astra Games", "${state.games.size} jeux") {
+            CompactHeader(if (selectedGames.isEmpty()) "Astra Games" else "${selectedGames.size} sélectionné(s)", if (selectedGames.isEmpty()) "${state.games.size} jeux" else null) {
+                if (selectedGames.isNotEmpty()) {
+                    IconButton(onClick = { vm.setGamesFavorite(selectedGames) }) { Icon(Icons.Default.Favorite, "Ajouter aux favoris", tint = Color.Red) }
+                    IconButton(onClick = { bulkTags = true }) { Icon(Icons.Default.Style, "Ajouter des tags") }
+                    IconButton(onClick = { bulkFolder = true }) { Icon(Icons.Default.FolderCopy, "Classer") }
+                    IconButton(onClick = { bulkDelete = true }) { Icon(Icons.Default.DeleteOutline, "Supprimer") }
+                    IconButton(onClick = { selectedGames = emptySet() }) { Icon(Icons.Default.Close, "Quitter la sélection") }
+                } else {
                 Box {
                     IconButton(onClick = { columnsMenu = true }) { Icon(Icons.Default.ViewColumn, "Nombre de colonnes") }
                     DropdownMenu(columnsMenu, { columnsMenu = false }) {
@@ -285,6 +331,7 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
                 IconButton(onClick = { vm.scanAll() }) {
                     if (state.scanning) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, "Scanner")
                 }
+                }
             }
         }
     ) { padding ->
@@ -293,15 +340,41 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
             when {
                 state.scanning && state.games.isEmpty() -> CenterMessage("Exploration de tous les sous-dossiers…", Modifier.fillMaxSize(), loading = true)
                 state.games.isEmpty() -> EmptyLibrary(onPickSource) { vm.scanAll() }
-                else -> GameCollection(state.filteredGames, state.settings.viewMode, state.settings.gridColumns, onGame, vm::toggleFavorite)
+                else -> GameCollection(
+                    state.filteredGames, state.settings.viewMode, state.settings.gridColumns,
+                    onGame = { id -> if (selectedGames.isEmpty()) onGame(id) else selectedGames = selectedGames.toggle(id) },
+                    onFavorite = vm::toggleFavorite,
+                    selected = selectedGames,
+                    onLongGame = { selectedGames = selectedGames.toggle(it) },
+                    onQuickGame = { id -> quickGame = state.games.firstOrNull { it.id == id } }
+                )
             }
         }
     }
+    quickGame?.let { game -> QuickGameActionsSheet(
+        game = game,
+        onPlay = { vm.launchGame(game.id); quickGame = null },
+        onFavorite = { vm.toggleFavorite(game.id); quickGame = null },
+        onOpen = { onGame(game.id); quickGame = null },
+        onSelect = { selectedGames = selectedGames + game.id; quickGame = null },
+        onDismiss = { quickGame = null }
+    ) }
+    if (bulkFolder) GameFolderDialog(state.folders, null, {
+        vm.setGamesFolder(selectedGames, it); selectedGames = emptySet(); bulkFolder = false
+    }, { bulkFolder = false })
+    if (bulkTags) GameTagPickerSheet(state.tags, state.tagCategories, emptySet(), {
+        vm.addTagsToGames(selectedGames, it); selectedGames = emptySet(); bulkTags = false
+    }, { bulkTags = false })
+    if (bulkDelete) ConfirmDialog(
+        "Retirer ${selectedGames.size} jeu(x) ?", "Ils seront ignorés lors des prochains scans. Aucun fichier ne sera supprimé.",
+        { vm.deleteGames(selectedGames); selectedGames = emptySet(); bulkDelete = false }, { bulkDelete = false }
+    )
 }
 
 @Composable
 private fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
     var folderMenu by remember { mutableStateOf(false) }
+    var systemFolderMenu by remember { mutableStateOf(false) }
     var sortMenu by remember { mutableStateOf(false) }
     LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         item { FilterChip(state.filters.favoritesOnly, vm::toggleFavoriteFilter, { Text("Favoris") }, leadingIcon = { Icon(Icons.Default.Star, null) }) }
@@ -330,6 +403,30 @@ private fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
         }
         item {
             Box {
+                val selected = state.systemFolders.firstOrNull { it.id == state.filters.systemFolderId }
+                FilterChip(
+                    selected = selected != null,
+                    onClick = { systemFolderMenu = true },
+                    label = { Text(selected?.label ?: "Dossiers système", maxLines = 1) },
+                    leadingIcon = { Icon(Icons.Default.FolderOpen, null) },
+                    trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }
+                )
+                DropdownMenu(systemFolderMenu, { systemFolderMenu = false }) {
+                    DropdownMenuItem(
+                        text = { Text("Tous les dossiers système") },
+                        leadingIcon = { if (state.filters.systemFolderId == null) Icon(Icons.Default.Check, null) },
+                        onClick = { vm.filterSystemFolder(null); systemFolderMenu = false }
+                    )
+                    state.systemFolders.forEach { folder -> DropdownMenuItem(
+                        text = { Text(folder.label, maxLines = 2) },
+                        leadingIcon = { if (state.filters.systemFolderId == folder.id) Icon(Icons.Default.Check, null) },
+                        onClick = { vm.filterSystemFolder(folder.id); systemFolderMenu = false }
+                    ) }
+                }
+            }
+        }
+        item {
+            Box {
                 FilterChip(false, { sortMenu = true }, { Text(state.filters.sort.label()) }, leadingIcon = { Icon(Icons.AutoMirrored.Filled.Sort, null) })
                 DropdownMenu(sortMenu, { sortMenu = false }) {
                     LibrarySort.entries.forEach { sort -> DropdownMenuItem(
@@ -343,45 +440,66 @@ private fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
         items(state.sources, key = { it.id }) { source ->
             FilterChip(state.filters.sourceId == source.id, { vm.filterSource(if (state.filters.sourceId == source.id) null else source.id) }, { Text(source.displayName, maxLines = 1) })
         }
-        if (state.filters.sourceId != null || state.filters.folderId != null || state.filters.engine != null || state.filters.favoritesOnly) item {
+        if (state.filters.sourceId != null || state.filters.folderId != null || state.filters.systemFolderId != null || state.filters.engine != null || state.filters.favoritesOnly) item {
             TextButton(onClick = vm::clearFilters) { Text("Effacer") }
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GameCollection(
     games: List<GameEntity>, viewMode: LibraryViewMode, columns: Int,
-    onGame: (String) -> Unit, onFavorite: (String) -> Unit
+    onGame: (String) -> Unit, onFavorite: (String) -> Unit,
+    selected: Set<String> = emptySet(), onLongGame: ((String) -> Unit)? = null,
+    onQuickGame: ((String) -> Unit)? = null
 ) {
     if (games.isEmpty()) { CenterMessage("Aucun jeu ne correspond aux filtres", Modifier.fillMaxSize()); return }
     if (viewMode == LibraryViewMode.GRID) {
-        LazyVerticalGrid(
-            GridCells.Fixed(columns.coerceIn(2, 4)), contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = PageBottomPadding),
-            horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
-        ) { items(games, key = { it.id }) { GameGridCard(it, onGame, onFavorite) } }
+        BoxWithConstraints {
+            val gridCells = if (maxWidth >= 600.dp) GridCells.Adaptive(180.dp) else GridCells.Fixed(columns.coerceIn(2, 4))
+            LazyVerticalGrid(
+                gridCells, contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = PageBottomPadding),
+                horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) { items(games, key = { it.id }) { GameGridCard(it, onGame, onFavorite, it.id in selected, onLongGame, onQuickGame) } }
+        }
     } else LazyColumn(contentPadding = PaddingValues(top = 6.dp, bottom = PageBottomPadding)) {
         items(games, key = { it.id }) { game ->
             ListItem(
-                modifier = Modifier.clickable { onGame(game.id) },
+                modifier = Modifier.combinedClickable(onClick = { onGame(game.id) }, onLongClick = { onLongGame?.invoke(game.id) }),
                 headlineContent = { Text(game.title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                 supportingContent = { Text(game.engine.readableEngine() + if (game.missing) " • Manquant" else "") },
-                leadingContent = { GameCover(game, Modifier.width(52.dp).aspectRatio(.72f)) },
-                trailingContent = { IconButton(onClick = { onFavorite(game.id) }) { Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", tint = if (game.favorite) Color.Red else LocalContentColor.current) } }
+                leadingContent = { if (game.id in selected) Checkbox(true, { onLongGame?.invoke(game.id) }) else GameCover(game, Modifier.width(52.dp).aspectRatio(.72f)) },
+                trailingContent = { Row {
+                    IconButton(onClick = { onFavorite(game.id) }, Modifier.size(36.dp)) {
+                        Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", Modifier.size(20.dp), tint = if (game.favorite) Color.Red else LocalContentColor.current)
+                    }
+                    if (onQuickGame != null) IconButton(onClick = { onQuickGame(game.id) }) { Icon(Icons.Default.MoreVert, "Actions rapides") }
+                } },
+                colors = ListItemDefaults.colors(containerColor = if (game.id in selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
             )
         }
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun GameGridCard(game: GameEntity, onGame: (String) -> Unit, onFavorite: (String) -> Unit) {
-    Column(Modifier.clickable { onGame(game.id) }) {
+private fun GameGridCard(
+    game: GameEntity, onGame: (String) -> Unit, onFavorite: (String) -> Unit,
+    selected: Boolean, onLongGame: ((String) -> Unit)?, onQuickGame: ((String) -> Unit)?
+) {
+    Column(Modifier.combinedClickable(onClick = { onGame(game.id) }, onLongClick = { onLongGame?.invoke(game.id) })) {
         Box {
             GameCover(game, Modifier.fillMaxWidth().aspectRatio(.72f))
+            if (selected) Surface(Modifier.matchParentSize(), RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .28f), border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary)) {}
             IconButton(
                 onClick = { onFavorite(game.id) },
-                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).background(MaterialTheme.colorScheme.surface.copy(.88f), RoundedCornerShape(50))
-            ) { Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", tint = if (game.favorite) Color.Red else LocalContentColor.current) }
+                modifier = Modifier.align(Alignment.TopEnd).padding(4.dp).size(36.dp).background(MaterialTheme.colorScheme.surface.copy(.88f), RoundedCornerShape(50))
+            ) { Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", Modifier.size(20.dp), tint = if (game.favorite) Color.Red else LocalContentColor.current) }
+            if (onQuickGame != null) IconButton(
+                onClick = { onQuickGame(game.id) },
+                modifier = Modifier.align(Alignment.BottomEnd).padding(4.dp).background(MaterialTheme.colorScheme.surface.copy(.88f), RoundedCornerShape(50))
+            ) { Icon(Icons.Default.MoreVert, "Actions rapides") }
         }
         Spacer(Modifier.height(7.dp)); Text(game.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)
         Text(game.engine.readableEngine(), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -413,6 +531,7 @@ private fun EmptyLibrary(onAdd: () -> Unit, onScan: () -> Unit) = Box(Modifier.f
 private fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit) {
     var engineMenu by remember { mutableStateOf(false) }
     var tagsMenu by remember { mutableStateOf(false) }
+    var systemFolderMenu by remember { mutableStateOf(false) }
     val availableEngines = remember(state.games) {
         state.games.mapNotNull { runCatching { GameEngine.valueOf(it.engine) }.getOrNull() }.distinct()
     }
@@ -488,6 +607,26 @@ private fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Strin
                     }
                 }
             }
+            Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
+                val selectedFolder = state.systemFolders.firstOrNull { it.id == state.filters.systemFolderId }
+                OutlinedButton(onClick = { systemFolderMenu = true }, Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(6.dp))
+                    Text(selectedFolder?.label ?: "Tous les dossiers système", Modifier.weight(1f), maxLines = 1)
+                    Icon(Icons.Default.ArrowDropDown, null)
+                }
+                DropdownMenu(systemFolderMenu, { systemFolderMenu = false }, Modifier.heightIn(max = 520.dp)) {
+                    DropdownMenuItem(
+                        text = { Text("Tous les dossiers système") },
+                        leadingIcon = { if (state.filters.systemFolderId == null) Icon(Icons.Default.Check, null) },
+                        onClick = { vm.filterSystemFolder(null); systemFolderMenu = false }
+                    )
+                    state.systemFolders.forEach { folder -> DropdownMenuItem(
+                        text = { Text(folder.label, maxLines = 2) },
+                        leadingIcon = { if (state.filters.systemFolderId == folder.id) Icon(Icons.Default.Check, null) },
+                        onClick = { vm.filterSystemFolder(folder.id); systemFolderMenu = false }
+                    ) }
+                }
+            }
             GameCollection(state.filteredGames, LibraryViewMode.LIST, state.settings.gridColumns, onGame, vm::toggleFavorite)
         }
     }
@@ -497,9 +636,13 @@ private fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Strin
 private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit) {
     var currentId by rememberSaveable { mutableStateOf<String?>(null) }
     var smartKey by rememberSaveable { mutableStateOf<String?>(null) }
+    var customCollectionId by rememberSaveable { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(false) }
     var editing by remember { mutableStateOf<LibraryFolderEntity?>(null) }
     var deleting by remember { mutableStateOf<LibraryFolderEntity?>(null) }
+    var editingCollection by remember { mutableStateOf<CollectionEntity?>(null) }
+    var collectionEditor by remember { mutableStateOf(false) }
+    var deletingCollection by remember { mutableStateOf<CollectionEntity?>(null) }
     val current = state.folders.firstOrNull { it.id == currentId }
     LaunchedEffect(currentId, state.folders) { if (currentId != null && current == null) currentId = null }
     val visibleFolders = state.folders.filter { it.parentId == currentId }
@@ -513,8 +656,10 @@ private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (
         SmartCollection("no_cover", "Sans jaquette", Icons.Default.HideImage) { it.coverUri == null }
     )
     val selectedSmart = smartCollections.firstOrNull { it.key == smartKey }
+    val selectedCustom = state.collections.firstOrNull { it.id == customCollectionId }
     val displayedGames = when {
         selectedSmart != null -> state.games.filter(selectedSmart.predicate)
+        selectedCustom != null -> state.customCollectionGames[selectedCustom.id].orEmpty()
         currentId != null -> state.games.filter { it.libraryFolderId == currentId }
         else -> emptyList()
     }
@@ -522,17 +667,18 @@ private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             CompactHeader(
-                selectedSmart?.name ?: current?.name ?: "Collections",
+                selectedSmart?.name ?: selectedCustom?.name ?: current?.name ?: "Collections",
                 subtitle = if (current != null) "${visibleFolders.size} sous-dossier(s)" else null,
                 onBack = when {
                     selectedSmart != null -> ({ smartKey = null })
+                    selectedCustom != null -> ({ customCollectionId = null })
                     current != null -> ({ currentId = current.parentId })
                     else -> null
                 }
             )
         }
     ) { padding ->
-        if (selectedSmart != null) {
+        if (selectedSmart != null || selectedCustom != null) {
             Box(Modifier.padding(padding).fillMaxSize()) {
                 GameCollection(displayedGames, state.settings.viewMode, state.settings.gridColumns, onGame, vm::toggleFavorite)
             }
@@ -548,11 +694,45 @@ private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (
                         trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
                     )
                 }
+                item {
+                    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+                        SectionTitle("Mes collections intelligentes")
+                        Spacer(Modifier.weight(1f))
+                        TextButton(
+                            onClick = { editingCollection = null; collectionEditor = true },
+                            modifier = Modifier.height(36.dp),
+                            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp)
+                        ) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(3.dp)); Text("Créer") }
+                    }
+                }
+                if (state.collections.isEmpty()) item { Text(
+                    "Créez une collection avec des règles ET/OU.",
+                    Modifier.padding(horizontal = 16.dp, vertical = 8.dp), color = MaterialTheme.colorScheme.onSurfaceVariant
+                ) }
+                items(state.collections, key = { "collection-${it.id}" }) { collection ->
+                    RoundedListItem(
+                        modifier = Modifier.clickable { customCollectionId = collection.id },
+                        headlineContent = { Text(collection.name) },
+                        supportingContent = {
+                            val rules = state.collectionRules.count { it.collectionId == collection.id }
+                            Text("${state.customCollectionGames[collection.id].orEmpty().size} jeux • $rules règle(s) ${if (collection.matchMode == "ANY") "OU" else "ET"}")
+                        },
+                        leadingContent = { Icon(Icons.Default.FilterAlt, null) },
+                        trailingContent = { Row {
+                            CompactActionButton({ editingCollection = collection; collectionEditor = true }, Icons.Default.Edit, "Modifier")
+                            CompactActionButton({ deletingCollection = collection }, Icons.Default.DeleteOutline, "Supprimer")
+                        } }
+                    )
+                }
                 item { HorizontalDivider(Modifier.padding(vertical = 8.dp)); SectionTitle("Dossiers Astra") }
             }
             item {
-                FilledTonalButton(onClick = { creating = true }, Modifier.fillMaxWidth().padding(vertical = 4.dp)) {
-                    Icon(Icons.Default.CreateNewFolder, null); Spacer(Modifier.width(8.dp)); Text("Nouveau dossier")
+                FilledTonalButton(
+                    onClick = { creating = true },
+                    modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).heightIn(min = 40.dp),
+                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
+                ) {
+                    Icon(Icons.Default.CreateNewFolder, null, Modifier.size(19.dp)); Spacer(Modifier.width(6.dp)); Text("Nouveau dossier")
                 }
             }
             items(visibleFolders, key = { it.id }) { folder ->
@@ -563,8 +743,8 @@ private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (
                     leadingContent = { Icon(Icons.Default.Folder, null) },
                     trailingContent = {
                         Row {
-                            IconButton(onClick = { editing = folder }) { Icon(Icons.Default.Edit, "Modifier") }
-                            IconButton(onClick = { deleting = folder }) { Icon(Icons.Default.Delete, "Supprimer") }
+                            CompactActionButton({ editing = folder }, Icons.Default.Edit, "Modifier")
+                            CompactActionButton({ deleting = folder }, Icons.Default.Delete, "Supprimer")
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir", Modifier.align(Alignment.CenterVertically))
                         }
                     }
@@ -590,6 +770,17 @@ private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (
         "Les jeux ne seront pas supprimés. Ses sous-dossiers remonteront au niveau actuel.",
         { vm.deleteFolder(folder); deleting = null },
         { deleting = null }
+    ) }
+    if (collectionEditor) SmartCollectionEditorDialog(
+        collection = editingCollection,
+        existingRules = editingCollection?.let { selected -> state.collectionRules.filter { it.collectionId == selected.id } }.orEmpty(),
+        state = state,
+        onSave = { id, name, mode, rules -> vm.saveCollection(id, name, mode, rules); collectionEditor = false },
+        onDismiss = { collectionEditor = false }
+    )
+    deletingCollection?.let { collection -> ConfirmDialog(
+        "Supprimer ${collection.name} ?", "Les jeux et leurs fichiers seront conservés.",
+        { vm.deleteCollection(collection.id); deletingCollection = null }, { deletingCollection = null }
     ) }
 }
 
@@ -709,6 +900,7 @@ private fun SettingsScreen(
     var sourceToDelete by remember { mutableStateOf<GameSourceEntity?>(null) }
     var showDuplicates by remember { mutableStateOf(false) }
     var showDeleted by remember { mutableStateOf(false) }
+    var showRuntimes by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Paramètres") }) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(bottom = PageBottomPadding)) {
@@ -732,7 +924,12 @@ private fun SettingsScreen(
                 items(ThemeMode.entries) { mode -> FilterChip(state.settings.themeMode == mode, { vm.setTheme(mode) }, { Text(mode.name.lowercase().replaceFirstChar(Char::uppercase)) }) }
             } }
             item { SectionTitle("JoiPlay") }
-            item { RoundedListItem(headlineContent = { Text(if (state.joiPlayInstalled) "JoiPlay détecté" else "JoiPlay non détecté") }, supportingContent = { Text("RPG Maker et plugins Ren'Py pris en charge") }, leadingContent = { Icon(Icons.Default.PlayArrow, null) }) }
+            item { RoundedListItem(
+                modifier = Modifier.clickable { showRuntimes = true },
+                headlineContent = { Text(if (state.joiPlayInstalled) "Gestionnaire de runtimes" else "JoiPlay non détecté") },
+                supportingContent = { Text("${state.runtimes.count { it.installed }}/${state.runtimes.size} composants détectés") },
+                leadingContent = { Icon(Icons.Default.Extension, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
+            ) }
             item { SectionTitle("Organisation") }
             item { RoundedListItem(
                 modifier = Modifier.clickable(onClick = onOpenTags), headlineContent = { Text("Tags et catégories") },
@@ -778,8 +975,9 @@ private fun SettingsScreen(
         { vm.removeSource(source.id); sourceToDelete = null },
         { sourceToDelete = null }
     ) }
-    if (showDuplicates) DuplicatesDialog(state.duplicateGroups) { showDuplicates = false }
+    if (showDuplicates) DuplicatesDialog(state, vm) { showDuplicates = false }
     if (showDeleted) DeletedGamesDialog(state.deletedGames, vm::restoreDeletedGame) { showDeleted = false }
+    if (showRuntimes) RuntimeManagerDialog(state.runtimes) { showRuntimes = false }
     if (confirmRestore) ConfirmDialog(
         "Restaurer une sauvegarde ?",
         "Le catalogue actuel sera remplacé par la sauvegarde sélectionnée. Les fichiers des jeux ne seront pas modifiés.",
@@ -842,7 +1040,9 @@ private fun GameDetailScreen(id: String, state: AstraUiState, vm: AstraViewModel
             }
             item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Jouer") }
-                FilledTonalButton(onClick = { vm.toggleFavorite(item.id) }) { Icon(if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", tint = if (item.favorite) Color.Red else LocalContentColor.current) }
+                FilledTonalIconButton(onClick = { vm.toggleFavorite(item.id) }, modifier = Modifier.size(40.dp)) {
+                    Icon(if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", Modifier.size(20.dp), tint = if (item.favorite) Color.Red else LocalContentColor.current)
+                }
             } }
             item {
                 Card(
@@ -893,12 +1093,16 @@ private fun GameDetailScreen(id: String, state: AstraUiState, vm: AstraViewModel
             item {
                 InfoLine("Lancements", item.playCount.toString())
                 InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
+                InfoLine("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration())
                 InfoLine("Source", item.physicalPath ?: item.documentUri)
                 item.productCode?.let { InfoLine("Code produit", it) }; item.language?.let { InfoLine("Langue", it) }; item.description?.let { InfoLine("Description", it) }
             }
             item { OutlinedButton(onClick = { pickFolder = true }, Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.FolderCopy, null); Spacer(Modifier.width(8.dp))
                 Text(state.folders.firstOrNull { it.id == item.libraryFolderId }?.name ?: "Classer dans un dossier")
+            } }
+            item { OutlinedButton(onClick = { vm.openGameSaveFolder(item.id) }, Modifier.fillMaxWidth()) {
+                Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir le dossier des sauvegardes")
             } }
             if (item.missing) item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Text("Ce jeu est introuvable. Rescannez sa source.", Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onErrorContainer)
@@ -1251,11 +1455,14 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     }
 
     ModalBottomSheet(onDismissRequest = vm::dismissGameSetup) {
-        Column(Modifier.fillMaxWidth().imePadding().padding(horizontal = 18.dp, vertical = 4.dp)) {
+        Column(
+            Modifier.fillMaxWidth().fillMaxHeight(.92f).imePadding().navigationBarsPadding()
+                .padding(horizontal = 18.dp, vertical = 4.dp)
+        ) {
             Text("Configurer ${game.title}", style = MaterialTheme.typography.titleLarge)
             Text("${state.setupQueue.size} jeu(x) restant(s)", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(10.dp))
-            LazyColumn(Modifier.heightIn(max = 520.dp), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp), contentPadding = PaddingValues(bottom = 8.dp)) {
                 item {
                     Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                         GameCover(game, Modifier.width(88.dp).aspectRatio(.72f))
@@ -1272,14 +1479,14 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
                 item { OutlinedButton(onClick = { showTags = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Style, null); Spacer(Modifier.width(6.dp)); Text("Tags (${selectedTags.size})") } }
                 item { OutlinedButton(onClick = { showF95 = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Link, null); Spacer(Modifier.width(6.dp)); Text("Importer depuis F95Zone") } }
             }
-            Row(Modifier.fillMaxWidth().padding(vertical = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                TextButton(onClick = { vm.completeGameSetup(game.id) }) { Text("Ignorer") }
+            Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Button(
                     onClick = {
                         vm.updateGame(game.id, GameEdits(title, game.originalTitle, developer, game.version, game.productCode, language, description))
                         vm.setGameTags(game.id, selectedTags); vm.completeGameSetup(game.id)
-                    }, modifier = Modifier.weight(1f), enabled = title.isNotBlank()
+                    }, modifier = Modifier.fillMaxWidth(), enabled = title.isNotBlank()
                 ) { Text(if (state.setupQueue.size == 1) "Terminer" else "Enregistrer et suivant") }
+                TextButton(onClick = { vm.completeGameSetup(game.id) }, Modifier.fillMaxWidth()) { Text("Ignorer ce jeu") }
             }
         }
     }
@@ -1513,6 +1720,11 @@ private fun CoverPickerSheet(
 
 @Composable
 private fun CoverCandidateCard(candidate: CoverCandidate, selected: Boolean = false, onClick: () -> Unit) {
+    val clipboard = LocalClipboardManager.current
+    val context = LocalContext.current
+    val coverName = candidate.matchedTitle?.takeIf(String::isNotBlank)
+        ?: runCatching { android.net.Uri.parse(candidate.imageUrl).lastPathSegment }.getOrNull()?.takeIf(String::isNotBlank)
+        ?: candidate.source.ifBlank { "Image" }
     Surface(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(14.dp),
@@ -1527,7 +1739,14 @@ private fun CoverCandidateCard(candidate: CoverCandidate, selected: Boolean = fa
                 ) { Icon(Icons.Default.Check, "Image sélectionnée", Modifier.padding(5.dp).size(18.dp), tint = MaterialTheme.colorScheme.onPrimary) }
             }
             Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(candidate.source.ifBlank { "Image" }, Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium)
+                Text(
+                    coverName,
+                    Modifier.weight(1f).clickable {
+                        clipboard.setText(AnnotatedString(coverName))
+                        android.widget.Toast.makeText(context, "Nom copié", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelMedium
+                )
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(18.dp))
             }
         }
@@ -1653,26 +1872,332 @@ private fun DeleteGameDialog(game: GameEntity, onConfirm: (Boolean) -> Unit, onD
     )
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun DuplicatesDialog(groups: List<List<GameEntity>>, onDismiss: () -> Unit) {
+private fun QuickGameActionsSheet(
+    game: GameEntity,
+    onPlay: () -> Unit,
+    onFavorite: () -> Unit,
+    onOpen: () -> Unit,
+    onSelect: () -> Unit,
+    onDismiss: () -> Unit
+) {
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Text(game.title, Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.titleLarge)
+        ListItem(modifier = Modifier.clickable(onClick = onPlay), headlineContent = { Text("Jouer") }, leadingContent = { Icon(Icons.Default.PlayArrow, null) })
+        ListItem(modifier = Modifier.clickable(onClick = onOpen), headlineContent = { Text("Ouvrir la fiche") }, leadingContent = { Icon(Icons.Default.Info, null) })
+        ListItem(
+            modifier = Modifier.clickable(onClick = onFavorite),
+            headlineContent = { Text(if (game.favorite) "Retirer des favoris" else "Ajouter aux favoris") },
+            leadingContent = { Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null, tint = if (game.favorite) Color.Red else LocalContentColor.current) }
+        )
+        ListItem(modifier = Modifier.clickable(onClick = onSelect), headlineContent = { Text("Démarrer une sélection multiple") }, leadingContent = { Icon(Icons.Default.Checklist, null) })
+        Spacer(Modifier.navigationBarsPadding().height(16.dp))
+    }
+}
+
+@Composable
+private fun SmartCollectionEditorDialog(
+    collection: CollectionEntity?,
+    existingRules: List<CollectionRuleEntity>,
+    state: AstraUiState,
+    onSave: (String?, String, String, List<CollectionRuleDraft>) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var name by remember(collection?.id) { mutableStateOf(collection?.name.orEmpty()) }
+    var mode by remember(collection?.id) { mutableStateOf(collection?.matchMode ?: "ALL") }
+    val rules = remember(collection?.id, existingRules) {
+        mutableStateListOf<CollectionRuleDraft>().apply {
+            addAll(existingRules.map { CollectionRuleDraft(it.field, it.operator, it.value) })
+        }
+    }
+    var addingRule by remember { mutableStateOf(false) }
+    var editingIndex by remember { mutableStateOf<Int?>(null) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
             Column {
-                CompactHeader("Doublons détectés", "${groups.size} groupe(s)", onBack = onDismiss)
-                if (groups.isEmpty()) CenterMessage("Aucun doublon détecté", Modifier.fillMaxSize())
+                CompactHeader(if (collection == null) "Nouvelle collection" else "Modifier la collection", onBack = onDismiss) {
+                    TextButton(onClick = { onSave(collection?.id, name, mode, rules.toList()) }, enabled = name.isNotBlank() && rules.isNotEmpty()) { Text("Enregistrer") }
+                }
+                LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    item { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Nom") }, singleLine = true) }
+                    item {
+                        Text("Correspondance", style = MaterialTheme.typography.titleSmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            FilterChip(mode == "ALL", { mode = "ALL" }, { Text("Toutes les règles (ET)") })
+                            FilterChip(mode == "ANY", { mode = "ANY" }, { Text("Au moins une (OU)") })
+                        }
+                    }
+                    item { FilledTonalButton(onClick = { editingIndex = null; addingRule = true }, Modifier.fillMaxWidth()) {
+                        Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Ajouter une règle")
+                    } }
+                    itemsIndexed(rules, key = { index, _ -> "rule-$index" }) { index, rule ->
+                        RoundedListItem(
+                            modifier = Modifier.clickable { editingIndex = index; addingRule = true },
+                            headlineContent = { Text(rule.summary(state)) },
+                            supportingContent = { Text(rule.operatorLabel()) },
+                            leadingContent = { Icon(Icons.AutoMirrored.Filled.Rule, null) },
+                            trailingContent = { IconButton(onClick = { rules.removeAt(index) }) { Icon(Icons.Default.Close, "Retirer") } }
+                        )
+                    }
+                    item { Spacer(Modifier.height(24.dp)) }
+                }
+            }
+        }
+    }
+    if (addingRule) RuleEditorDialog(
+        initial = editingIndex?.let(rules::get), state = state,
+        onSave = { rule ->
+            val index = editingIndex
+            if (index == null) rules += rule else rules[index] = rule
+            addingRule = false
+        },
+        onDismiss = { addingRule = false }
+    )
+}
+
+@Composable
+private fun RuleEditorDialog(
+    initial: CollectionRuleDraft?, state: AstraUiState,
+    onSave: (CollectionRuleDraft) -> Unit, onDismiss: () -> Unit
+) {
+    val fields = listOf("ENGINE", "TAG", "FOLDER", "FAVORITE", "COVER", "DATE_ADDED", "LAST_PLAYED", "PLAY_TIME")
+    var field by remember { mutableStateOf(initial?.field ?: "ENGINE") }
+    var operator by remember(field) { mutableStateOf(initial?.takeIf { it.field == field }?.operator ?: defaultOperator(field)) }
+    var value by remember(field) { mutableStateOf(initial?.takeIf { it.field == field }?.value ?: defaultRuleValue(field, state)) }
+    val operators = operatorsFor(field)
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Règle de collection") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                DropdownSelector("Champ", fields, field, { it.fieldLabel() }) { field = it }
+                DropdownSelector("Condition", operators, operator, { it.operatorLabelRaw() }) { operator = it }
+                when (field) {
+                    "ENGINE" -> DropdownSelector("Moteur", GameEngine.entries.map { it.name }, value, { it.readableEngine() }) { value = it }
+                    "TAG" -> DropdownSelector("Tag", state.tags.map { it.id }, value, { id -> state.tags.firstOrNull { it.id == id }?.name ?: "Tag" }) { value = it }
+                    "FOLDER" -> DropdownSelector("Dossier", state.folders.map { it.id }, value, { id -> state.folders.firstOrNull { it.id == id }?.name ?: "Dossier" }) { value = it }
+                    "FAVORITE", "COVER" -> DropdownSelector("Valeur", listOf("true", "false"), value, { if (it == "true") "Oui" else "Non" }) { value = it }
+                    "LAST_PLAYED" -> if (operator != "NEVER") OutlinedTextField(value, { value = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Nombre de jours") }, singleLine = true)
+                    "DATE_ADDED" -> OutlinedTextField(value, { value = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Nombre de jours") }, singleLine = true)
+                    "PLAY_TIME" -> OutlinedTextField(value, { value = it.filter { c -> c.isDigit() || c == '.' } }, Modifier.fillMaxWidth(), label = { Text("Durée en heures") }, singleLine = true)
+                }
+            }
+        },
+        confirmButton = { TextButton(onClick = { onSave(CollectionRuleDraft(field, operator, value)) }, enabled = operator == "NEVER" || value.isNotBlank()) { Text("Ajouter") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+    )
+}
+
+@Composable
+private fun <T> DropdownSelector(label: String, values: List<T>, selected: T, text: (T) -> String, onSelect: (T) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column {
+        Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Box {
+            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
+                Text(text(selected), Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Icon(Icons.Default.ArrowDropDown, null)
+            }
+            DropdownMenu(expanded, { expanded = false }, Modifier.heightIn(max = 360.dp)) {
+                values.forEach { value -> DropdownMenuItem(
+                    text = { Text(text(value)) },
+                    leadingIcon = { if (value == selected) Icon(Icons.Default.Check, null) },
+                    onClick = { onSelect(value); expanded = false }
+                ) }
+            }
+        }
+    }
+}
+
+private fun defaultOperator(field: String) = when (field) {
+    "DATE_ADDED", "LAST_PLAYED" -> "WITHIN_DAYS"
+    "PLAY_TIME" -> "GREATER_THAN"
+    else -> "IS"
+}
+
+private fun defaultRuleValue(field: String, state: AstraUiState) = when (field) {
+    "ENGINE" -> GameEngine.entries.first().name
+    "TAG" -> state.tags.firstOrNull()?.id.orEmpty()
+    "FOLDER" -> state.folders.firstOrNull()?.id.orEmpty()
+    "FAVORITE", "COVER" -> "true"
+    else -> "7"
+}
+
+private fun operatorsFor(field: String) = when (field) {
+    "DATE_ADDED" -> listOf("WITHIN_DAYS", "OLDER_THAN_DAYS")
+    "LAST_PLAYED" -> listOf("WITHIN_DAYS", "OLDER_THAN_DAYS", "NEVER")
+    "PLAY_TIME" -> listOf("GREATER_THAN", "LESS_THAN")
+    else -> listOf("IS", "NOT")
+}
+
+private fun String.fieldLabel() = when (this) {
+    "ENGINE" -> "Moteur"; "TAG" -> "Tag"; "FOLDER" -> "Dossier"; "FAVORITE" -> "Favori"
+    "COVER" -> "Jaquette"; "DATE_ADDED" -> "Date d’ajout"; "LAST_PLAYED" -> "Dernier lancement"; "PLAY_TIME" -> "Temps de jeu"
+    else -> this
+}
+
+private fun String.operatorLabelRaw() = when (this) {
+    "IS" -> "Est"; "NOT" -> "N’est pas"; "WITHIN_DAYS" -> "Dans les derniers jours"
+    "OLDER_THAN_DAYS" -> "Il y a plus de jours"; "NEVER" -> "Jamais lancé"
+    "GREATER_THAN" -> "Plus de"; "LESS_THAN" -> "Moins de"; else -> this
+}
+
+private fun CollectionRuleDraft.operatorLabel() = operator.operatorLabelRaw()
+
+private fun CollectionRuleDraft.summary(state: AstraUiState): String {
+    val shownValue = when (field) {
+        "ENGINE" -> value.readableEngine()
+        "TAG" -> state.tags.firstOrNull { it.id == value }?.name ?: "Tag supprimé"
+        "FOLDER" -> state.folders.firstOrNull { it.id == value }?.name ?: "Dossier supprimé"
+        "FAVORITE", "COVER" -> if (value == "true") "Oui" else "Non"
+        "PLAY_TIME" -> "$value h"
+        "LAST_PLAYED" -> if (operator == "NEVER") "Jamais" else "$value jours"
+        else -> "$value jours"
+    }
+    return "${field.fieldLabel()} • $shownValue"
+}
+
+@Composable
+private fun DuplicatesDialog(state: AstraUiState, vm: AstraViewModel, onDismiss: () -> Unit) {
+    var selectedKey by remember { mutableStateOf<String?>(null) }
+    val selectedGroup = state.duplicateGroups.firstOrNull { it.key == selectedKey }
+    var primaryId by remember(selectedKey) { mutableStateOf(selectedGroup?.games?.firstOrNull()?.id) }
+    val secondary = selectedGroup?.games?.firstOrNull { it.id != primaryId }
+    val preview by vm.duplicatePreview.collectAsStateWithLifecycle()
+    var migrateSaves by remember(selectedKey) { mutableStateOf(true) }
+    var strategy by remember(selectedKey) { mutableStateOf(SaveConflictStrategy.KEEP_BOTH) }
+    var deleteFiles by remember(selectedKey) { mutableStateOf(false) }
+    var confirmPhysical by remember { mutableStateOf(false) }
+    LaunchedEffect(primaryId, secondary?.id) {
+        if (primaryId != null && secondary != null) vm.previewDuplicateMerge(primaryId!!, secondary.id)
+    }
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
+            Column {
+                CompactHeader(
+                    selectedGroup?.let { "Comparer les doublons" } ?: "Doublons détectés",
+                    selectedGroup?.let { "Choisissez l’exemplaire principal" } ?: "${state.duplicateGroups.size} groupe(s)",
+                    onBack = if (selectedGroup != null) ({ selectedKey = null; vm.clearDuplicatePreview() }) else onDismiss
+                )
+                if (selectedGroup != null && primaryId != null && secondary != null) {
+                    DuplicateComparisonContent(
+                        group = selectedGroup, state = state, primaryId = primaryId!!, preview = preview,
+                        migrateSaves = migrateSaves, onMigrateSaves = { migrateSaves = it },
+                        strategy = strategy, onStrategy = { strategy = it }, deleteFiles = deleteFiles,
+                        onDeleteFiles = { deleteFiles = it }, onPrimary = { primaryId = it },
+                        onIgnore = { vm.ignoreDuplicateGroup(selectedGroup.key); selectedKey = null },
+                        onMerge = {
+                            if (deleteFiles) confirmPhysical = true else vm.mergeDuplicate(primaryId!!, secondary.id, migrateSaves, strategy, false) { selectedKey = null }
+                        }
+                    )
+                } else if (state.duplicateGroups.isEmpty()) CenterMessage("Aucun doublon détecté", Modifier.fillMaxSize())
                 else LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
-                    groups.forEachIndexed { index, group ->
-                        item(key = "duplicate-$index") { SectionTitle("Groupe ${index + 1}") }
-                        items(group, key = { it.id }) { game -> RoundedListItem(
-                            headlineContent = { Text(game.title) },
-                            supportingContent = { Text(game.physicalPath ?: game.documentUri, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                            leadingContent = { Icon(Icons.Default.ContentCopy, null) }
-                        ) }
+                    itemsIndexed(state.duplicateGroups, key = { _, group -> group.key }) { index, group ->
+                        RoundedListItem(
+                            modifier = Modifier.clickable { selectedKey = group.key; primaryId = group.games.first().id },
+                            headlineContent = { Text("${group.games.first().title} • ${group.games.size} exemplaires") },
+                            supportingContent = { Text(group.games.joinToString("\n") { it.physicalPath ?: it.documentUri }, maxLines = 4, overflow = TextOverflow.Ellipsis) },
+                            leadingContent = { Icon(Icons.Default.ContentCopy, null) },
+                            trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Comparer") }
+                        )
                     }
                 }
             }
         }
     }
+    if (confirmPhysical && primaryId != null && secondary != null) ConfirmDialog(
+        "Supprimer le dossier secondaire ?",
+        "Les sauvegardes sont traitées avant la suppression. Le dossier ${secondary.title} sera ensuite supprimé définitivement du téléphone.",
+        {
+            confirmPhysical = false
+            vm.mergeDuplicate(primaryId!!, secondary.id, migrateSaves, strategy, true) { selectedKey = null }
+        },
+        { confirmPhysical = false }
+    )
+}
+
+@Composable
+private fun DuplicateComparisonContent(
+    group: DuplicateGroup,
+    state: AstraUiState,
+    primaryId: String,
+    preview: DuplicateMergePreview?,
+    migrateSaves: Boolean,
+    onMigrateSaves: (Boolean) -> Unit,
+    strategy: SaveConflictStrategy,
+    onStrategy: (SaveConflictStrategy) -> Unit,
+    deleteFiles: Boolean,
+    onDeleteFiles: (Boolean) -> Unit,
+    onPrimary: (String) -> Unit,
+    onIgnore: () -> Unit,
+    onMerge: () -> Unit
+) {
+    LazyColumn(contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        item {
+            BoxWithConstraints {
+                if (maxWidth >= 700.dp) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    group.games.forEach { game -> DuplicateGameCard(game, state, game.id == primaryId, { onPrimary(game.id) }, Modifier.weight(1f)) }
+                } else LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    items(group.games, key = { it.id }) { game -> DuplicateGameCard(game, state, game.id == primaryId, { onPrimary(game.id) }, Modifier.width(290.dp)) }
+                }
+            }
+        }
+        item { Card { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Text("Sauvegardes", style = MaterialTheme.typography.titleMedium)
+            Text(
+                if (preview == null) "Recherche des sauvegardes…"
+                else "${preview.primarySaves.size} dans le jeu principal • ${preview.secondarySaves.size} à récupérer • ${preview.conflictingSaves.size} conflit(s)"
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(migrateSaves, onMigrateSaves); Text("Récupérer les sauvegardes du doublon")
+            }
+            if (migrateSaves && (preview?.conflictingSaves?.isNotEmpty() == true)) {
+                Text("En cas de même nom", style = MaterialTheme.typography.labelLarge)
+                SaveConflictStrategy.entries.forEach { choice -> FilterChip(
+                    strategy == choice, { onStrategy(choice) }, { Text(choice.label()) }, Modifier.padding(end = 6.dp)
+                ) }
+            }
+        } } }
+        item { Card { Column(Modifier.fillMaxWidth().padding(14.dp)) {
+            Text("Après la fusion", style = MaterialTheme.typography.titleMedium)
+            Row(Modifier.fillMaxWidth().clickable { onDeleteFiles(!deleteFiles) }, verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(deleteFiles, onDeleteFiles)
+                Column { Text("Supprimer le dossier secondaire"); Text(
+                    if (deleteFiles) "Suppression physique irréversible après confirmation" else "Conserver les fichiers et ignorer définitivement ce doublon",
+                    style = MaterialTheme.typography.bodySmall, color = if (deleteFiles) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
+                ) }
+            }
+        } } }
+        item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = onIgnore, Modifier.weight(1f)) { Text("Ignorer ce groupe") }
+            Button(onClick = onMerge, Modifier.weight(1f), enabled = preview != null) { Text("Fusionner") }
+        } }
+        if (group.games.size > 2) item { Text("Après cette fusion, les exemplaires restants seront reproposés un par un.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+        item { Spacer(Modifier.height(24.dp)) }
+    }
+}
+
+@Composable
+private fun DuplicateGameCard(game: GameEntity, state: AstraUiState, selected: Boolean, onSelect: () -> Unit, modifier: Modifier) {
+    Card(
+        modifier.clickable(onClick = onSelect),
+        border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
+    ) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(selected, { onSelect() }); Text(if (selected) "Exemplaire principal" else "Choisir comme principal", fontWeight = FontWeight.SemiBold) }
+        GameCover(game, Modifier.fillMaxWidth().height(150.dp))
+        Text(game.title, style = MaterialTheme.typography.titleMedium)
+        Text(game.engine.readableEngine())
+        Text(game.physicalPath ?: game.documentUri, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+        Text("${game.playCount} lancements • ${state.playStats[game.id]?.totalDurationMs.asDuration()}", style = MaterialTheme.typography.bodySmall)
+        if (game.favorite) Text("Favori", color = Color.Red)
+    } }
+}
+
+private fun SaveConflictStrategy.label() = when (this) {
+    SaveConflictStrategy.KEEP_PRIMARY -> "Garder le principal"
+    SaveConflictStrategy.REPLACE_WITH_SECONDARY -> "Remplacer"
+    SaveConflictStrategy.KEEP_BOTH -> "Conserver les deux"
 }
 
 @Composable
@@ -1688,6 +2213,39 @@ private fun DeletedGamesDialog(games: List<DeletedGameEntity>, onRestore: (Strin
                         supportingContent = { Text("Supprimé le ${game.deletedAt.asDateTime()}\n${game.physicalPath ?: game.documentUri}", maxLines = 3) },
                         leadingContent = { Icon(Icons.Default.DeleteOutline, null) },
                         trailingContent = { TextButton(onClick = { onRestore(game.id) }) { Text("Réautoriser") } }
+                    ) }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun RuntimeManagerDialog(runtimes: List<JoiPlayRuntimeInfo>, onDismiss: () -> Unit) {
+    val uriHandler = LocalUriHandler.current
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
+            Column {
+                CompactHeader("Runtimes JoiPlay", "Détection locale des composants", onBack = onDismiss)
+                LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+                    items(runtimes, key = { it.key }) { runtime -> RoundedListItem(
+                        headlineContent = { Text(runtime.name) },
+                        supportingContent = {
+                            Text(when {
+                                runtime.installed -> "Installé${runtime.versionName?.let { " • version $it" }.orEmpty()}"
+                                runtime.required -> "Requis par votre bibliothèque • non installé"
+                                else -> "Non requis actuellement • non installé"
+                            })
+                        },
+                        leadingContent = { Icon(
+                            if (runtime.installed) Icons.Default.CheckCircle else Icons.Default.Download,
+                            null, tint = if (runtime.installed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                        ) },
+                        trailingContent = { if (!runtime.installed) TextButton(onClick = { uriHandler.openUri(runtime.downloadUrl) }) { Text("Télécharger") } }
+                    ) }
+                    item { Text(
+                        "Après installation ou mise à jour d’un plugin, fermez puis rouvrez ce gestionnaire pour relancer la détection.",
+                        Modifier.padding(16.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant
                     ) }
                 }
             }
@@ -1749,6 +2307,15 @@ private fun ScanProgressOverlay(progress: ScanProgressState) {
 private fun SectionTitle(text: String) = Text(text, Modifier.padding(start = 16.dp, top = 14.dp, bottom = 5.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 
 @Composable
+private fun CompactActionButton(
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String
+) = IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
+    Icon(icon, description, Modifier.size(18.dp))
+}
+
+@Composable
 private fun RoundedListItem(
     modifier: Modifier = Modifier,
     headlineContent: @Composable () -> Unit,
@@ -1789,3 +2356,14 @@ private fun String.normalizeTagName(): String = Normalizer.normalize(trim(), Nor
     .replace(Regex("\\p{Mn}+"), "").lowercase()
 private fun String.readableEngine() = lowercase().replace('_', ' ').split(' ').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
 private fun Long.asDateTime(): String = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(this))
+
+private fun Long?.asDuration(): String {
+    val totalMinutes = ((this ?: 0L) / 60_000L).coerceAtLeast(0)
+    val hours = totalMinutes / 60
+    val minutes = totalMinutes % 60
+    return when {
+        hours > 0 -> "${hours} h ${minutes} min"
+        minutes > 0 -> "$minutes min"
+        else -> "0 min"
+    }
+}

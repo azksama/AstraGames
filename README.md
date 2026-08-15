@@ -12,22 +12,26 @@ Astra Games est une application Android native qui indexe plusieurs dossiers de 
 - fingerprint, reconnaissance de déplacement, doublons et jeux manquants ;
 - rapport détaillé et persistant après chaque scan : ajoutés, actualisés, déjà connus, déplacés, manquants, ignorés et erreurs avec chemin et raison ;
 - Room avec index FTS4, historique des scans et sessions de lancement ;
-- bibliothèque en grille réglable sur 2, 3 ou 4 colonnes ou en liste, favoris, collections intelligentes ;
+- bibliothèque en grille réglable sur 2, 3 ou 4 colonnes ou en liste, favoris, sélection multiple et actions rapides ;
 - recherche accessible par bouton flottant, avec moteur en liste et multi-tags regroupés par catégorie ;
 - création, édition, suppression, tri et classement multiple des tags par catégories ;
 - sélection rapide et groupée des tags pour chaque jeu, sans affectation globale implicite ;
 - dossiers et sous-dossiers Astra virtuels navigables, renommables et supprimables sans supprimer les jeux ;
-- filtre de bibliothèque par dossier Astra incluant automatiquement toute son arborescence ;
-- collections intelligentes cliquables : favoris, ajouts récents, jeux récemment lancés, jamais joués, manquants et sans jaquette ;
-- détection des groupes de doublons avec affichage de leurs emplacements ;
+- filtres de bibliothèque par dossier Astra et par dossier système réel, incluant automatiquement leurs sous-dossiers ;
+- collections intelligentes intégrées et personnalisables avec règles moteur, tag, dossier, favori, jaquette, dates et durée de jeu, combinables en ET/OU ;
+- résolution guidée des doublons : comparaison côte à côte, choix du principal, fusion des métadonnées et de l’historique, récupération des sauvegardes et stratégie de conflits ;
+- suivi du temps de jeu par sessions et affichage de la durée cumulée ;
+- gestionnaire de runtimes JoiPlay avec détection du lanceur et des plugins RPG Maker/Ren’Py installés ;
 - suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
 - sauvegarde et restauration ZIP du catalogue, des profils et des jaquettes, avec raccourci vers le dossier choisi ;
 - recherche de 10 jaquettes par scraping de Google Images, choix local et recadrage libre via URI Android sécurisée ;
 - import F95Zone pendant l'ajout ou l'édition : sélection des tags puis choix d'une image recadrable ;
-- assistant séquentiel de configuration des nouveaux jeux après chaque scan ;
+- assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
 - thèmes clair, sombre, système et couleurs dynamiques ;
-- navigation compacte flottante à trois entrées et glissement horizontal sur toute la page entre les écrans principaux ;
+- navigation compacte flottante à trois entrées, glissement horizontal rapide entre les écrans principaux et interface adaptée aux tablettes/pliables ;
+- Baseline Profile embarqué et module de génération Macrobenchmark pour accélérer le démarrage et les parcours principaux ;
+- copie rapide du nom d’une jaquette en touchant son libellé et raccourci vers le dossier de sauvegarde d’un jeu ;
 - payload et Intent JoiPlay sans appel à `ShortcutActivity` ;
 - diagnostic de compatibilité par jeu et profils de lancement personnalisables (moteur, dossier, fichier d'entrée, arguments ou application externe) avec test direct ;
 - scan au lancement et worker périodique prêt à être planifié ;
@@ -75,6 +79,14 @@ Le test instrumenté Room vérifie SQLite et la synchronisation de l'index FTS s
 ```powershell
 .\gradlew.bat :app:connectedDebugAndroidTest
 ```
+
+Le module Baseline Profile se compile sans lancer de test sur l’appareil :
+
+```powershell
+.\gradlew.bat :baselineprofile:assembleBenchmarkRelease :baselineprofile:assembleNonMinifiedRelease
+```
+
+La génération réelle reste volontairement explicite avec `:app:generateBaselineProfile`, car elle nécessite un appareil Android 13+ compatible ou un appareil géré dédié.
 
 ## Limites de preuve
 

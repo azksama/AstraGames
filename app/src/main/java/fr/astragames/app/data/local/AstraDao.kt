@@ -265,6 +265,63 @@ interface AstraDao {
     @Insert
     suspend fun insertPlaySession(session: PlaySessionEntity)
 
+    @Query("SELECT * FROM play_sessions WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
+    suspend fun getActivePlaySession(): PlaySessionEntity?
+
+    @Query("UPDATE play_sessions SET endedAt = :endedAt, durationMs = :durationMs WHERE id = :id")
+    suspend fun finishPlaySession(id: String, endedAt: Long, durationMs: Long)
+
+    @Query("UPDATE play_sessions SET gameId = :primaryId WHERE gameId = :secondaryId")
+    suspend fun movePlaySessions(primaryId: String, secondaryId: String)
+
+    @Query("SELECT gameId, COALESCE(SUM(durationMs), 0) AS totalDurationMs, MAX(startedAt) AS lastSessionAt FROM play_sessions WHERE endedAt IS NOT NULL GROUP BY gameId")
+    fun observePlayStats(): Flow<List<GamePlayStat>>
+
+    @Query("SELECT * FROM collections WHERE builtinKey IS NULL ORDER BY sortOrder, name COLLATE NOCASE")
+    fun observeCollections(): Flow<List<CollectionEntity>>
+
+    @Query("SELECT * FROM collection_rules ORDER BY rowid")
+    fun observeCollectionRules(): Flow<List<CollectionRuleEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCollection(collection: CollectionEntity)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertCollectionRules(rules: List<CollectionRuleEntity>)
+
+    @Query("DELETE FROM collection_rules WHERE collectionId = :collectionId")
+    suspend fun deleteCollectionRules(collectionId: String)
+
+    @Query("DELETE FROM collections WHERE id = :collectionId")
+    suspend fun deleteCollectionRaw(collectionId: String)
+
+    @Transaction
+    suspend fun replaceCollection(collection: CollectionEntity, rules: List<CollectionRuleEntity>) {
+        upsertCollection(collection)
+        deleteCollectionRules(collection.id)
+        upsertCollectionRules(rules)
+    }
+
+    @Transaction
+    suspend fun deleteCollection(collectionId: String) {
+        deleteCollectionRules(collectionId)
+        deleteCollectionRaw(collectionId)
+    }
+
+    @Query("UPDATE games SET favorite = :favorite WHERE id IN (:ids)")
+    suspend fun setGamesFavorite(ids: List<String>, favorite: Boolean)
+
+    @Query("UPDATE games SET libraryFolderId = :folderId WHERE id IN (:ids)")
+    suspend fun setGamesFolder(ids: List<String>, folderId: String?)
+
+    @Query("UPDATE games SET title = :title, originalTitle = :originalTitle, aliases = :aliases, coverUri = :coverUri, bannerUri = :bannerUri, iconUri = :iconUri, description = :description, developer = :developer, version = :version, productCode = :productCode, language = :language, releaseDate = :releaseDate, dateAdded = :dateAdded, lastPlayedAt = :lastPlayedAt, playCount = :playCount, favorite = :favorite, keywords = :keywords WHERE id = :id")
+    suspend fun updateMergedGame(
+        id: String, title: String, originalTitle: String?, aliases: String,
+        coverUri: String?, bannerUri: String?, iconUri: String?, description: String?, developer: String?,
+        version: String?, productCode: String?, language: String?, releaseDate: Long?, dateAdded: Long,
+        lastPlayedAt: Long?, playCount: Int, favorite: Boolean, keywords: String
+    )
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertScanHistory(history: ScanHistoryEntity)
 
@@ -306,4 +363,13 @@ interface AstraDao {
 
     @Query("DELETE FROM deleted_games WHERE id = :id")
     suspend fun restoreDeletedGame(id: String)
+
+    @Query("SELECT * FROM ignored_duplicate_groups")
+    fun observeIgnoredDuplicateGroups(): Flow<List<IgnoredDuplicateGroupEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun ignoreDuplicateGroup(group: IgnoredDuplicateGroupEntity)
+
+    @Query("DELETE FROM ignored_duplicate_groups WHERE groupKey = :groupKey")
+    suspend fun unignoreDuplicateGroup(groupKey: String)
 }

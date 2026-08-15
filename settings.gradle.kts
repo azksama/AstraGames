@@ -16,3 +16,4 @@ dependencyResolutionManagement {
 
 rootProject.name = "AstraGames"
 include(":app")
+include(":baselineprofile")

@@ -2,6 +2,7 @@ package fr.astragames.app.ui
 
 import android.app.Application
 import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import fr.astragames.app.AstraApplication
@@ -17,7 +18,12 @@ import fr.astragames.app.core.metadata.CoverCandidate
 import fr.astragames.app.core.metadata.F95ZoneMetadata
 import fr.astragames.app.core.search.TagMatcher
 import fr.astragames.app.core.search.DuplicateDetector
+import fr.astragames.app.core.search.DuplicateDetector.DuplicateGroup
+import fr.astragames.app.core.collections.SmartCollectionEvaluator
 import fr.astragames.app.data.local.DeletedGameEntity
+import fr.astragames.app.data.local.CollectionEntity
+import fr.astragames.app.data.local.CollectionRuleEntity
+import fr.astragames.app.data.local.GamePlayStat
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.GameSourceEntity
 import fr.astragames.app.data.local.GameTagCrossRef
@@ -26,8 +32,13 @@ import fr.astragames.app.data.local.LaunchProfileEntity
 import fr.astragames.app.data.local.TagEntity
 import fr.astragames.app.data.local.TagCategoryEntity
 import fr.astragames.app.data.repository.GameEdits
+import fr.astragames.app.data.repository.CollectionRuleDraft
+import fr.astragames.app.data.repository.DuplicateMergePreview
+import fr.astragames.app.data.repository.SaveConflictStrategy
 import fr.astragames.app.data.scanner.ScanProgressUpdate
 import fr.astragames.app.launcher.CompatibilityDiagnostic
+import fr.astragames.app.launcher.JoiPlayRuntimeInfo
+import fr.astragames.app.launcher.JoiPlayRuntimeManager
 import fr.astragames.app.settings.AstraSettings
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -45,12 +56,21 @@ data class LibraryFilters(
     val query: String = "",
     val sourceId: String? = null,
     val folderId: String? = null,
+    val systemFolderId: String? = null,
     val engine: GameEngine? = null,
     val tagIds: Set<String> = emptySet(),
     val tagMode: TagMatchMode = TagMatchMode.ALL,
     val favoritesOnly: Boolean = false,
     val missingOnly: Boolean = false,
     val sort: LibrarySort = LibrarySort.TITLE
+)
+
+data class SystemFolderFilter(
+    val id: String,
+    val sourceId: String,
+    val label: String,
+    val depth: Int,
+    val gameIds: Set<String>
 )
 
 enum class LibrarySort { TITLE, RECENTLY_ADDED, LAST_PLAYED, MOST_PLAYED }
@@ -62,8 +82,14 @@ data class AstraUiState(
     val tags: List<TagEntity> = emptyList(),
     val tagCategories: List<TagCategoryEntity> = emptyList(),
     val folders: List<LibraryFolderEntity> = emptyList(),
+    val systemFolders: List<SystemFolderFilter> = emptyList(),
     val deletedGames: List<DeletedGameEntity> = emptyList(),
-    val duplicateGroups: List<List<GameEntity>> = emptyList(),
+    val duplicateGroups: List<DuplicateGroup> = emptyList(),
+    val collections: List<CollectionEntity> = emptyList(),
+    val collectionRules: List<CollectionRuleEntity> = emptyList(),
+    val customCollectionGames: Map<String, List<GameEntity>> = emptyMap(),
+    val playStats: Map<String, GamePlayStat> = emptyMap(),
+    val runtimes: List<JoiPlayRuntimeInfo> = emptyList(),
     val settings: AstraSettings = AstraSettings(),
     val filters: LibraryFilters = LibraryFilters(),
     val scanning: Boolean = false,
@@ -126,6 +152,10 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val cropRequests = MutableSharedFlow<CropRequest>(extraBufferCapacity = 1)
     private val mutableF95Import = MutableStateFlow(F95ImportState())
     val f95Import: StateFlow<F95ImportState> = mutableF95Import
+    private val mutableDuplicatePreview = MutableStateFlow<DuplicateMergePreview?>(null)
+    val duplicatePreview: StateFlow<DuplicateMergePreview?> = mutableDuplicatePreview
+    val openFolderRequests = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
+    private val runtimeManager = JoiPlayRuntimeManager()
 
     private data class CoreData(
         val games: List<GameEntity>,
@@ -135,7 +165,11 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         val tagCategories: List<TagCategoryEntity>,
         val folders: List<LibraryFolderEntity>,
         val deletedGames: List<DeletedGameEntity>,
-        val refs: List<GameTagCrossRef>
+        val collections: List<CollectionEntity>,
+        val collectionRules: List<CollectionRuleEntity>,
+        val refs: List<GameTagCrossRef>,
+        val playStats: List<GamePlayStat>,
+        val ignoredDuplicateKeys: Set<String>
     )
 
     private val candidates = filters.map { it.query }.distinctUntilChanged().flatMapLatest { query ->
@@ -146,12 +180,29 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     private val tagData = combine(repository.tags, repository.tagCategories) { tags, categories -> tags to categories }
 
-    private val folderData = combine(repository.folders, repository.deletedGames) { folders, deleted -> folders to deleted }
+    private data class OrganizationData(
+        val folders: List<LibraryFolderEntity>, val deleted: List<DeletedGameEntity>,
+        val collections: List<CollectionEntity>, val rules: List<CollectionRuleEntity>
+    )
+    private data class ActivityData(
+        val refs: List<GameTagCrossRef>, val stats: List<GamePlayStat>, val ignored: Set<String>
+    )
+
+    private val organizationData = combine(
+        repository.folders, repository.deletedGames, repository.collections, repository.collectionRules
+    ) { folders, deleted, collections, rules -> OrganizationData(folders, deleted, collections, rules) }
+    private val activityData = combine(
+        repository.gameTagRefs(), repository.playStats, repository.ignoredDuplicateGroups
+    ) { refs, stats, ignored -> ActivityData(refs, stats, ignored.map { it.groupKey }.toSet()) }
 
     private val coreData = combine(
-        gameData, repository.sources, tagData, folderData, repository.gameTagRefs()
-    ) { games, sources, tags, folders, refs ->
-        CoreData(games.first, games.second, sources, tags.first, tags.second, folders.first, folders.second, refs)
+        gameData, repository.sources, tagData, organizationData, activityData
+    ) { games, sources, tags, organization, activity ->
+        CoreData(
+            games.first, games.second, sources, tags.first, tags.second,
+            organization.folders, organization.deleted, organization.collections, organization.rules,
+            activity.refs, activity.stats, activity.ignored
+        )
     }
 
     private val scanState = combine(scanning, scanProgress) { active, progress -> active to progress }
@@ -161,11 +212,16 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     ) { data, settings, filter, scan, setupIds ->
         val refsByGame = data.refs.groupBy { it.gameId }.mapValues { (_, refs) -> refs.map { it.tagId }.toSet() }
         val selectedFolderIds = filter.folderId?.let { rootId -> descendantFolderIds(rootId, data.folders) }
+        val systemFolders = buildSystemFolderFilters(data.games, data.sources)
+        val selectedSystemGameIds = filter.systemFolderId
+            ?.let { id -> systemFolders.firstOrNull { it.id == id }?.gameIds }
+            .orEmpty()
         val filtered = data.candidates.filter { game ->
             val gameTags = refsByGame[game.id].orEmpty()
             val tagsMatch = TagMatcher.matches(filter.tagIds, gameTags, filter.tagMode)
             (filter.sourceId == null || game.sourceId == filter.sourceId) &&
                 (selectedFolderIds == null || game.libraryFolderId in selectedFolderIds) &&
+                (filter.systemFolderId == null || game.id in selectedSystemGameIds) &&
                 (filter.engine == null || game.engine == filter.engine.name) &&
                 (!filter.favoritesOnly || game.favorite) &&
                 (!filter.missingOnly || game.missing) && tagsMatch
@@ -177,6 +233,15 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                 LibrarySort.MOST_PLAYED -> games.sortedByDescending { it.playCount }
             }
         }
+        val playStatsByGame = data.playStats.associateBy { it.gameId }
+        val customGames = data.collections.associate { collection ->
+            val rules = data.collectionRules.filter { it.collectionId == collection.id }
+            collection.id to data.games.filter { game ->
+                SmartCollectionEvaluator.matches(collection, rules, game, data.refs, data.folders, playStatsByGame[game.id])
+            }
+        }
+        val duplicateGroups = DuplicateDetector.groups(data.games).filterNot { it.key in data.ignoredDuplicateKeys }
+        val libraryEngines = data.games.mapNotNull { runCatching { GameEngine.valueOf(it.engine) }.getOrNull() }.toSet()
         AstraUiState(
             games = data.games,
             filteredGames = filtered,
@@ -184,8 +249,14 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             tags = data.tags,
             tagCategories = data.tagCategories,
             folders = data.folders,
+            systemFolders = systemFolders,
             deletedGames = data.deletedGames,
-            duplicateGroups = DuplicateDetector.groups(data.games),
+            duplicateGroups = duplicateGroups,
+            collections = data.collections,
+            collectionRules = data.collectionRules,
+            customCollectionGames = customGames,
+            playStats = playStatsByGame,
+            runtimes = runtimeManager.inspect(application, libraryEngines),
             settings = settings,
             filters = filter,
             scanning = scan.first,
@@ -203,8 +274,9 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateQuery(value: String) { filters.value = filters.value.copy(query = value) }
-    fun filterSource(id: String?) { filters.value = filters.value.copy(sourceId = id) }
+    fun filterSource(id: String?) { filters.value = filters.value.copy(sourceId = id, systemFolderId = null) }
     fun filterFolder(id: String?) { filters.value = filters.value.copy(folderId = id) }
+    fun filterSystemFolder(id: String?) { filters.value = filters.value.copy(systemFolderId = id, sourceId = null) }
     fun setSort(sort: LibrarySort) { filters.value = filters.value.copy(sort = sort) }
     fun filterEngine(engine: GameEngine?) { filters.value = filters.value.copy(engine = engine) }
     fun toggleFavoriteFilter() { filters.value = filters.value.copy(favoritesOnly = !filters.value.favoritesOnly) }
@@ -213,6 +285,54 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         filters.value = filters.value.copy(tagIds = next)
     }
     fun clearFilters() { filters.value = LibraryFilters(query = filters.value.query) }
+
+    private fun buildSystemFolderFilters(
+        games: List<GameEntity>,
+        sources: List<GameSourceEntity>
+    ): List<SystemFolderFilter> {
+        data class MutableFolder(
+            val sourceId: String,
+            val label: String,
+            val depth: Int,
+            val games: MutableSet<String> = linkedSetOf()
+        )
+
+        val folders = linkedMapOf<String, MutableFolder>()
+        sources.forEach { source ->
+            val treeId = runCatching { DocumentsContract.getTreeDocumentId(Uri.parse(source.treeUri)) }.getOrNull()
+                ?: return@forEach
+            games.asSequence().filter { it.sourceId == source.id }.forEach { game ->
+                val documentId = runCatching { DocumentsContract.getDocumentId(Uri.parse(game.documentUri)) }.getOrNull()
+                    ?: return@forEach
+                val relative = when {
+                    documentId == treeId -> ""
+                    documentId.startsWith("$treeId/") -> documentId.removePrefix("$treeId/")
+                    else -> return@forEach
+                }
+                // The last segment is the game itself. The filter lists its real parent
+                // hierarchy, which keeps large libraries usable instead of showing one
+                // menu entry per game.
+                val parentPath = relative.substringBeforeLast('/', missingDelimiterValue = "")
+                val paths = buildList {
+                    add("")
+                    var current = ""
+                    parentPath.split('/').filter(String::isNotBlank).forEach { segment ->
+                        current = listOf(current, segment).filter(String::isNotBlank).joinToString("/")
+                        add(current)
+                    }
+                }
+                paths.forEach { path ->
+                    val key = "${source.id}|$path"
+                    val decoded = path.split('/').filter(String::isNotBlank).joinToString(" / ") { Uri.decode(it) }
+                    val label = if (decoded.isBlank()) source.displayName else "${source.displayName} / $decoded"
+                    folders.getOrPut(key) { MutableFolder(source.id, label, path.count { it == '/' } + if (path.isBlank()) 0 else 1) }.games += game.id
+                }
+            }
+        }
+        return folders.map { (id, folder) ->
+            SystemFolderFilter(id, folder.sourceId, folder.label, folder.depth, folder.games)
+        }.sortedWith(compareBy<SystemFolderFilter> { sources.indexOfFirst { source -> source.id == it.sourceId } }.thenBy { it.label.lowercase() })
+    }
 
     fun addSource(uri: Uri) = viewModelScope.launch {
         runCatching { repository.addSource(uri) }
@@ -277,6 +397,53 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         repository.setGameFolder(id, folderId)
         events.emit(UiEvent.Message("Dossier du jeu mis à jour"))
     }
+    fun setGamesFolder(ids: Set<String>, folderId: String?) = viewModelScope.launch {
+        repository.setGamesFolder(ids, folderId)
+        events.emit(UiEvent.Message("${ids.size} jeu(x) classé(s)"))
+    }
+    fun setGamesFavorite(ids: Set<String>, favorite: Boolean = true) = viewModelScope.launch {
+        repository.setGamesFavorite(ids, favorite)
+        events.emit(UiEvent.Message("${ids.size} jeu(x) mis à jour"))
+    }
+    fun addTagsToGames(ids: Set<String>, tagIds: Set<String>) = viewModelScope.launch {
+        repository.addTagsToGames(ids, tagIds)
+        events.emit(UiEvent.Message("Tags ajoutés à ${ids.size} jeu(x)"))
+    }
+    fun deleteGames(ids: Set<String>) = viewModelScope.launch {
+        ids.forEach { repository.deleteGame(it, deleteAssociatedFiles = false) }
+        events.emit(UiEvent.Message("${ids.size} jeu(x) retiré(s) de la bibliothèque"))
+    }
+    fun saveCollection(id: String?, name: String, matchMode: String, rules: List<CollectionRuleDraft>) = viewModelScope.launch {
+        runCatching { repository.createOrUpdateCollection(id, name, matchMode, rules) }
+            .onSuccess { events.emit(UiEvent.Message("Collection intelligente enregistrée")) }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Collection invalide")) }
+    }
+    fun deleteCollection(id: String) = viewModelScope.launch {
+        repository.deleteCollection(id)
+        events.emit(UiEvent.Message("Collection supprimée"))
+    }
+    fun ignoreDuplicateGroup(key: String) = viewModelScope.launch {
+        repository.ignoreDuplicateGroup(key)
+        events.emit(UiEvent.Message("Ce groupe de doublons sera désormais ignoré"))
+    }
+    fun previewDuplicateMerge(primaryId: String, secondaryId: String) = viewModelScope.launch {
+        runCatching { repository.previewDuplicateMerge(primaryId, secondaryId) }
+            .onSuccess { mutableDuplicatePreview.value = it }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Comparaison impossible")) }
+    }
+    fun clearDuplicatePreview() { mutableDuplicatePreview.value = null }
+    fun mergeDuplicate(
+        primaryId: String, secondaryId: String, migrateSaves: Boolean,
+        strategy: SaveConflictStrategy, deleteSecondaryFiles: Boolean, onDone: () -> Unit
+    ) = viewModelScope.launch {
+        runCatching { repository.mergeDuplicate(primaryId, secondaryId, migrateSaves, strategy, deleteSecondaryFiles) }
+            .onSuccess { result ->
+                mutableDuplicatePreview.value = null
+                onDone()
+                events.emit(UiEvent.Message("Doublon fusionné • ${result.savesConsidered} sauvegarde(s) analysée(s)"))
+            }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Fusion impossible")) }
+    }
     fun deleteGame(id: String, deleteFiles: Boolean, onDeleted: () -> Unit = {}) = viewModelScope.launch {
         runCatching { repository.deleteGame(id, deleteFiles) }
             .onSuccess {
@@ -288,6 +455,11 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun restoreDeletedGame(id: String) = viewModelScope.launch {
         repository.restoreDeletedGame(id)
         events.emit(UiEvent.Message("Jeu réautorisé. Relancez le scan de sa source."))
+    }
+    fun openGameSaveFolder(id: String) = viewModelScope.launch {
+        val uri = repository.findSaveFolderUri(id)
+        if (uri == null) events.emit(UiEvent.Message("Aucun dossier de sauvegarde détecté"))
+        else openFolderRequests.emit(uri)
     }
     fun game(id: String) = repository.game(id)
     fun gameTags(id: String) = repository.gameTags(id)
@@ -489,10 +661,15 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             return@launch
         }
         when (val result = app.container.launcher.launch(getApplication(), game, profile)) {
-            LaunchResult.Success -> repository.recordLaunch(id)
+            LaunchResult.Success -> {
+                repository.recordLaunch(id)
+                repository.startPlaySession(id)
+            }
             is LaunchResult.Failure -> events.emit(UiEvent.Message(result.message))
         }
     }
+
+    fun finishActivePlaySession() = viewModelScope.launch { repository.finishActivePlaySession() }
 
     private fun descendantFolderIds(rootId: String, folders: List<LibraryFolderEntity>): Set<String> {
         val result = mutableSetOf(rootId)
