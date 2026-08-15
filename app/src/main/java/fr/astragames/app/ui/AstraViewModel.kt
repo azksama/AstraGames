@@ -483,6 +483,11 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         repository.setGameTags(gameId, tagIds)
         events.emit(UiEvent.Message("Tags enregistrés"))
     }
+    fun importTextTags(gameId: String, text: String) = viewModelScope.launch {
+        if (text.isBlank()) return@launch
+        val count = repository.importTextTags(gameId, text)
+        events.emit(UiEvent.Message("$count tag(s) associé(s) au jeu"))
+    }
     fun createTag(name: String, categoryName: String?) = viewModelScope.launch {
         if (repository.createTag(name, categoryName)) events.emit(UiEvent.Message("Tag créé"))
     }
@@ -508,9 +513,17 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun moveTagCategory(id: String, direction: Int) = viewModelScope.launch {
         repository.moveTagCategory(id, direction)
     }
-    fun updateGame(gameId: String, edits: GameEdits) = viewModelScope.launch {
+    fun updateGame(gameId: String, edits: GameEdits, textTags: String = "") = viewModelScope.launch {
         repository.updateGame(gameId, edits)
+        if (textTags.isNotBlank()) repository.importTextTags(gameId, textTags)
         events.emit(UiEvent.Message("Jeu mis à jour"))
+    }
+    fun configureScannedGame(gameId: String, edits: GameEdits, selectedTags: Set<String>, textTags: String) = viewModelScope.launch {
+        repository.updateGame(gameId, edits)
+        repository.setGameTags(gameId, selectedTags)
+        if (textTags.isNotBlank()) repository.importTextTags(gameId, textTags)
+        completeGameSetup(gameId)
+        events.emit(UiEvent.Message("Jeu configuré"))
     }
     fun setCover(gameId: String, uri: Uri) = viewModelScope.launch {
         runCatching { repository.setCover(gameId, uri) }
@@ -544,6 +557,15 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                     loading = false, error = error.message ?: "La recherche Google a échoué."
                 )
             }
+    }
+
+    fun prepareCoverPicker(gameId: String) = viewModelScope.launch {
+        val game = repository.getGame(gameId) ?: return@launch
+        mutableCoverSearch.value = CoverSearchState(
+            gameId = gameId,
+            configured = app.container.covers.configured,
+            browserUrl = app.container.covers.searchUrl(game)
+        )
     }
 
     fun chooseRemoteCover(gameId: String, candidate: CoverCandidate) = viewModelScope.launch {

@@ -22,6 +22,7 @@ import fr.astragames.app.data.scanner.ScanProgressUpdate
 import fr.astragames.app.core.model.ScanReport
 import fr.astragames.app.core.model.ScanReportItem
 import fr.astragames.app.core.model.ScanReportItemStatus
+import fr.astragames.app.core.search.parseTextTagList
 import kotlinx.coroutines.flow.Flow
 import java.text.Normalizer
 import java.io.File
@@ -421,10 +422,15 @@ class GameRepository(
 
     suspend fun importF95Tags(gameId: String, tagNames: Collection<String>): Int {
         val categoryName = "F95Zone"
-        val selectedNames = tagNames.map(String::trim)
-            .filter(String::isNotBlank)
-            .distinctBy(::normalize)
-        if (selectedNames.isNotEmpty() && dao.getTagCategories().none { normalize(it.name) == normalize(categoryName) }) {
+        return associateTagNames(gameId, tagNames, categoryName)
+    }
+
+    suspend fun importTextTags(gameId: String, raw: String): Int =
+        associateTagNames(gameId, parseTextTagList(raw), categoryName = null)
+
+    private suspend fun associateTagNames(gameId: String, tagNames: Collection<String>, categoryName: String?): Int {
+        val selectedNames = tagNames.map(String::trim).filter(String::isNotBlank).distinctBy(::normalize)
+        if (categoryName != null && selectedNames.isNotEmpty() && dao.getTagCategories().none { normalize(it.name) == normalize(categoryName) }) {
             createTagCategory(categoryName)
         }
         val known = dao.getTags().associateBy { it.normalizedName }.toMutableMap()

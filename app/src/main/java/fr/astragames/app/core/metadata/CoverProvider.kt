@@ -43,7 +43,7 @@ class GoogleCoverProvider(
     fun searchUrl(game: GameEntity): String {
         val engine = game.engine.lowercase().replace('_', ' ')
         val query = "${game.title} $engine game"
-        return "https://www.google.com/search?udm=2&safe=active&hl=fr&q=${encoded(query)}"
+        return "https://www.google.com/search?udm=2&safe=off&hl=fr&q=${encoded(query)}"
     }
 
     override suspend fun search(game: GameEntity): List<CoverCandidate> = withContext(Dispatchers.IO) {

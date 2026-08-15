@@ -1,7 +1,6 @@
 package fr.astragames.app.ui
 
 import android.annotation.SuppressLint
-import android.webkit.JavascriptInterface
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -316,7 +315,7 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            CompactHeader(if (selectedGames.isEmpty()) "Astra Games" else "${selectedGames.size} sélectionné(s)", if (selectedGames.isEmpty()) "${state.games.size} jeux" else null) {
+            CompactHeader(if (selectedGames.isEmpty()) "Astra" else "${selectedGames.size} sélectionné(s)", if (selectedGames.isEmpty()) "${state.games.size} jeux" else null) {
                 if (selectedGames.isNotEmpty()) {
                     IconButton(onClick = { vm.setGamesFavorite(selectedGames) }) { Icon(Icons.Default.Favorite, "Ajouter aux favoris", tint = Color.Red) }
                     IconButton(onClick = { bulkTags = true }) { Icon(Icons.Default.Style, "Ajouter des tags") }
@@ -1127,7 +1126,7 @@ private fun GameDetailScreen(
             item {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedButton(
-                        onClick = { pickCover = true; vm.searchCovers(item.id) },
+                        onClick = { pickCover = true; vm.prepareCoverPicker(item.id) },
                         modifier = Modifier.weight(1f)
                     ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text("Changer la jaquette") }
                     if (item.coverUri != null) OutlinedButton(
@@ -1175,7 +1174,7 @@ private fun GameDetailScreen(
             } }
         }
     }
-    if (item != null && edit) EditGameDialog(item, { vm.updateGame(item.id, it); edit = false }, {
+    if (item != null && edit) EditGameDialog(item, { edits, textTags -> vm.updateGame(item.id, edits, textTags); edit = false }, {
         edit = false; importF95 = true
     }, { edit = false })
     if (item != null && pickTags) GameTagPickerSheet(state.tags, state.tagCategories, assignedTags.map { it.id }.toSet(), {
@@ -1183,7 +1182,7 @@ private fun GameDetailScreen(
     }, { pickTags = false })
     if (item != null && pickCover) CoverPickerSheet(item, coverState, { vm.chooseRemoteCover(item.id, it) }, {
         onPickCover(item.id); pickCover = false
-    }, { vm.removeCover(item.id); pickCover = false }, { vm.searchCovers(item.id) }, { pickCover = false; vm.clearCoverSearch() })
+    }, { vm.removeCover(item.id); pickCover = false }, { pickCover = false; vm.clearCoverSearch() })
     if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, { vm.fetchF95Metadata(item.id, it) }, {
         vm.searchF95Threads(item.id, item.title)
     }, { tags, image ->
@@ -1512,6 +1511,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     var developer by remember(game.id) { mutableStateOf(game.developer.orEmpty()) }
     var version by remember(game.id) { mutableStateOf(game.version.orEmpty()) }
     var language by remember(game.id) { mutableStateOf(game.language.orEmpty()) }
+    var textTags by remember(game.id) { mutableStateOf("") }
     var selectedTags by remember(game.id, assigned) { mutableStateOf(assigned.map { it.id }.toSet()) }
     var showTags by remember { mutableStateOf(false) }
     var showCover by remember { mutableStateOf(false) }
@@ -1537,7 +1537,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
                         GameCover(game, Modifier.width(88.dp).aspectRatio(.72f))
                         Column {
                             AssistChip(onClick = {}, label = { Text(game.engine.readableEngine()) })
-                            TextButton(onClick = { showCover = true; vm.searchCovers(game.id) }) { Icon(Icons.Default.ImageSearch, null); Text("Jaquette") }
+                            TextButton(onClick = { showCover = true; vm.prepareCoverPicker(game.id) }) { Icon(Icons.Default.ImageSearch, null); Text("Jaquette") }
                         }
                     }
                 }
@@ -1546,14 +1546,19 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
                 item { EditField(version, { version = it }, "Version") }
                 item { EditField(language, { language = it }, "Langue") }
                 item { EditField(description, { description = it }, "Description", false) }
+                item { TextTagInput(textTags, { textTags = it }) }
                 item { OutlinedButton(onClick = { showTags = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Style, null); Spacer(Modifier.width(6.dp)); Text("Tags (${selectedTags.size})") } }
                 item { OutlinedButton(onClick = { showF95 = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Link, null); Spacer(Modifier.width(6.dp)); Text("Importer depuis F95Zone") } }
             }
             Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Button(
                     onClick = {
-                        vm.updateGame(game.id, GameEdits(title, game.originalTitle, developer, version, game.productCode, language, description, game.f95Url))
-                        vm.setGameTags(game.id, selectedTags); vm.completeGameSetup(game.id)
+                        vm.configureScannedGame(
+                            game.id,
+                            GameEdits(title, game.originalTitle, developer, version, game.productCode, language, description, game.f95Url),
+                            selectedTags,
+                            textTags
+                        )
                     }, modifier = Modifier.fillMaxWidth(), enabled = title.isNotBlank()
                 ) { Text(if (state.setupQueue.size == 1) "Terminer" else "Enregistrer et suivant") }
                 TextButton(onClick = { vm.completeGameSetup(game.id) }, Modifier.fillMaxWidth()) { Text("Ignorer ce jeu") }
@@ -1563,7 +1568,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     if (showTags) GameTagPickerSheet(state.tags, state.tagCategories, selectedTags, { selectedTags = it; showTags = false }, { showTags = false })
     if (showCover) CoverPickerSheet(game, coverState, { vm.chooseRemoteCover(game.id, it) }, {
         onPickCover(game.id); showCover = false
-    }, { vm.removeCover(game.id); showCover = false }, { vm.searchCovers(game.id) }, { showCover = false; vm.clearCoverSearch() })
+    }, { vm.removeCover(game.id); showCover = false }, { showCover = false; vm.clearCoverSearch() })
     if (showF95) F95ImportSheet(game, state.tags, f95State, { vm.fetchF95Metadata(game.id, it) }, {
         vm.searchF95Threads(game.id, game.title)
     }, { tags, image ->
@@ -1575,12 +1580,13 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
 }
 
 @Composable
-private fun EditGameDialog(game: GameEntity, onSave: (GameEdits) -> Unit, onF95: () -> Unit, onDismiss: () -> Unit) {
+private fun EditGameDialog(game: GameEntity, onSave: (GameEdits, String) -> Unit, onF95: () -> Unit, onDismiss: () -> Unit) {
     var title by remember(game) { mutableStateOf(game.title) }; var original by remember(game) { mutableStateOf(game.originalTitle.orEmpty()) }
     var developer by remember(game) { mutableStateOf(game.developer.orEmpty()) }; var version by remember(game) { mutableStateOf(game.version.orEmpty()) }
     var code by remember(game) { mutableStateOf(game.productCode.orEmpty()) }; var language by remember(game) { mutableStateOf(game.language.orEmpty()) }
     var description by remember(game) { mutableStateOf(game.description.orEmpty()) }
     var f95Url by remember(game) { mutableStateOf(game.f95Url.orEmpty()) }
+    var textTags by remember(game) { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("Modifier le jeu") },
         text = { LazyColumn(Modifier.heightIn(max = 520.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -1590,8 +1596,9 @@ private fun EditGameDialog(game: GameEntity, onSave: (GameEdits) -> Unit, onF95:
             item { EditField(code, { code = it }, "Code produit") }; item { EditField(language, { language = it }, "Langue") }
             item { EditField(f95Url, { f95Url = it }, "Lien F95Zone") }
             item { EditField(description, { description = it }, "Description", false) }
+            item { TextTagInput(textTags, { textTags = it }) }
         } },
-        confirmButton = { TextButton(onClick = { onSave(GameEdits(title, original, developer, version, code, language, description, f95Url)) }, enabled = title.isNotBlank()) { Text("Enregistrer") } },
+        confirmButton = { TextButton(onClick = { onSave(GameEdits(title, original, developer, version, code, language, description, f95Url), textTags) }, enabled = title.isNotBlank()) { Text("Enregistrer") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
     )
 }
@@ -1600,6 +1607,19 @@ private fun EditGameDialog(game: GameEntity, onSave: (GameEdits) -> Unit, onF95:
 private fun EditField(value: String, onChange: (String) -> Unit, label: String, singleLine: Boolean = true) = OutlinedTextField(
     value, onChange, Modifier.fillMaxWidth(), label = { Text(label) }, singleLine = singleLine,
     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.Sentences)
+)
+
+@Composable
+private fun TextTagInput(value: String, onChange: (String) -> Unit) = OutlinedTextField(
+    value = value,
+    onValueChange = onChange,
+    modifier = Modifier.fillMaxWidth(),
+    label = { Text("Ajouter des tags") },
+    placeholder = { Text("female protagonist, adventure, fantasy") },
+    supportingText = { Text("Séparez-les par des virgules ou écrivez [tag] [tag]. Les tags existants seront réutilisés.") },
+    minLines = 2,
+    maxLines = 4,
+    keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None)
 )
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1788,7 +1808,7 @@ private fun F95ImportSheet(
 @Composable
 private fun CoverPickerSheet(
     game: GameEntity, state: CoverSearchState, onCandidate: (CoverCandidate) -> Unit,
-    onLocal: () -> Unit, onRemove: () -> Unit, onRetry: () -> Unit, onDismiss: () -> Unit
+    onLocal: () -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit
 ) {
     var showGoogleBrowser by remember { mutableStateOf(false) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
@@ -1798,19 +1818,19 @@ private fun CoverPickerSheet(
                 OutlinedButton(onClick = onLocal, Modifier.weight(1f)) { Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text("Image locale") }
                 if (game.coverUri != null) TextButton(onClick = onRemove) { Text("Supprimer") }
             }
+            Button(
+                onClick = { showGoogleBrowser = true },
+                enabled = state.browserUrl != null && !state.downloading,
+                modifier = Modifier.fillMaxWidth()
+            ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text("Google Images") }
             when {
-                state.loading || state.downloading -> CenterMessage(if (state.downloading) "Préparation du recadrage…" else "Recherche Google…", Modifier.height(320.dp), true)
-                state.error != null -> Box(Modifier.fillMaxWidth().height(260.dp), contentAlignment = Alignment.Center) {
+                state.downloading -> CenterMessage("Préparation du recadrage…", Modifier.height(220.dp), true)
+                state.error != null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(state.error, color = MaterialTheme.colorScheme.error)
-                        if (state.configured) TextButton(onClick = onRetry) { Text("Réessayer") }
-                        state.browserUrl?.let { TextButton(onClick = { showGoogleBrowser = true }) { Text("Ouvrir Google Images") } }
                     }
                 }
-                else -> LazyVerticalGrid(
-                    GridCells.Fixed(2), Modifier.fillMaxWidth().height(430.dp), contentPadding = PaddingValues(bottom = 18.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) { items(state.results, key = { it.imageUrl }) { candidate -> CoverCandidateCard(candidate) { onCandidate(candidate) } } }
+                else -> Spacer(Modifier.navigationBarsPadding().height(18.dp))
             }
         }
     }
@@ -1821,32 +1841,41 @@ private fun CoverPickerSheet(
     )
 }
 
-private class GoogleImageBridge(private val onSelected: (String, String?) -> Unit) {
-    @JavascriptInterface
-    fun select(encodedUrl: String, encodedTitle: String) {
-        val url = android.net.Uri.decode(encodedUrl)
-        val title = android.net.Uri.decode(encodedTitle).ifBlank { null }
-        android.os.Handler(android.os.Looper.getMainLooper()).post { onSelected(url, title) }
-    }
-}
-
-@SuppressLint("SetJavaScriptEnabled", "JavascriptInterface")
+@SuppressLint("SetJavaScriptEnabled")
 @Composable
 private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandidate) -> Unit, onDismiss: () -> Unit) {
     var webView by remember { mutableStateOf<WebView?>(null) }
+    var contextImageUrl by remember { mutableStateOf<String?>(null) }
+    var selectionError by remember { mutableStateOf<String?>(null) }
     val latestCandidate by rememberUpdatedState(onCandidate)
-    val bridge = remember(searchUrl) {
-        GoogleImageBridge { url, title ->
-            if (url.startsWith("https://")) latestCandidate(
-                CoverCandidate(
-                    imageUrl = url,
-                    thumbnailUrl = url,
-                    source = android.net.Uri.parse(url).host?.removePrefix("www.").orEmpty(),
-                    contextUrl = searchUrl,
-                    matchedTitle = title,
-                    confidence = 1f
-                )
+    val uriHandler = LocalUriHandler.current
+    fun useImage(url: String, title: String? = null) {
+        if (!url.startsWith("https://")) {
+            selectionError = "Cette image ne possède pas d’adresse HTTPS exploitable."
+            return
+        }
+        latestCandidate(
+            CoverCandidate(
+                imageUrl = url,
+                thumbnailUrl = url,
+                source = android.net.Uri.parse(url).host?.removePrefix("www.").orEmpty(),
+                contextUrl = searchUrl,
+                matchedTitle = title,
+                confidence = 1f
             )
+        )
+    }
+    fun useDisplayedImage() {
+        val target = webView ?: return
+        selectionError = null
+        target.evaluateJavascript(GOOGLE_IMAGE_SELECTION_SCRIPT) { rawResult ->
+            val payload = runCatching {
+                val jsonText = org.json.JSONTokener(rawResult).nextValue() as? String
+                jsonText?.takeIf(String::isNotBlank)?.let { org.json.JSONObject(it) }
+            }.getOrNull()
+            val url = payload?.optString("url").orEmpty()
+            if (url.isBlank()) selectionError = "Touchez d’abord une image pour afficher son aperçu."
+            else useImage(url, payload?.optString("title")?.ifBlank { null })
         }
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
@@ -1859,12 +1888,19 @@ private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.loadsImagesAutomatically = true
-                            addJavascriptInterface(bridge, "AstraImage")
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                                     val host = request.url.host.orEmpty().lowercase()
                                     return host != "google.com" && !host.endsWith(".google.com")
                                 }
+                            }
+                            setOnLongClickListener {
+                                val hit = hitTestResult
+                                val imageUrl = hit.extra?.takeIf { it.startsWith("https://") }
+                                if (imageUrl != null && hit.type in setOf(WebView.HitTestResult.IMAGE_TYPE, WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)) {
+                                    contextImageUrl = imageUrl
+                                    true
+                                } else false
                             }
                             loadUrl(searchUrl)
                             webView = this
@@ -1874,13 +1910,33 @@ private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
                     modifier = Modifier.weight(1f).fillMaxWidth()
                 )
                 Button(
-                    onClick = { webView?.evaluateJavascript(GOOGLE_IMAGE_SELECTION_SCRIPT, null) },
+                    onClick = ::useDisplayedImage,
                     modifier = Modifier.fillMaxWidth().padding(12.dp)
                 ) { Icon(Icons.Default.Crop, null); Spacer(Modifier.width(8.dp)); Text("Utiliser l’image affichée") }
+                selectionError?.let { Text(
+                    it, color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                ) }
             }
         }
     }
-    DisposableEffect(Unit) { onDispose { webView?.removeJavascriptInterface("AstraImage"); webView?.destroy() } }
+    contextImageUrl?.let { imageUrl ->
+        AlertDialog(
+            onDismissRequest = { contextImageUrl = null },
+            title = { Text("Image") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Choisissez l’action à effectuer avec cette image.")
+                    OutlinedButton(onClick = { uriHandler.openUri(imageUrl); contextImageUrl = null }, Modifier.fillMaxWidth()) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir directement l’image")
+                    }
+                }
+            },
+            confirmButton = { TextButton(onClick = { contextImageUrl = null; useImage(imageUrl) }) { Text("Utiliser cette image") } },
+            dismissButton = { TextButton(onClick = { contextImageUrl = null }) { Text("Annuler") } }
+        )
+    }
+    DisposableEffect(Unit) { onDispose { webView?.destroy() } }
 }
 
 private val GOOGLE_IMAGE_SELECTION_SCRIPT = """
@@ -1899,9 +1955,13 @@ private val GOOGLE_IMAGE_SELECTION_SCRIPT = """
         });
       });
       const valid = candidates.filter(function(item) { return item.url && item.url.indexOf('https://') === 0; });
-      const originals = valid.filter(function(item) { return item.url.indexOf('google.') < 0 && item.url.indexOf('gstatic.') < 0; });
-      const best = (originals.length ? originals : valid).sort(function(a, b) { return b.score - a.score; })[0];
-      if (best) AstraImage.select(encodeURIComponent(best.url), encodeURIComponent(best.title || ''));
+      const ranked = valid.sort(function(a, b) { return b.score - a.score; });
+      const top = ranked[0];
+      const bestOriginal = top && ranked.find(function(item) {
+        return item.score >= top.score * 0.9 && item.url.indexOf('google.') < 0 && item.url.indexOf('gstatic.') < 0;
+      });
+      const best = bestOriginal || top;
+      return best ? JSON.stringify({url: best.url, title: best.title || ''}) : '';
     })();
 """.trimIndent()
 
@@ -2162,7 +2222,7 @@ private fun RuleEditorDialog(
                 DropdownSelector("Condition", operators, operator, { it.operatorLabelRaw() }) { operator = it }
                 when (field) {
                     "ENGINE" -> DropdownSelector("Moteur", GameEngine.entries.map { it.name }, value, { it.readableEngine() }) { value = it }
-                    "TAG" -> DropdownSelector("Tag", state.tags.map { it.id }, value, { id -> state.tags.firstOrNull { it.id == id }?.name ?: "Tag" }) { value = it }
+                    "TAG" -> SearchableTagSelector(state.tags, value) { value = it }
                     "FOLDER" -> DropdownSelector("Dossier", state.folders.map { it.id }, value, { id -> state.folders.firstOrNull { it.id == id }?.name ?: "Dossier" }) { value = it }
                     "FAVORITE", "COVER" -> DropdownSelector("Valeur", listOf("true", "false"), value, { if (it == "true") "Oui" else "Non" }) { value = it }
                     "LAST_PLAYED" -> if (operator != "NEVER") OutlinedTextField(value, { value = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Nombre de jours") }, singleLine = true)
@@ -2174,6 +2234,40 @@ private fun RuleEditorDialog(
         confirmButton = { TextButton(onClick = { onSave(CollectionRuleDraft(field, operator, value)) }, enabled = operator == "NEVER" || value.isNotBlank()) { Text("Ajouter") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
     )
+}
+
+@Composable
+private fun SearchableTagSelector(tags: List<TagEntity>, selectedId: String, onSelect: (String) -> Unit) {
+    var query by remember { mutableStateOf("") }
+    val sortedTags = remember(tags, query) {
+        val collator = java.text.Collator.getInstance(java.util.Locale.FRENCH)
+        tags.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
+            .sortedWith { first, second -> collator.compare(first.name, second.name) }
+    }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        OutlinedTextField(
+            value = query,
+            onValueChange = { query = it },
+            modifier = Modifier.fillMaxWidth(),
+            label = { Text("Rechercher un tag") },
+            leadingIcon = { Icon(Icons.Default.Search, null) },
+            singleLine = true
+        )
+        if (sortedTags.isEmpty()) Text("Aucun tag trouvé", color = MaterialTheme.colorScheme.onSurfaceVariant)
+        else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            items(sortedTags, key = { it.id }) { tag ->
+                ListItem(
+                    modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable { onSelect(tag.id) },
+                    headlineContent = { Text(tag.name) },
+                    supportingContent = tag.groupName?.let { category -> @Composable { Text(category) } },
+                    leadingContent = { RadioButton(selected = tag.id == selectedId, onClick = { onSelect(tag.id) }) },
+                    colors = ListItemDefaults.colors(
+                        containerColor = if (tag.id == selectedId) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
+                    )
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -2205,7 +2299,9 @@ private fun defaultOperator(field: String) = when (field) {
 
 private fun defaultRuleValue(field: String, state: AstraUiState) = when (field) {
     "ENGINE" -> GameEngine.entries.first().name
-    "TAG" -> state.tags.firstOrNull()?.id.orEmpty()
+    "TAG" -> state.tags.minWithOrNull { first, second ->
+        java.text.Collator.getInstance(java.util.Locale.FRENCH).compare(first.name, second.name)
+    }?.id.orEmpty()
     "FOLDER" -> state.folders.firstOrNull()?.id.orEmpty()
     "FAVORITE", "COVER" -> "true"
     else -> "7"
