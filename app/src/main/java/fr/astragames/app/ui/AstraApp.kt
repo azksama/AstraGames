@@ -14,6 +14,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.ExperimentalFoundationApi
@@ -260,7 +261,7 @@ private fun CompactNavigationRail(route: String, nav: NavHostController, badgeCo
 @Composable
 private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> Unit, badge: Int = 0) {
     Box(
-        Modifier.size(50.dp).clip(RoundedCornerShape(50)).clickable(onClick = onClick),
+        Modifier.size(56.dp).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -270,10 +271,10 @@ private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> 
         )
         if (badge > 0) {
             Box(
-                Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = 10.dp)
-                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
-                    .padding(horizontal = 5.dp, vertical = 1.dp)
-            ) { Text(badge.toString(), color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall) }
+                Modifier.align(Alignment.TopEnd).offset(x = (-12).dp, y = 10.dp)
+                    .background(Color(0xFF9E9E9E), RoundedCornerShape(50))
+                    .padding(horizontal = 5.dp, vertical = 0.dp)
+            ) { Text(badge.toString(), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
         }
     }
 }
@@ -686,6 +687,7 @@ private fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
 
 @Composable
 private fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDismiss: () -> Unit) {
+    var pickTags by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -698,7 +700,26 @@ private fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDism
                         contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 24.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
-                        item { TagStateFilterSection(state, vm) }
+                        item {
+                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("Tags", style = MaterialTheme.typography.titleMedium)
+                                OutlinedButton(onClick = { pickTags = true }, Modifier.fillMaxWidth()) {
+                                    Icon(Icons.Default.Style, null); Spacer(Modifier.width(8.dp))
+                                    val excludedCount = state.filters.excludedTagIds.size
+                                    Text(
+                                        if (excludedCount > 0) "${state.filters.tagIds.size} inclus · $excludedCount exclus"
+                                        else "${state.filters.tagIds.size} tag(s) sélectionné(s)",
+                                        Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis
+                                    )
+                                }
+                                if (state.filters.tagIds.isNotEmpty()) FilterDropdown(
+                                    "Correspondance",
+                                    listOf(TagMatchMode.ALL to "Tous", TagMatchMode.ANY to "Au moins un"),
+                                    state.filters.tagMode,
+                                    vm::setTagMode
+                                )
+                            }
+                        }
                         item { FilterSwitch("Favoris uniquement", state.filters.favoritesOnly, vm::toggleFavoriteFilter) }
                         item { FilterSwitch("Jeux introuvables", state.filters.missingOnly, vm::toggleMissingFilter) }
                         item { FilterDropdown("Moteur", listOf(null to "Tous") + GameEngine.entries.map { it to it.name.readableEngine() }, state.filters.engine, vm::filterEngine) }
@@ -721,8 +742,15 @@ private fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDism
             }
         }
     }
+    if (pickTags) GameTagPickerSheet(
+        state.tags, state.tagCategories, state.filters.tagIds,
+        { vm.setTagFilters(it); pickTags = false },
+        { pickTags = false },
+        initialExcluded = state.filters.excludedTagIds,
+        onSaveExcluded = { vm.setExcludedTagFilters(it) },
+        title = "Filtrer les tags"
+    )
 }
-
 private fun topLevelSlideDirection(
     fromRoute: String?,
     toRoute: String?,
@@ -751,49 +779,6 @@ private fun FilterSwitch(label: String, checked: Boolean, onToggle: () -> Unit) 
     modifier = Modifier.clip(RoundedCornerShape(16.dp)).clickable(onClick = onToggle),
     colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
 )
-
-@Composable
-@OptIn(ExperimentalLayoutApi::class)
-private fun TagStateFilterSection(state: AstraUiState, vm: AstraViewModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("Tags", style = MaterialTheme.typography.titleMedium)
-        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            state.tags.forEach { tag ->
-                val included = tag.id in state.filters.tagIds
-                val excluded = tag.id in state.filters.excludedTagIds
-                FilterChip(
-                    selected = included || excluded,
-                    onClick = { vm.cycleTagFilter(tag.id) },
-                    label = { Text(tag.name) },
-                    leadingIcon = when {
-                        included -> { { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) } }
-                        excluded -> { { Icon(Icons.Default.Block, null, Modifier.size(16.dp)) } }
-                        else -> null
-                    },
-                   colors = when {
-                       excluded -> FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer,
-                            selectedLeadingIconColor = MaterialTheme.colorScheme.onErrorContainer
-                       )
-                       included -> FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                            selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
-                       )
-                       else -> FilterChipDefaults.filterChipColors()
-                   }
-                )
-            }
-        }
-        if (state.filters.tagIds.isNotEmpty()) FilterDropdown(
-            "Correspondance",
-            listOf(TagMatchMode.ALL to "Tous", TagMatchMode.ANY to "Au moins un"),
-            state.filters.tagMode,
-            vm::setTagMode
-        )
-    }
-}
 
 @Composable
 private fun <T> FilterDropdown(title: String, choices: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
@@ -1638,17 +1623,17 @@ private fun GameDetailScreen(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            topBar = { GameDetailHeader(onBack = onBack, onEdit = { edit = true }, enabled = item != null) }
         ) { padding ->
         if (item == null) CenterMessage("Chargement…", Modifier.padding(padding).fillMaxSize(), loading = true)
         else LazyColumn(
             Modifier.padding(padding),
-            contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
+            contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
                 Box(
                     Modifier.fillMaxWidth().then(
-                        if (item.coverUri != null) Modifier.height((LocalConfiguration.current.screenHeightDp * .5f).dp) else Modifier
+                        if (item.coverUri != null) Modifier.height((LocalConfiguration.current.screenHeightDp * .5f).dp)
+                        else Modifier.padding(top = 96.dp)
                     )
                 ) {
                     if (item.coverUri != null) {
@@ -1670,7 +1655,7 @@ private fun GameDetailScreen(
                         )
                     }
                     Row(
-                        Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp),
                         horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
                         GameCover(
@@ -1703,7 +1688,7 @@ private fun GameDetailScreen(
             }
             item {
                 if (latestUpdate != null && latestUpdate != item.version) {
-                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.tertiaryContainer) {
+                    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.tertiaryContainer) {
                         Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Update, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
                             Spacer(Modifier.width(6.dp))
@@ -1715,7 +1700,7 @@ private fun GameDetailScreen(
                     }
                 }
             }
-            item { Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            item { Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                 Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f).height(40.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Jouer") }
                 FilledTonalButton(
                     onClick = { vm.toggleFavorite(item.id) }, modifier = Modifier.height(40.dp),
@@ -1727,6 +1712,7 @@ private fun GameDetailScreen(
             item {
                 Card(
                     onClick = { showCompatibilityActions = true },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
                     colors = CardDefaults.cardColors(
                         containerColor = when {
                             diagnostic == null -> MaterialTheme.colorScheme.surfaceContainer
@@ -1749,7 +1735,7 @@ private fun GameDetailScreen(
                 }
             }
             item {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Tags", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); TextButton(onClick = { pickTags = true }) { Icon(Icons.Default.Add, null); Text("Choisir") }
                 }
                 if (assignedTags.isEmpty()) Text("Aucun tag associé", color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -1757,37 +1743,42 @@ private fun GameDetailScreen(
             }
             item.f95Url?.let { f95Url ->
                 item {
-                    OutlinedButton(onClick = { uriHandler.openUri(f95Url) }, Modifier.fillMaxWidth()) {
+                    OutlinedButton(onClick = { uriHandler.openUri(f95Url) }, Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir le thread F95Zone")
                     }
                 }
             }
             if (!item.description.isNullOrBlank()) item {
-                ExpandableDetailSection("Description", descriptionExpanded, { descriptionExpanded = !descriptionExpanded }) {
-                    Text(item.description, style = MaterialTheme.typography.bodyMedium)
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    ExpandableDetailSection("Description", descriptionExpanded, { descriptionExpanded = !descriptionExpanded }) {
+                        Text(item.description, style = MaterialTheme.typography.bodyMedium)
+                    }
                 }
             }
             item {
-                ExpandableDetailSection("Informations", informationExpanded, { informationExpanded = !informationExpanded }) {
-                    InfoLine("Moteur", item.engine.readableEngine())
-                    InfoLine("Lancements", item.playCount.toString())
-                    InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
-                    InfoLine("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration())
-                    InfoLine("Source", item.physicalPath ?: item.documentUri)
+                Box(Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
+                    ExpandableDetailSection("Informations", informationExpanded, { informationExpanded = !informationExpanded }) {
+                        InfoLine("Moteur", item.engine.readableEngine())
+                        InfoLine("Lancements", item.playCount.toString())
+                        InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
+                        InfoLine("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration())
+                        InfoLine("Source", item.physicalPath ?: item.documentUri)
+                    }
                 }
             }
-            item { OutlinedButton(onClick = { pickFolder = true }, Modifier.fillMaxWidth()) {
+            item { OutlinedButton(onClick = { pickFolder = true }, Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Icon(Icons.Default.FolderCopy, null); Spacer(Modifier.width(8.dp))
                 Text(state.folders.firstOrNull { it.id == item.libraryFolderId }?.name ?: "Classer dans un dossier")
             } }
-            item { OutlinedButton(onClick = { vm.openGameSaveFolder(item.id) }, Modifier.fillMaxWidth()) {
+            item { OutlinedButton(onClick = { vm.openGameSaveFolder(item.id) }, Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir le dossier des sauvegardes")
             } }
-            if (item.missing) item { Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+            if (item.missing) item { Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Text("Ce jeu est introuvable. Rescannez sa source.", Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onErrorContainer)
             } }
         }
     }
+    GameDetailHeader(onBack = onBack, onEdit = { edit = true }, enabled = item != null)
     }
     if (item != null && edit) EditGameDialog(
         game = item,
@@ -2348,11 +2339,22 @@ private fun TextTagInput(value: String, onChange: (String) -> Unit) = OutlinedTe
 @Composable
 private fun GameTagPickerSheet(
     tags: List<TagEntity>, categories: List<TagCategoryEntity>, initial: Set<String>,
-    onSave: (Set<String>) -> Unit, onDismiss: () -> Unit
+    onSave: (Set<String>) -> Unit, onDismiss: () -> Unit,
+    initialExcluded: Set<String> = emptySet(),
+    onSaveExcluded: ((Set<String>) -> Unit)? = null,
+    title: String = "Choisir les tags"
 ) {
-    var selected by remember(initial) { mutableStateOf(initial) }
+    var included by remember(initial) { mutableStateOf(initial) }
+    var excluded by remember(initialExcluded) { mutableStateOf(initialExcluded) }
     var category by remember { mutableStateOf("__all__") }
     var query by remember { mutableStateOf("") }
+    fun cycle(tagId: String) {
+        when {
+            tagId in included -> { included = included - tagId; excluded = excluded + tagId }
+            tagId in excluded -> excluded = excluded - tagId
+            else -> included = included + tagId
+        }
+    }
     val visible = tags.filter {
         (category == "__all__" || (category == "__none__" && it.groupName == null) || it.groupName == category) &&
             (query.isBlank() || it.name.contains(query, true))
@@ -2360,8 +2362,11 @@ private fun GameTagPickerSheet(
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().imePadding().padding(bottom = 10.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
-                Column(Modifier.weight(1f)) { Text("Choisir les tags", style = MaterialTheme.typography.titleLarge); Text("${selected.size} sélectionné(s)", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                Button(onClick = { onSave(selected) }) { Icon(Icons.Default.Check, null); Text("Valider") }
+                Column(Modifier.weight(1f)) {
+                    Text(title, style = MaterialTheme.typography.titleLarge)
+                    Text(if (onSaveExcluded != null) "${included.size} inclus · ${excluded.size} exclus" else "${included.size} sélectionné(s)", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Button(onClick = { onSave(included); onSaveExcluded?.invoke(excluded) }) { Icon(Icons.Default.Check, null); Text("Valider") }
             }
             OutlinedTextField(
                 query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
@@ -2376,9 +2381,27 @@ private fun GameTagPickerSheet(
             else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 430.dp)) {
                 items(visible, key = { it.id }) { tag ->
                     ListItem(
-                        modifier = Modifier.clickable { selected = selected.toggle(tag.id) }, headlineContent = { Text(tag.name) },
+                        modifier = Modifier.clickable { cycle(tag.id) }, headlineContent = { Text(tag.name) },
                         supportingContent = { tag.groupName?.let { Text(it) } },
-                        leadingContent = { Checkbox(tag.id in selected, { selected = selected.toggle(tag.id) }) }
+                        leadingContent = {
+                            if (onSaveExcluded != null) {
+                                TriStateCheckbox(
+                                    state = when {
+                                        tag.id in included -> ToggleableState.On
+                                        tag.id in excluded -> ToggleableState.Indeterminate
+                                        else -> ToggleableState.Off
+                                    },
+                                    onClick = { cycle(tag.id) },
+                                    colors = CheckboxDefaults.colors(
+                                        checkedColor = MaterialTheme.colorScheme.primary,
+                                        checkmarkColor = MaterialTheme.colorScheme.onPrimary,
+                                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                )
+                            } else {
+                                Checkbox(tag.id in included, { cycle(tag.id) })
+                            }
+                        }
                     )
                 }
             }
@@ -3693,6 +3716,7 @@ private fun LibrarySort.label() = when (this) {
     LibrarySort.RECENTLY_ADDED -> "Ajouts récents"
     LibrarySort.LAST_PLAYED -> "Dernier lancement"
     LibrarySort.MOST_PLAYED -> "Plus joués"
+    LibrarySort.NEVER_PLAYED -> "Jamais joué"
     LibrarySort.UPDATE_AVAILABLE -> "Mises à jour disponibles"
 }
 
