@@ -362,6 +362,7 @@ object AppLocalizer {
         t("Récemment ajoutés", "Recently added", "Añadidos recientemente", "Недавно добавленные", "Kürzlich hinzugefügt", "最近添加", "最近追加"),
         t("Joués récemment", "Recently played", "Jugados recientemente", "Недавно запускались", "Kürzlich gespielt", "最近玩过", "最近プレイ"),
         t("Jamais joués", "Never played", "Nunca jugados", "Никогда не запускались", "Nie gespielt", "从未玩过", "未プレイ"),
+        t("Jamais joué", "Never played", "Nunca jugado", "Никогда не запускалась", "Nie gespielt", "从未玩过", "未プレイ"),
         t("Jamais lancé", "Never launched", "Nunca iniciado", "Никогда не запускалась", "Nie gestartet", "从未启动", "未起動"),
         t("Détection locale des composants", "Local component detection", "Detección local de componentes", "Локальное обнаружение компонентов", "Lokale Komponentenerkennung", "本地组件检测", "コンポーネントをローカルで検出"),
         t("Installé", "Installed", "Instalado", "Установлено", "Installiert", "已安装", "インストール済み"),

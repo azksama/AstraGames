@@ -93,7 +93,7 @@ data class SystemFolderFilter(
     val gameIds: Set<String>
 )
 
-enum class LibrarySort { TITLE, RECENTLY_ADDED, LAST_PLAYED, MOST_PLAYED, UPDATE_AVAILABLE }
+enum class LibrarySort { TITLE, RECENTLY_ADDED, LAST_PLAYED, MOST_PLAYED, NEVER_PLAYED, UPDATE_AVAILABLE }
 
 data class AstraUiState(
     val games: List<GameEntity> = emptyList(),
@@ -341,6 +341,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                 LibrarySort.RECENTLY_ADDED -> games.sortedByDescending { it.dateAdded }
                 LibrarySort.LAST_PLAYED -> games.sortedByDescending { it.lastPlayedAt ?: Long.MIN_VALUE }
                 LibrarySort.MOST_PLAYED -> games.sortedByDescending { it.playCount }
+                LibrarySort.NEVER_PLAYED -> games.sortedBy { it.playCount > 0 }
                 LibrarySort.UPDATE_AVAILABLE -> games.sortedByDescending { game ->
                     val latest = latestVersions[game.id]
                     if (latest != null && latest != game.version) 1 else 0
@@ -386,7 +387,15 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.recoverInterruptedScans()
             val settings = settingsRepository.settings.first()
-            mutableLatestVersions.value = parseLatestVersions(settings.f95LatestVersions)
+            val latestParsed = parseLatestVersions(settings.f95LatestVersions)
+            mutableLatestVersions.value = latestParsed
+            val libraryGames = repository.games.first()
+            mutableGameUpdates.value = libraryGames.mapNotNull { game ->
+                val latest = latestParsed[game.id] ?: return@mapNotNull null
+                if (latest != null && game.version != null && latest != game.version)
+                    GameUpdateInfo(game, game.version, latest)
+                else null
+            }
             GameUpdatesWorker.schedule(app, settings.updateCheckInterval)
             GameUpdatesWorker.schedule(app, settings.updateCheckInterval)
             settings.f95SessionXfUser?.let { xfUser ->
@@ -420,6 +429,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun setTagFilters(ids: Set<String>) { filters.value = filters.value.copy(tagIds = ids) }
+    fun setExcludedTagFilters(ids: Set<String>) { filters.value = filters.value.copy(excludedTagIds = ids) }
     fun setTagMode(mode: TagMatchMode) { filters.value = filters.value.copy(tagMode = mode) }
     fun searchByTag(id: String) {
         filters.value = LibraryFilters(query = "", tagIds = setOf(id), tagMode = TagMatchMode.ALL)
