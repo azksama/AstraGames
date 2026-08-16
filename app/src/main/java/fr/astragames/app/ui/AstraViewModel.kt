@@ -50,12 +50,18 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+
+private const val VNDB_REQUEST_INTERVAL_MS = 1_550L
 
 data class LibraryFilters(
     val query: String = "",
     val sourceId: String? = null,
     val folderId: String? = null,
+    val collectionId: String? = null,
     val systemFolderId: String? = null,
     val engine: GameEngine? = null,
     val tagIds: Set<String> = emptySet(),
@@ -91,11 +97,19 @@ data class AstraUiState(
     val playStats: Map<String, GamePlayStat> = emptyMap(),
     val runtimes: List<JoiPlayRuntimeInfo> = emptyList(),
     val settings: AstraSettings = AstraSettings(),
+    val settingsLoaded: Boolean = false,
     val filters: LibraryFilters = LibraryFilters(),
     val scanning: Boolean = false,
     val scanProgress: ScanProgressState = ScanProgressState(),
+    val metadataRefresh: MetadataRefreshState = MetadataRefreshState(),
     val joiPlayInstalled: Boolean = false,
     val setupQueue: List<GameEntity> = emptyList()
+)
+
+data class MetadataRefreshState(
+    val running: Boolean = false,
+    val completed: Int = 0,
+    val total: Int = 0
 )
 
 data class ScanProgressState(
@@ -157,7 +171,10 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     private val mutableDuplicatePreview = MutableStateFlow<DuplicateMergePreview?>(null)
     val duplicatePreview: StateFlow<DuplicateMergePreview?> = mutableDuplicatePreview
     val openFolderRequests = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
+    val notificationPermissionRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private val runtimeManager = JoiPlayRuntimeManager()
+    private val metadataRefresh = MutableStateFlow(MetadataRefreshState())
+    private val metadataMutex = Mutex()
 
     private data class CoreData(
         val games: List<GameEntity>,
@@ -207,13 +224,28 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    private val scanState = combine(scanning, scanProgress) { active, progress -> active to progress }
+    private data class BackgroundState(
+        val scanning: Boolean,
+        val progress: ScanProgressState,
+        val metadata: MetadataRefreshState
+    )
+    private val backgroundState = combine(scanning, scanProgress, metadataRefresh) { active, progress, metadata ->
+        BackgroundState(active, progress, metadata)
+    }
 
     val uiState: StateFlow<AstraUiState> = combine(
-        coreData, settingsRepository.settings, filters, scanState, setupQueueIds
-    ) { data, settings, filter, scan, setupIds ->
+        coreData, settingsRepository.settings, filters, backgroundState, setupQueueIds
+    ) { data, settings, filter, background, setupIds ->
         val refsByGame = data.refs.groupBy { it.gameId }.mapValues { (_, refs) -> refs.map { it.tagId }.toSet() }
+        val playStatsByGame = data.playStats.associateBy { it.gameId }
         val selectedFolderIds = filter.folderId?.let { rootId -> descendantFolderIds(rootId, data.folders) }
+        val selectedCollectionGameIds = filter.collectionId?.let { collectionId ->
+            val collection = data.collections.firstOrNull { it.id == collectionId } ?: return@let emptySet()
+            val rules = data.collectionRules.filter { it.collectionId == collectionId }
+            data.games.filter { game ->
+                SmartCollectionEvaluator.matches(collection, rules, game, data.refs, data.folders, playStatsByGame[game.id])
+            }.mapTo(mutableSetOf()) { it.id }
+        }
         val systemFolders = buildSystemFolderFilters(data.games, data.sources)
         val selectedSystemGameIds = filter.systemFolderId
             ?.let { id -> systemFolders.firstOrNull { it.id == id }?.gameIds }
@@ -223,6 +255,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             val tagsMatch = TagMatcher.matches(filter.tagIds, gameTags, filter.tagMode)
             (filter.sourceId == null || game.sourceId == filter.sourceId) &&
                 (selectedFolderIds == null || game.libraryFolderId in selectedFolderIds) &&
+                (selectedCollectionGameIds == null || game.id in selectedCollectionGameIds) &&
                 (filter.systemFolderId == null || game.id in selectedSystemGameIds) &&
                 (filter.engine == null || game.engine == filter.engine.name) &&
                 (!filter.favoritesOnly || game.favorite) &&
@@ -235,7 +268,6 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                 LibrarySort.MOST_PLAYED -> games.sortedByDescending { it.playCount }
             }
         }
-        val playStatsByGame = data.playStats.associateBy { it.gameId }
         val customGames = data.collections.associate { collection ->
             val rules = data.collectionRules.filter { it.collectionId == collection.id }
             collection.id to data.games.filter { game ->
@@ -258,11 +290,13 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             collectionRules = data.collectionRules,
             customCollectionGames = customGames,
             playStats = playStatsByGame,
-            runtimes = runtimeManager.inspect(application, libraryEngines),
+            runtimes = runtimeManager.inspect(application, libraryEngines, app.container.joiPlayCatalog.parse(settings.joiPlayCatalogJson)),
             settings = settings,
+            settingsLoaded = true,
             filters = filter,
-            scanning = scan.first,
-            scanProgress = scan.second,
+            scanning = background.scanning,
+            scanProgress = background.progress,
+            metadataRefresh = background.metadata,
             joiPlayInstalled = app.container.launcher.isInstalled(application),
             setupQueue = setupIds.mapNotNull { id -> data.games.firstOrNull { it.id == id } }
         )
@@ -277,7 +311,8 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     fun updateQuery(value: String) { filters.value = filters.value.copy(query = value) }
     fun filterSource(id: String?) { filters.value = filters.value.copy(sourceId = id, systemFolderId = null) }
-    fun filterFolder(id: String?) { filters.value = filters.value.copy(folderId = id) }
+    fun filterFolder(id: String?) { filters.value = filters.value.copy(folderId = id, collectionId = null) }
+    fun filterCollection(id: String?) { filters.value = filters.value.copy(collectionId = id, folderId = null) }
     fun filterSystemFolder(id: String?) { filters.value = filters.value.copy(systemFolderId = id, sourceId = null) }
     fun setSort(sort: LibrarySort) { filters.value = filters.value.copy(sort = sort) }
     fun filterEngine(engine: GameEngine?) { filters.value = filters.value.copy(engine = engine) }
@@ -595,7 +630,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun prepareF95Search(gameId: String, title: String) {
         mutableF95Import.value = mutableF95Import.value.copy(
             gameId = gameId,
-            browserUrl = app.container.f95Zone.googleSearchUrl(title)
+            browserUrl = app.container.f95Zone.bingSearchUrl(title)
         )
     }
     fun applyF95Tags(gameId: String, selectedTags: Set<String>) = viewModelScope.launch {
@@ -614,7 +649,58 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun enqueueNewGames(before: Set<String>) {
         val added = repository.getGameIds() - before
-        if (added.isNotEmpty()) setupQueueIds.value = (setupQueueIds.value + added).distinct()
+        if (added.isNotEmpty()) {
+            setupQueueIds.value = (setupQueueIds.value + added).distinct()
+            viewModelScope.launch { enrichGames(added.toList(), visibleProgress = false) }
+        }
+    }
+
+    fun refreshIncompleteMetadata() {
+        if (metadataRefresh.value.running || metadataMutex.isLocked) return
+        val ids = uiState.value.games.filter {
+            it.coverUri == null || it.description.isNullOrBlank() || it.developer.isNullOrBlank()
+        }.map { it.id }
+        viewModelScope.launch {
+            enrichGames(ids, visibleProgress = true)
+            events.emit(UiEvent.Message("Actualisation terminée pour ${ids.size} jeu(x)"))
+        }
+    }
+
+    private suspend fun enrichGames(ids: List<String>, visibleProgress: Boolean) = metadataMutex.withLock {
+        if (visibleProgress) metadataRefresh.value = MetadataRefreshState(running = true, total = ids.size)
+        ids.forEachIndexed { index, id ->
+            enrichGame(id)
+            if (visibleProgress) metadataRefresh.value = MetadataRefreshState(true, index + 1, ids.size)
+            if (index < ids.lastIndex) delay(VNDB_REQUEST_INTERVAL_MS)
+        }
+        if (visibleProgress) metadataRefresh.value = MetadataRefreshState()
+    }
+
+    private suspend fun enrichGame(gameId: String) {
+        val game = repository.getGame(gameId) ?: return
+        val vndb = runCatching { app.container.vndb.search(game.title) }.getOrNull()
+        val f95Url = game.f95Url ?: vndb?.f95Url ?: runCatching {
+            app.container.f95Zone.findThread(game.title)
+        }.getOrNull()
+        repository.applyAutomaticMetadata(
+            gameId = game.id,
+            originalTitle = vndb?.originalTitle,
+            developer = vndb?.developers?.joinToString(" • "),
+            description = vndb?.description,
+            f95Url = f95Url
+        )
+        if (game.coverUri == null && vndb?.coverUrl != null) {
+            val candidate = CoverCandidate(
+                imageUrl = vndb.coverUrl,
+                thumbnailUrl = vndb.coverUrl,
+                source = "vndb.org",
+                contextUrl = "https://vndb.org/${vndb.id}",
+                matchedTitle = vndb.title,
+                confidence = 1f
+            )
+            runCatching { app.container.covers.download(candidate) }
+                .onSuccess { repository.setCover(game.id, it) }
+        }
     }
     fun completeOnboarding() = viewModelScope.launch { settingsRepository.completeOnboarding() }
     fun setTheme(mode: ThemeMode) = viewModelScope.launch { settingsRepository.setTheme(mode) }
@@ -623,6 +709,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun setViewMode(mode: LibraryViewMode) = viewModelScope.launch { settingsRepository.setViewMode(mode) }
     fun setCoverSize(size: CoverSize) = viewModelScope.launch { settingsRepository.setCoverSize(size) }
     fun setGridColumns(columns: Int) = viewModelScope.launch { settingsRepository.setGridColumns(columns) }
+    fun requestNotificationPermission() { notificationPermissionRequests.tryEmit(Unit) }
     fun configureBackupFolder(uri: Uri) = viewModelScope.launch {
         runCatching {
             getApplication<Application>().contentResolver.takePersistableUriPermission(

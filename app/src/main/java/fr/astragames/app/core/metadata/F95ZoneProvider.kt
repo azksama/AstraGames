@@ -9,6 +9,7 @@ import java.net.URI
 import java.net.URLDecoder
 import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
+import java.util.Base64
 
 data class F95ZoneMetadata(
     val sourceUrl: String,
@@ -17,10 +18,24 @@ data class F95ZoneMetadata(
 )
 
 class F95ZoneProvider {
-    fun googleSearchUrl(gameTitle: String): String {
+    fun bingSearchUrl(gameTitle: String): String {
         require(gameTitle.isNotBlank()) { "Le nom du jeu est vide." }
-        val query = URLEncoder.encode("${gameTitle.trim()} f95zone", StandardCharsets.UTF_8.name())
-        return "https://www.google.com/search?hl=fr&safe=off&q=$query"
+        val query = URLEncoder.encode("${gameTitle.trim()} site:f95zone.to", StandardCharsets.UTF_8.name())
+        return "https://www.bing.com/search?setlang=fr-FR&adlt=off&q=$query"
+    }
+
+    suspend fun findThread(gameTitle: String): String? = withContext(Dispatchers.IO) {
+        val endpoint = bingSearchUrl(gameTitle)
+        val response = Jsoup.connect(endpoint)
+            .userAgent(BROWSER_USER_AGENT)
+            .header("Accept-Language", "fr-FR,fr;q=0.9,en;q=0.7")
+            .timeout(20_000)
+            .maxBodySize(4 * 1024 * 1024)
+            .followRedirects(true)
+            .ignoreHttpErrors(true)
+            .execute()
+        if (response.statusCode() !in 200..299) return@withContext null
+        parseSearchHtml(response.body(), endpoint)
     }
 
     suspend fun fetch(rawUrl: String): F95ZoneMetadata = withContext(Dispatchers.IO) {
@@ -64,9 +79,13 @@ class F95ZoneProvider {
             .take(30)
 
         return F95ZoneMetadata(
-            sourceUrl = url.toString(), tags = tags, images = images
+            sourceUrl = canonicalF95ThreadUrl(url.toString()) ?: url.toString(), tags = tags, images = images
         )
     }
+
+    internal fun parseSearchHtml(html: String, baseUrl: String = "https://www.bing.com/search"): String? =
+        Jsoup.parse(html, baseUrl).select("li.b_algo h2 a[href], a[href]")
+            .firstNotNullOfOrNull { extractF95ThreadUrl(it.absUrl("href").ifBlank { it.attr("href") }) }
 
     /**
      * XenForo wraps the displayed preview in a link to the original attachment.
@@ -122,7 +141,10 @@ class F95ZoneProvider {
             ?: value
     }
 
-    private fun validate(value: String): URI = validate(runCatching { URI(value.trim()) }.getOrElse { error("Lien F95Zone invalide.") })
+    private fun validate(value: String): URI {
+        val canonical = canonicalF95ThreadUrl(value) ?: throw IllegalArgumentException("Lien F95Zone invalide.")
+        return validate(URI(canonical))
+    }
 
     private fun validate(uri: URI): URI {
         val host = uri.host?.lowercase().orEmpty()
@@ -131,13 +153,17 @@ class F95ZoneProvider {
         }
         return uri
     }
+
+    private companion object {
+        const val BROWSER_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/127.0 Mobile Safari/537.36"
+    }
 }
 
-internal fun extractF95ThreadUrl(rawValue: String): String? {
+internal fun canonicalF95ThreadUrl(rawValue: String): String? {
     var candidate = rawValue.trim()
-    if (candidate.startsWith('/')) candidate = "https://www.google.com$candidate"
+    if (candidate.startsWith('/')) candidate = "https://www.bing.com$candidate"
 
-    repeat(3) {
+    repeat(4) {
         val uri = runCatching { URI(candidate) }.getOrNull() ?: return null
         val host = uri.host?.lowercase().orEmpty()
         if (
@@ -145,19 +171,31 @@ internal fun extractF95ThreadUrl(rawValue: String): String? {
             (host == "f95zone.to" || host.endsWith(".f95zone.to")) &&
             uri.path.orEmpty().startsWith("/threads/")
         ) {
-            return URI("https", uri.authority, uri.path, uri.query, null).toString()
+            val thread = THREAD_PATH.matchEntire(uri.path.orEmpty())?.groupValues?.get(1) ?: return null
+            return "https://f95zone.to/threads/$thread/"
         }
 
         val redirected = uri.rawQuery.orEmpty().split('&')
             .firstNotNullOfOrNull { parameter ->
                 val key = parameter.substringBefore('=')
-                if (key != "q" && key != "url") return@firstNotNullOfOrNull null
+                if (key !in setOf("q", "url", "u")) return@firstNotNullOfOrNull null
                 parameter.substringAfter('=', "").takeIf(String::isNotBlank)
             }
             ?: return null
         candidate = runCatching {
             URLDecoder.decode(redirected, StandardCharsets.UTF_8.name())
         }.getOrNull() ?: return null
+        if (candidate.startsWith("a1")) {
+            candidate = runCatching {
+                val encoded = candidate.removePrefix("a1")
+                val padding = "=".repeat((4 - encoded.length % 4) % 4)
+                String(Base64.getUrlDecoder().decode(encoded + padding), StandardCharsets.UTF_8)
+            }.getOrNull() ?: return null
+        }
     }
     return null
 }
+
+internal fun extractF95ThreadUrl(rawValue: String): String? = canonicalF95ThreadUrl(rawValue)
+
+private val THREAD_PATH = Regex("^/threads/([^/?#]+?\\.\\d+|\\d+)(?:/.*)?$", RegexOption.IGNORE_CASE)

@@ -23,6 +23,7 @@ import fr.astragames.app.core.model.ScanReport
 import fr.astragames.app.core.model.ScanReportItem
 import fr.astragames.app.core.model.ScanReportItemStatus
 import fr.astragames.app.core.search.parseTextTagList
+import fr.astragames.app.core.metadata.canonicalF95ThreadUrl
 import kotlinx.coroutines.flow.Flow
 import java.text.Normalizer
 import java.io.File
@@ -420,6 +421,27 @@ class GameRepository(
 
     suspend fun setF95Url(gameId: String, url: String?) = dao.setF95Url(gameId, url.cleanF95UrlOrNull())
 
+    suspend fun applyAutomaticMetadata(
+        gameId: String,
+        originalTitle: String?,
+        developer: String?,
+        description: String?,
+        f95Url: String?
+    ) {
+        val game = dao.getGame(gameId) ?: return
+        dao.updateGameFields(
+            id = game.id,
+            title = game.title,
+            originalTitle = game.originalTitle ?: originalTitle.cleanOrNull(),
+            developer = game.developer ?: developer.cleanOrNull(),
+            version = game.version,
+            productCode = game.productCode,
+            language = game.language,
+            description = game.description ?: description.cleanOrNull(),
+            f95Url = game.f95Url ?: f95Url.cleanF95UrlOrNull()
+        )
+    }
+
     suspend fun importF95Tags(gameId: String, tagNames: Collection<String>): Int {
         val categoryName = "F95Zone"
         return associateTagNames(gameId, tagNames, categoryName)
@@ -481,11 +503,7 @@ class GameRepository(
 
     private fun String?.cleanF95UrlOrNull(): String? {
         val clean = cleanOrNull() ?: return null
-        val uri = runCatching { Uri.parse(clean) }.getOrNull() ?: return null
-        val host = uri.host?.lowercase().orEmpty()
-        return clean.takeIf {
-            uri.scheme == "https" && (host == "f95zone.to" || host.endsWith(".f95zone.to")) && uri.path.orEmpty().startsWith("/threads/")
-        }
+        return canonicalF95ThreadUrl(clean)
     }
 
     companion object {

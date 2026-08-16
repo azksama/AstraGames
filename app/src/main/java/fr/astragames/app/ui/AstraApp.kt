@@ -21,6 +21,7 @@ import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -37,6 +38,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
@@ -110,6 +112,10 @@ fun AstraApp(
     LaunchedEffect(viewModel) {
         viewModel.events.collectLatest { if (it is UiEvent.Message) snackbar.showSnackbar(it.text) }
     }
+    if (!state.settingsLoaded) {
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        return
+    }
     if (!state.settings.onboardingCompleted) {
         OnboardingScreen(state.sources.isNotEmpty(), onPickSource, viewModel::completeOnboarding)
         return
@@ -181,8 +187,12 @@ private fun Modifier.topLevelSwipe(route: String, nav: NavHostController): Modif
         onDragEnd = {
             if (abs(horizontal) >= 88.dp.toPx()) {
                 val current = menuDestinations.indexOfFirst { it.route == route }.let { if (it < 0) 0 else it }
-                val target = if (horizontal < 0) current + 1 else current - 1
-                menuDestinations.getOrNull(target)?.let { navigate(nav, it.route) }
+                val target = if (horizontal < 0) {
+                    (current + 1) % menuDestinations.size
+                } else {
+                    (current - 1 + menuDestinations.size) % menuDestinations.size
+                }
+                navigate(nav, menuDestinations[target].route)
             }
             horizontal = 0f
         }
@@ -241,16 +251,16 @@ private fun AppNavHost(
         navController = nav,
         startDestination = Destination.LIBRARY.route,
         enterTransition = {
-            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(PageTransitionDurationMillis))
+            slideIntoContainer(topLevelSlideDirection(initialState.destination.route, targetState.destination.route, AnimatedContentTransitionScope.SlideDirection.Left), tween(PageTransitionDurationMillis))
         },
         exitTransition = {
-            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Left, tween(PageTransitionDurationMillis))
+            slideOutOfContainer(topLevelSlideDirection(initialState.destination.route, targetState.destination.route, AnimatedContentTransitionScope.SlideDirection.Left), tween(PageTransitionDurationMillis))
         },
         popEnterTransition = {
-            slideIntoContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(PageTransitionDurationMillis))
+            slideIntoContainer(topLevelSlideDirection(initialState.destination.route, targetState.destination.route, AnimatedContentTransitionScope.SlideDirection.Right), tween(PageTransitionDurationMillis))
         },
         popExitTransition = {
-            slideOutOfContainer(AnimatedContentTransitionScope.SlideDirection.Right, tween(PageTransitionDurationMillis))
+            slideOutOfContainer(topLevelSlideDirection(initialState.destination.route, targetState.destination.route, AnimatedContentTransitionScope.SlideDirection.Right), tween(PageTransitionDurationMillis))
         }
     ) {
         composable(Destination.LIBRARY.route) { LibraryScreen(state, vm, { nav.navigate("game/$it") }, onPickSource) }
@@ -386,17 +396,23 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
 private fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
     var showFilters by remember { mutableStateOf(false) }
     val activeCount = with(state.filters) {
-        listOfNotNull(sourceId, folderId, systemFolderId, engine, tagIds.takeIf { it.isNotEmpty() }, missingOnly.takeIf { it }, sort.takeIf { it != LibrarySort.TITLE }).size
+        listOfNotNull(sourceId, folderId, collectionId, systemFolderId, engine, tagIds.takeIf { it.isNotEmpty() }, missingOnly.takeIf { it }, sort.takeIf { it != LibrarySort.TITLE }).size
     }
+    val hasActiveFilters = activeCount > 0 || state.filters.favoritesOnly
     LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         item { FilterChip(state.filters.favoritesOnly, vm::toggleFavoriteFilter, { Text("Favoris") }, leadingIcon = { Icon(Icons.Default.Star, null) }) }
         item {
-            FilterChip(
-                selected = activeCount > 0,
-                onClick = { showFilters = true },
-                label = { Text(if (activeCount == 0) "Filtres" else "Filtres ($activeCount)") },
-                leadingIcon = { Icon(Icons.Default.Tune, null) }
-            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                FilterChip(
+                    selected = activeCount > 0,
+                    onClick = { showFilters = true },
+                    label = { Text(if (activeCount == 0) "Filtres" else "Filtres ($activeCount)") },
+                    leadingIcon = { Icon(Icons.Default.Tune, null) }
+                )
+                if (hasActiveFilters) IconButton(onClick = vm::clearFilters, modifier = Modifier.size(32.dp)) {
+                    Icon(Icons.Default.Close, "Réinitialiser les filtres", Modifier.size(18.dp))
+                }
+            }
         }
     }
     if (showFilters) LibraryFiltersDialog(state, vm) { showFilters = false }
@@ -421,7 +437,7 @@ private fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDism
                         item { FilterSwitch("Jeux introuvables", state.filters.missingOnly, vm::toggleMissingFilter) }
                         item { FilterChoiceSection("Moteur", listOf(null to "Tous") + GameEngine.entries.map { it to it.name.readableEngine() }, state.filters.engine, vm::filterEngine) }
                         item { FilterChoiceSection("Source", listOf(null to "Toutes") + state.sources.map { it.id to it.displayName }, state.filters.sourceId, vm::filterSource) }
-                        item { FilterChoiceSection("Dossier Astra", listOf(null to "Tous") + state.folders.map { it.id to it.name }, state.filters.folderId, vm::filterFolder) }
+                        item { AstraCollectionsFilterSection(state, vm) }
                         item { FilterChoiceSection("Dossier système", listOf(null to "Tous") + state.systemFolders.map { it.id to it.label }, state.filters.systemFolderId, vm::filterSystemFolder) }
                         item { FilterChoiceSection("Tri", LibrarySort.entries.map { it to it.label() }, state.filters.sort, vm::setSort) }
                         item {
@@ -447,6 +463,49 @@ private fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDism
     if (pickTags) GameTagPickerSheet(state.tags, state.tagCategories, state.filters.tagIds, {
         vm.setTagFilters(it); pickTags = false
     }, { pickTags = false })
+}
+
+private fun topLevelSlideDirection(
+    fromRoute: String?,
+    toRoute: String?,
+    fallback: AnimatedContentTransitionScope.SlideDirection
+): AnimatedContentTransitionScope.SlideDirection {
+    val from = menuDestinations.indexOfFirst { it.route == fromRoute }
+    val to = menuDestinations.indexOfFirst { it.route == toRoute }
+    if (from < 0 || to < 0 || from == to) return fallback
+    return if (to > from) AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right
+}
+
+@Composable
+private fun AstraCollectionsFilterSection(state: AstraUiState, vm: AstraViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Collections Astra", style = MaterialTheme.typography.titleMedium)
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item {
+                FilterChip(
+                    selected = state.filters.folderId == null && state.filters.collectionId == null,
+                    onClick = { vm.filterFolder(null) },
+                    label = { Text("Toutes") }
+                )
+            }
+            items(state.folders, key = { "folder-${it.id}" }) { folder ->
+                FilterChip(
+                    selected = state.filters.folderId == folder.id,
+                    onClick = { vm.filterFolder(folder.id) },
+                    label = { Text(folder.name, maxLines = 1) },
+                    leadingIcon = { Icon(Icons.Default.Folder, null, Modifier.size(17.dp)) }
+                )
+            }
+            items(state.collections, key = { "smart-${it.id}" }) { collection ->
+                FilterChip(
+                    selected = state.filters.collectionId == collection.id,
+                    onClick = { vm.filterCollection(collection.id) },
+                    label = { Text(collection.name, maxLines = 1) },
+                    leadingIcon = { Icon(Icons.Default.AutoAwesome, "Collection intelligente personnelle", Modifier.size(17.dp)) }
+                )
+            }
+        }
+    }
 }
 
 @Composable
@@ -762,7 +821,7 @@ private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (
                         } }
                     )
                 }
-                item { HorizontalDivider(Modifier.padding(vertical = 8.dp)); SectionTitle("Dossiers Astra") }
+                item { HorizontalDivider(Modifier.padding(vertical = 8.dp)); SectionTitle("Collections Astra") }
             }
             item {
                 FilledTonalButton(
@@ -957,13 +1016,25 @@ private fun SettingsScreen(
             }
             item { RoundedListItem(modifier = Modifier.clickable(onClick = onPickSource), headlineContent = { Text("Ajouter une source") }, leadingContent = { Icon(Icons.Default.Add, null) }) }
             item { SettingsSwitch("Scanner au lancement", state.settings.scanOnLaunch, vm::setScanOnLaunch) }
+            item { RoundedListItem(
+                modifier = Modifier.clickable(enabled = !state.metadataRefresh.running, onClick = vm::refreshIncompleteMetadata),
+                headlineContent = { Text("Actualiser les métadonnées manquantes") },
+                supportingContent = {
+                    val refresh = state.metadataRefresh
+                    Text(if (refresh.running) "${refresh.completed}/${refresh.total} jeu(x) • VNDB et Bing" else "Jaquettes, descriptions et développeurs • VNDB, sans tags")
+                },
+                leadingContent = {
+                    if (state.metadataRefresh.running) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                    else Icon(Icons.Default.AutoAwesome, null)
+                }
+            ) }
             item { SectionTitle("Apparence") }; item { SettingsSwitch("Couleurs dynamiques", state.settings.dynamicColor, vm::setDynamicColor) }
             item { LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(ThemeMode.entries) { mode -> FilterChip(state.settings.themeMode == mode, { vm.setTheme(mode) }, { Text(mode.name.lowercase().replaceFirstChar(Char::uppercase)) }) }
             } }
             item { SectionTitle("JoiPlay") }
             item { RoundedListItem(
-                modifier = Modifier.clickable { showRuntimes = true },
+                modifier = Modifier.clickable { vm.requestNotificationPermission(); showRuntimes = true },
                 headlineContent = { Text(if (state.joiPlayInstalled) "Gestionnaire de runtimes" else "JoiPlay non détecté") },
                 supportingContent = { Text("${state.runtimes.count { it.installed }}/${state.runtimes.size} composants détectés") },
                 leadingContent = { Icon(Icons.Default.Extension, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
@@ -1047,6 +1118,9 @@ private fun GameDetailScreen(
     var confirmCoverRemoval by remember { mutableStateOf(false) }
     var showDiagnostic by remember { mutableStateOf(false) }
     var showLaunchProfile by remember { mutableStateOf(false) }
+    var showCompatibilityActions by remember { mutableStateOf(false) }
+    var descriptionExpanded by rememberSaveable(id) { mutableStateOf(true) }
+    var informationExpanded by rememberSaveable(id) { mutableStateOf(false) }
     var pickFolder by remember { mutableStateOf(false) }
     var confirmGameRemoval by remember { mutableStateOf(false) }
     val item = game
@@ -1055,13 +1129,28 @@ private fun GameDetailScreen(
         if (item?.missing == true) vm.verifyGamePresence(id)
         if (item != null) vm.diagnoseGame(id)
     }
-    Scaffold(
-        contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = { CompactHeader(item?.title ?: "Jeu", onBack = onBack) {
-            IconButton(onClick = { edit = true }, enabled = item != null) { Icon(Icons.Default.Edit, "Modifier") }
-            IconButton(onClick = { confirmGameRemoval = true }, enabled = item != null) { Icon(Icons.Default.DeleteOutline, "Supprimer le jeu") }
-        } }
-    ) { padding ->
+    Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        if (item?.coverUri != null) {
+            AsyncImage(
+                model = item.coverUri,
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxWidth().height(470.dp).blur(30.dp)
+            )
+            Box(
+                Modifier.fillMaxWidth().height(480.dp).background(
+                    Brush.verticalGradient(
+                        listOf(Color.Transparent, MaterialTheme.colorScheme.background.copy(alpha = .22f), MaterialTheme.colorScheme.background)
+                    )
+                )
+            )
+        }
+        Scaffold(
+            modifier = Modifier.fillMaxSize(),
+            containerColor = Color.Transparent,
+            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+            topBar = { GameDetailHeader(onBack = onBack, onEdit = { edit = true }, enabled = item != null) }
+        ) { padding ->
         if (item == null) CenterMessage("Chargement…", Modifier.padding(padding).fillMaxSize(), loading = true)
         else LazyColumn(
             Modifier.padding(padding), contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
@@ -1074,18 +1163,24 @@ private fun GameDetailScreen(
                             if (item.coverUri != null) Modifier.clickable { previewCover = true } else Modifier
                         )
                     )
-                    Column(Modifier.weight(1f)) {
-                        Text(
-                            item.title,
-                            Modifier.clickable {
-                                clipboard.setText(AnnotatedString(item.title))
-                                android.widget.Toast.makeText(context, "Nom du jeu copié", android.widget.Toast.LENGTH_SHORT).show()
-                            },
-                            style = MaterialTheme.typography.headlineSmall
-                        )
-                        Spacer(Modifier.height(6.dp)); AssistChip(onClick = {}, label = { Text(item.engine.readableEngine()) })
-                        item.developer?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                        item.version?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    Surface(
+                        modifier = Modifier.weight(1f),
+                        shape = RoundedCornerShape(18.dp),
+                        color = MaterialTheme.colorScheme.surface.copy(alpha = .78f)
+                    ) {
+                        Column(Modifier.padding(12.dp)) {
+                            Text(
+                                item.title,
+                                Modifier.clickable {
+                                    clipboard.setText(AnnotatedString(item.title))
+                                    android.widget.Toast.makeText(context, "Nom du jeu copié", android.widget.Toast.LENGTH_SHORT).show()
+                                },
+                                style = MaterialTheme.typography.headlineSmall
+                            )
+                            Spacer(Modifier.height(6.dp)); AssistChip(onClick = {}, label = { Text(item.engine.readableEngine()) })
+                            item.developer?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            item.version?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
                     }
                 }
             }
@@ -1100,6 +1195,7 @@ private fun GameDetailScreen(
             } }
             item {
                 Card(
+                    onClick = { showCompatibilityActions = true },
                     colors = CardDefaults.cardColors(
                         containerColor = when {
                             diagnostic == null -> MaterialTheme.colorScheme.surfaceContainer
@@ -1108,7 +1204,7 @@ private fun GameDetailScreen(
                         }
                     )
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (diagnostic?.canLaunch == true) Icons.Default.CheckCircle else Icons.Default.BuildCircle, null)
                             Spacer(Modifier.width(8.dp))
@@ -1116,24 +1212,9 @@ private fun GameDetailScreen(
                                 Text("Compatibilité", fontWeight = FontWeight.SemiBold)
                                 Text(diagnostic?.summary ?: "Vérification en cours…", style = MaterialTheme.typography.bodySmall)
                             }
-                        }
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            TextButton(onClick = { showDiagnostic = true; vm.diagnoseGame(item.id) }) { Text("Diagnostic") }
-                            TextButton(onClick = { showLaunchProfile = true }) { Text("Profil de lancement") }
+                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir")
                         }
                     }
-                }
-            }
-            item {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(
-                        onClick = { pickCover = true; vm.prepareCoverPicker(item.id) },
-                        modifier = Modifier.weight(1f)
-                    ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text("Changer la jaquette") }
-                    if (item.coverUri != null) OutlinedButton(
-                        onClick = { confirmCoverRemoval = true },
-                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) { Icon(Icons.Default.DeleteOutline, "Supprimer la jaquette"); Spacer(Modifier.width(6.dp)); Text("Supprimer") }
                 }
             }
             item {
@@ -1146,22 +1227,22 @@ private fun GameDetailScreen(
             item.f95Url?.let { f95Url ->
                 item {
                     OutlinedButton(onClick = { uriHandler.openUri(f95Url) }, Modifier.fillMaxWidth()) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir la fiche F95Zone")
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir le thread F95Zone")
                     }
                 }
             }
-            item {
-                Spacer(Modifier.height(8.dp))
-                HorizontalDivider()
-                Spacer(Modifier.height(10.dp))
-                Text("Informations", style = MaterialTheme.typography.titleMedium)
+            if (!item.description.isNullOrBlank()) item {
+                ExpandableDetailSection("Description", descriptionExpanded, { descriptionExpanded = !descriptionExpanded }) {
+                    Text(item.description, style = MaterialTheme.typography.bodyMedium)
+                }
             }
             item {
-                InfoLine("Lancements", item.playCount.toString())
-                InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
-                InfoLine("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration())
-                InfoLine("Source", item.physicalPath ?: item.documentUri)
-                item.productCode?.let { InfoLine("Code produit", it) }; item.language?.let { InfoLine("Langue", it) }; item.description?.let { InfoLine("Description", it) }
+                ExpandableDetailSection("Informations", informationExpanded, { informationExpanded = !informationExpanded }) {
+                    InfoLine("Lancements", item.playCount.toString())
+                    InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
+                    InfoLine("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration())
+                    InfoLine("Source", item.physicalPath ?: item.documentUri)
+                }
             }
             item { OutlinedButton(onClick = { pickFolder = true }, Modifier.fillMaxWidth()) {
                 Icon(Icons.Default.FolderCopy, null); Spacer(Modifier.width(8.dp))
@@ -1175,9 +1256,16 @@ private fun GameDetailScreen(
             } }
         }
     }
-    if (item != null && edit) EditGameDialog(item, { edits, textTags -> vm.updateGame(item.id, edits, textTags); edit = false }, {
-        edit = false; importF95 = true
-    }, { edit = false })
+    }
+    if (item != null && edit) EditGameDialog(
+        game = item,
+        onSave = { edits, textTags -> vm.updateGame(item.id, edits, textTags); edit = false },
+        onF95 = { edit = false; importF95 = true },
+        onChangeCover = { edit = false; pickCover = true; vm.prepareCoverPicker(item.id) },
+        onRemoveCover = { edit = false; confirmCoverRemoval = true },
+        onDeleteGame = { edit = false; confirmGameRemoval = true },
+        onDismiss = { edit = false }
+    )
     if (item != null && pickTags) GameTagPickerSheet(state.tags, state.tagCategories, assignedTags.map { it.id }.toSet(), {
         vm.setGameTags(item.id, it); pickTags = false
     }, { pickTags = false })
@@ -1192,6 +1280,26 @@ private fun GameDetailScreen(
         importF95 = false
     }, { importF95 = false; vm.clearF95Import() })
     if (item?.coverUri != null && previewCover) CoverFullscreenDialog(item.coverUri, item.title) { previewCover = false }
+    if (item != null && showCompatibilityActions) AlertDialog(
+        onDismissRequest = { showCompatibilityActions = false },
+        icon = { Icon(Icons.Default.BuildCircle, null) },
+        title = { Text("Compatibilité") },
+        text = {
+            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(diagnostic?.summary ?: "Vérification en cours…")
+                FilledTonalButton(
+                    onClick = { showCompatibilityActions = false; showDiagnostic = true; vm.diagnoseGame(item.id) },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Icon(Icons.Default.Troubleshoot, null); Spacer(Modifier.width(8.dp)); Text("Diagnostic") }
+                OutlinedButton(
+                    onClick = { showCompatibilityActions = false; showLaunchProfile = true },
+                    modifier = Modifier.fillMaxWidth()
+                ) { Icon(Icons.Default.Tune, null); Spacer(Modifier.width(8.dp)); Text("Profil de lancement") }
+            }
+        },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = { showCompatibilityActions = false }) { Text("Fermer") } }
+    )
     if (item != null && showDiagnostic) CompatibilityDialog(
         game = item, report = diagnostic,
         onRefresh = { vm.diagnoseGame(item.id) },
@@ -1220,6 +1328,63 @@ private fun GameDetailScreen(
         confirmButton = { TextButton(onClick = { vm.removeCover(item.id); confirmCoverRemoval = false }) { Text("Supprimer") } },
         dismissButton = { TextButton(onClick = { confirmCoverRemoval = false }) { Text("Annuler") } }
     )
+}
+
+@Composable
+private fun GameDetailHeader(onBack: () -> Unit, onEdit: () -> Unit, enabled: Boolean) {
+    Row(
+        Modifier.fillMaxWidth().statusBarsPadding().height(58.dp).padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        CircularHeaderButton(onBack, Icons.AutoMirrored.Filled.ArrowBack, "Retour")
+        Spacer(Modifier.weight(1f))
+        CircularHeaderButton(onEdit, Icons.Default.Edit, "Modifier", enabled)
+    }
+}
+
+@Composable
+private fun CircularHeaderButton(
+    onClick: () -> Unit,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    description: String,
+    enabled: Boolean = true
+) {
+    Surface(
+        onClick = onClick,
+        enabled = enabled,
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = .9f),
+        tonalElevation = 3.dp,
+        modifier = Modifier.size(42.dp)
+    ) { Box(contentAlignment = Alignment.Center) { Icon(icon, description, Modifier.size(22.dp)) } }
+}
+
+@Composable
+private fun ExpandableDetailSection(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable ColumnScope.() -> Unit
+) {
+    Surface(
+        shape = RoundedCornerShape(18.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = .92f)
+    ) {
+        Column(Modifier.fillMaxWidth()) {
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 16.dp, vertical = 13.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (expanded) "Refermer" else "Ouvrir")
+            }
+            if (expanded) Column(
+                Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                content = content
+            )
+        }
+    }
 }
 
 @Composable
@@ -1511,7 +1676,6 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     var description by remember(game.id) { mutableStateOf(game.description.orEmpty()) }
     var developer by remember(game.id) { mutableStateOf(game.developer.orEmpty()) }
     var version by remember(game.id) { mutableStateOf(game.version.orEmpty()) }
-    var language by remember(game.id) { mutableStateOf(game.language.orEmpty()) }
     var textTags by remember(game.id) { mutableStateOf("") }
     var selectedTags by remember(game.id, assigned) { mutableStateOf(assigned.map { it.id }.toSet()) }
     var showTags by remember { mutableStateOf(false) }
@@ -1545,7 +1709,6 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
                 item { EditField(title, { title = it }, "Nom") }
                 item { EditField(developer, { developer = it }, "Développeur") }
                 item { EditField(version, { version = it }, "Version") }
-                item { EditField(language, { language = it }, "Langue") }
                 item { EditField(description, { description = it }, "Description", false) }
                 item { TextTagInput(textTags, { textTags = it }) }
                 item { OutlinedButton(onClick = { showTags = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Style, null); Spacer(Modifier.width(6.dp)); Text("Tags (${selectedTags.size})") } }
@@ -1556,7 +1719,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
                     onClick = {
                         vm.configureScannedGame(
                             game.id,
-                            GameEdits(title, game.originalTitle, developer, version, game.productCode, language, description, game.f95Url),
+                            GameEdits(title, game.originalTitle, developer, version, game.productCode, game.language, description, game.f95Url),
                             selectedTags,
                             textTags
                         )
@@ -1581,25 +1744,50 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
 }
 
 @Composable
-private fun EditGameDialog(game: GameEntity, onSave: (GameEdits, String) -> Unit, onF95: () -> Unit, onDismiss: () -> Unit) {
+private fun EditGameDialog(
+    game: GameEntity,
+    onSave: (GameEdits, String) -> Unit,
+    onF95: () -> Unit,
+    onChangeCover: () -> Unit,
+    onRemoveCover: () -> Unit,
+    onDeleteGame: () -> Unit,
+    onDismiss: () -> Unit
+) {
     var title by remember(game) { mutableStateOf(game.title) }; var original by remember(game) { mutableStateOf(game.originalTitle.orEmpty()) }
     var developer by remember(game) { mutableStateOf(game.developer.orEmpty()) }; var version by remember(game) { mutableStateOf(game.version.orEmpty()) }
-    var code by remember(game) { mutableStateOf(game.productCode.orEmpty()) }; var language by remember(game) { mutableStateOf(game.language.orEmpty()) }
     var description by remember(game) { mutableStateOf(game.description.orEmpty()) }
     var f95Url by remember(game) { mutableStateOf(game.f95Url.orEmpty()) }
     var textTags by remember(game) { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("Modifier le jeu") },
         text = { LazyColumn(Modifier.heightIn(max = 520.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
+            item { Text("Jaquette", style = MaterialTheme.typography.titleMedium) }
+            item {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(onClick = onChangeCover, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(6.dp)); Text("Changer")
+                    }
+                    if (game.coverUri != null) OutlinedButton(
+                        onClick = onRemoveCover,
+                        colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+                    ) { Icon(Icons.Default.DeleteOutline, null); Spacer(Modifier.width(6.dp)); Text("Supprimer") }
+                }
+            }
+            item { HorizontalDivider(); Text("Métadonnées", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium) }
             item { OutlinedButton(onClick = onF95, Modifier.fillMaxWidth()) { Icon(Icons.Default.Link, null); Spacer(Modifier.width(6.dp)); Text("Importer depuis F95Zone") } }
             item { EditField(title, { title = it }, "Titre") }; item { EditField(original, { original = it }, "Titre original") }
             item { EditField(developer, { developer = it }, "Développeur") }; item { EditField(version, { version = it }, "Version") }
-            item { EditField(code, { code = it }, "Code produit") }; item { EditField(language, { language = it }, "Langue") }
             item { EditField(f95Url, { f95Url = it }, "Lien F95Zone") }
             item { EditField(description, { description = it }, "Description", false) }
             item { TextTagInput(textTags, { textTags = it }) }
+            item { HorizontalDivider(); Text("Zone sensible", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error) }
+            item { OutlinedButton(
+                onClick = onDeleteGame,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
+            ) { Icon(Icons.Default.DeleteForever, null); Spacer(Modifier.width(6.dp)); Text("Supprimer le jeu") } }
         } },
-        confirmButton = { TextButton(onClick = { onSave(GameEdits(title, original, developer, version, code, language, description, f95Url), textTags) }, enabled = title.isNotBlank()) { Text("Enregistrer") } },
+        confirmButton = { TextButton(onClick = { onSave(GameEdits(title, original, developer, version, game.productCode, game.language, description, f95Url), textTags) }, enabled = title.isNotBlank()) { Text("Enregistrer") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
     )
 }
@@ -1681,7 +1869,7 @@ private fun F95ImportSheet(
     var step by remember(game.id) { mutableIntStateOf(0) }
     var selectedTags by remember(metadata?.sourceUrl) { mutableStateOf(metadata?.tags?.toSet().orEmpty()) }
     var selectedImage by remember(metadata?.sourceUrl) { mutableStateOf<CoverCandidate?>(null) }
-    var showGoogleSearch by remember(game.id) { mutableStateOf(false) }
+    var showBingSearch by remember(game.id) { mutableStateOf(false) }
     val existingNames = remember(existingTags) { existingTags.map { it.normalizedName }.toSet() }
     LaunchedEffect(metadata?.sourceUrl) {
         if (metadata != null) step = 1
@@ -1724,13 +1912,13 @@ private fun F95ImportSheet(
                         modifier = Modifier.fillMaxWidth()
                     ) { Icon(Icons.Default.Search, null); Spacer(Modifier.width(6.dp)); Text("Analyser le lien") }
                     OutlinedButton(
-                        onClick = { showGoogleSearch = true },
+                        onClick = { showBingSearch = true },
                         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
                         enabled = state.browserUrl != null && !state.loading
                     ) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
                         Spacer(Modifier.width(7.dp))
-                        Text("Rechercher la fiche sur Google")
+                        Text("Rechercher le thread sur Bing")
                     }
                 }
                 1 -> Column(Modifier.fillMaxWidth()) {
@@ -1788,20 +1976,20 @@ private fun F95ImportSheet(
             }
         }
     }
-    if (showGoogleSearch && state.browserUrl != null) GoogleF95PickerDialog(
+    if (showBingSearch && state.browserUrl != null) BingF95PickerDialog(
         searchUrl = state.browserUrl,
         onThreadSelected = { selectedUrl ->
-            showGoogleSearch = false
+            showBingSearch = false
             url = selectedUrl
             onFetch(selectedUrl)
         },
-        onDismiss = { showGoogleSearch = false }
+        onDismiss = { showBingSearch = false }
     )
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun GoogleF95PickerDialog(searchUrl: String, onThreadSelected: (String) -> Unit, onDismiss: () -> Unit) {
+private fun BingF95PickerDialog(searchUrl: String, onThreadSelected: (String) -> Unit, onDismiss: () -> Unit) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var selectionError by remember { mutableStateOf<String?>(null) }
     val latestSelection by rememberUpdatedState(onThreadSelected)
@@ -1810,7 +1998,7 @@ private fun GoogleF95PickerDialog(searchUrl: String, onThreadSelected: (String) 
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 CompactHeader(
-                    "Rechercher sur Google",
+                    "Rechercher sur Bing",
                     "Appui long sur le bon résultat F95Zone",
                     onBack = onDismiss
                 )
@@ -1823,7 +2011,7 @@ private fun GoogleF95PickerDialog(searchUrl: String, onThreadSelected: (String) 
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
                                     val host = request.url.host.orEmpty().lowercase()
-                                    return host != "google.com" && !host.endsWith(".google.com")
+                                    return host != "bing.com" && !host.endsWith(".bing.com")
                                 }
                             }
                             setOnLongClickListener {
@@ -2571,16 +2759,17 @@ private fun RuntimeManagerDialog(runtimes: List<JoiPlayRuntimeInfo>, onDismiss: 
                         headlineContent = { Text(runtime.name) },
                         supportingContent = {
                             Text(when {
+                                runtime.updateAvailable -> "Installé${runtime.versionName?.let { " • version $it" }.orEmpty()} • mise à jour ${runtime.latestVersion} disponible"
                                 runtime.installed -> "Installé${runtime.versionName?.let { " • version $it" }.orEmpty()}"
                                 runtime.required -> "Requis par votre bibliothèque • non installé"
-                                else -> "Non requis actuellement • non installé"
+                                else -> "Version ${runtime.latestVersion.orEmpty()} • non installé"
                             })
                         },
                         leadingContent = { Icon(
-                            if (runtime.installed) Icons.Default.CheckCircle else Icons.Default.Download,
-                            null, tint = if (runtime.installed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
+                            if (runtime.updateAvailable) Icons.Default.Update else if (runtime.installed) Icons.Default.CheckCircle else Icons.Default.Download,
+                            null, tint = if (runtime.updateAvailable) MaterialTheme.colorScheme.tertiary else if (runtime.installed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.error
                         ) },
-                        trailingContent = { if (!runtime.installed) TextButton(onClick = { uriHandler.openUri(runtime.downloadUrl) }) { Text("Télécharger") } }
+                        trailingContent = { if (!runtime.installed || runtime.updateAvailable) TextButton(onClick = { uriHandler.openUri(runtime.downloadUrl) }) { Text(if (runtime.updateAvailable) "Mettre à jour" else "Télécharger") } }
                     ) }
                     item { Text(
                         "Après installation ou mise à jour d’un plugin, fermez puis rouvrez ce gestionnaire pour relancer la détection.",

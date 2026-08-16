@@ -22,7 +22,10 @@ data class AstraSettings(
     val viewMode: LibraryViewMode = LibraryViewMode.GRID,
     val coverSize: CoverSize = CoverSize.MEDIUM,
     val gridColumns: Int = 2,
-    val backupFolderUri: String? = null
+    val backupFolderUri: String? = null,
+    val joiPlayCatalogJson: String = "",
+    val joiPlayCatalogFetchedAt: Long = 0L,
+    val joiPlayNotifiedVersions: String = ""
 )
 
 class SettingsRepository(private val context: Context) {
@@ -35,7 +38,10 @@ class SettingsRepository(private val context: Context) {
             viewMode = enumValueOrDefault(values[VIEW_MODE], LibraryViewMode.GRID),
             coverSize = enumValueOrDefault(values[COVER_SIZE], CoverSize.MEDIUM),
             gridColumns = (values[GRID_COLUMNS] ?: 2).coerceIn(2, 4),
-            backupFolderUri = values[BACKUP_FOLDER_URI]
+            backupFolderUri = values[BACKUP_FOLDER_URI],
+            joiPlayCatalogJson = values[JOIPLAY_CATALOG_JSON].orEmpty(),
+            joiPlayCatalogFetchedAt = values[JOIPLAY_CATALOG_FETCHED_AT] ?: 0L,
+            joiPlayNotifiedVersions = values[JOIPLAY_NOTIFIED_VERSIONS].orEmpty()
         )
     }
 
@@ -47,6 +53,11 @@ class SettingsRepository(private val context: Context) {
     suspend fun setCoverSize(value: CoverSize) = context.dataStore.edit { it[COVER_SIZE] = value.name }
     suspend fun setGridColumns(value: Int) = context.dataStore.edit { it[GRID_COLUMNS] = value.coerceIn(2, 4) }
     suspend fun setBackupFolder(uri: String) = context.dataStore.edit { it[BACKUP_FOLDER_URI] = uri }
+    suspend fun cacheJoiPlayCatalog(json: String, fetchedAt: Long = System.currentTimeMillis()) = context.dataStore.edit {
+        it[JOIPLAY_CATALOG_JSON] = json
+        it[JOIPLAY_CATALOG_FETCHED_AT] = fetchedAt
+    }
+    suspend fun setJoiPlayNotifiedVersions(value: String) = context.dataStore.edit { it[JOIPLAY_NOTIFIED_VERSIONS] = value }
 
     private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String?, default: T): T =
         value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: default
@@ -60,5 +71,8 @@ class SettingsRepository(private val context: Context) {
         private val COVER_SIZE = stringPreferencesKey("cover_size")
         private val GRID_COLUMNS = intPreferencesKey("grid_columns")
         private val BACKUP_FOLDER_URI = stringPreferencesKey("backup_folder_uri")
+        private val JOIPLAY_CATALOG_JSON = stringPreferencesKey("joiplay_catalog_json")
+        private val JOIPLAY_CATALOG_FETCHED_AT = androidx.datastore.preferences.core.longPreferencesKey("joiplay_catalog_fetched_at")
+        private val JOIPLAY_NOTIFIED_VERSIONS = stringPreferencesKey("joiplay_notified_versions")
     }
 }

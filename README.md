@@ -21,11 +21,12 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - collections intelligentes intégrées et personnalisables avec règles moteur, tag recherchable et trié alphabétiquement, dossier, favori, jaquette, dates et durée de jeu, combinables en ET/OU ;
 - résolution guidée des doublons : comparaison côte à côte, choix du principal, fusion des métadonnées et de l’historique, récupération des sauvegardes et stratégie de conflits ;
 - suivi du temps de jeu par sessions et affichage de la durée cumulée ;
-- gestionnaire de runtimes JoiPlay avec détection du lanceur et des plugins RPG Maker/Ren’Py installés ;
+- gestionnaire de runtimes JoiPlay avec détection dynamique des variantes installées, catalogue officiel mis en cache sept jours et notification des mises à jour ;
 - suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
 - sauvegarde et restauration ZIP du catalogue, des profils et des jaquettes, avec raccourci vers le dossier choisi ;
 - choix manuel de jaquettes dans Google Images avec SafeSearch non forcé, sélection de l’image affichée, menu au long appui, choix local et recadrage libre ;
-- import F95Zone pendant l'ajout ou l'édition : recherche automatique du thread, lien conservé dans la fiche, sélection des tags puis choix d'une image recadrable ;
+- enrichissement silencieux des nouveaux jeux via VNDB (sans importer ses tags), puis recherche Bing du thread F95Zone avec SafeSearch désactivé et URL canonique conservée dans la fiche ;
+- import F95Zone pendant l'ajout ou l'édition : lien conservé dans la fiche, sélection des tags puis choix d'une image recadrable ;
 - assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
 - ajout textuel de tags par virgules ou crochets pendant la configuration et l’édition, avec réutilisation automatique des tags existants ;
@@ -40,7 +41,7 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 
 ## Jaquettes et F95Zone
 
-Google Images n’est jamais lancé automatiquement : l’utilisateur ouvre explicitement le navigateur intégré, touche un résultat puis utilise l’image affichée ou le menu au long appui. La requête demande `safe=off`, mais un SafeSearch verrouillé par le compte, l’appareil ou le réseau reste sous le contrôle de Google. L’import F95Zone recherche automatiquement `nom du jeu + f95zone` via une recherche indépendante, accepte exclusivement les liens HTTPS `f95zone.to/threads/…`, conserve le thread choisi dans la fiche et affiche les tags puis les images avant l’application des données.
+Google Images n’est jamais lancé automatiquement : l’utilisateur ouvre explicitement le navigateur intégré, touche un résultat puis utilise l’image affichée ou le menu au long appui. La requête demande `safe=off`, mais un SafeSearch verrouillé par le compte, l’appareil ou le réseau reste sous le contrôle de Google. La détection F95Zone utilise Bing avec `adlt=off` et la requête `nom du jeu site:f95zone.to`. Tout résultat accepté est réduit à l’URL canonique HTTPS du thread, terminée juste après son identifiant. VNDB complète silencieusement jaquette, description et développeur lors de l’ajout, sans importer ses tags ; le bouton des paramètres relance cet enrichissement sur les fiches incomplètes.
 
 ## Architecture
 
@@ -69,7 +70,7 @@ APK : `app/build/outputs/apk/debug/app-debug.apk`.
 
 ## Tests
 
-Les tests locaux couvrent la normalisation, les signatures moteur imbriquées, le fingerprint, les doublons/déplacements, le parseur FTS, les modes multi-tags, les runtimes Ren'Py, le parseur F95Zone et le payload JoiPlay.
+Les tests locaux couvrent la normalisation, les signatures moteur imbriquées, le fingerprint, les doublons/déplacements, le parseur FTS, les modes multi-tags, les runtimes Ren'Py, les parseurs F95Zone, VNDB et du catalogue JoiPlay, ainsi que le payload JoiPlay.
 
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest

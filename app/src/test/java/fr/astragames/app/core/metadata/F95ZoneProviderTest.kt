@@ -62,10 +62,10 @@ class F95ZoneProviderTest {
         assertEquals("https://f95zone.to/images/cover-1920.jpg", metadata.images.single().imageUrl)
     }
 
-    @Test fun buildsGoogleSearchWithSafeSearchDisabled() {
+    @Test fun buildsBingSearchWithSafeSearchDisabledAndSiteFilter() {
         assertEquals(
-            "https://www.google.com/search?hl=fr&safe=off&q=Wind+Waiting+Island+f95zone",
-            F95ZoneProvider().googleSearchUrl("Wind Waiting Island")
+            "https://www.bing.com/search?setlang=fr-FR&adlt=off&q=Wind+Waiting+Island+site%3Af95zone.to",
+            F95ZoneProvider().bingSearchUrl("Wind Waiting Island")
         )
     }
 
@@ -85,5 +85,22 @@ class F95ZoneProviderTest {
     @Test fun rejectsNonThreadSearchLinks() {
         assertEquals(null, extractF95ThreadUrl("https://f95zone.to/forums/games.2/"))
         assertEquals(null, extractF95ThreadUrl("https://example.com/threads/fake.123/"))
+    }
+
+    @Test fun canonicalizesThreadAndDropsEverySuffixAfterArticleId() {
+        assertEquals(
+            "https://f95zone.to/threads/wind-waiting-island.123/",
+            extractF95ThreadUrl("https://f95zone.to/threads/wind-waiting-island.123/page-9?order=date#post-42")
+        )
+    }
+
+    @Test fun parsesFirstBingThreadResult() {
+        val html = """
+            <li class="b_algo"><h2><a href="https://f95zone.to/threads/game-name.987/page-2">Game</a></h2></li>
+        """.trimIndent()
+        assertEquals(
+            "https://f95zone.to/threads/game-name.987/",
+            F95ZoneProvider().parseSearchHtml(html)
+        )
     }
 }

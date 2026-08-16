@@ -4,12 +4,15 @@ import android.app.Application
 import fr.astragames.app.core.filesystem.FileAccessResolver
 import fr.astragames.app.core.metadata.GoogleCoverProvider
 import fr.astragames.app.core.metadata.F95ZoneProvider
+import fr.astragames.app.core.metadata.VndbProvider
 import fr.astragames.app.data.local.AstraDatabase
 import fr.astragames.app.data.backup.BackupManager
 import fr.astragames.app.data.repository.GameRepository
 import fr.astragames.app.data.scanner.RecursiveSourceScanner
 import fr.astragames.app.launcher.JoiPlayLauncher
+import fr.astragames.app.launcher.JoiPlayCatalogProvider
 import fr.astragames.app.settings.SettingsRepository
+import fr.astragames.app.worker.JoiPlayUpdateWorker
 
 class AstraApplication : Application() {
     lateinit var container: AppContainer
@@ -25,8 +28,11 @@ class AstraApplication : Application() {
             settings = SettingsRepository(this),
             launcher = JoiPlayLauncher(),
             covers = GoogleCoverProvider(this),
-            f95Zone = F95ZoneProvider()
+            f95Zone = F95ZoneProvider(),
+            vndb = VndbProvider(),
+            joiPlayCatalog = JoiPlayCatalogProvider()
         )
+        JoiPlayUpdateWorker.schedule(this)
     }
 }
 
@@ -35,5 +41,7 @@ data class AppContainer(
     val settings: SettingsRepository,
     val launcher: JoiPlayLauncher,
     val covers: GoogleCoverProvider,
-    val f95Zone: F95ZoneProvider
+    val f95Zone: F95ZoneProvider,
+    val vndb: VndbProvider,
+    val joiPlayCatalog: JoiPlayCatalogProvider
 )

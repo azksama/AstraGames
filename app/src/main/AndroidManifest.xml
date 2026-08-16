@@ -8,6 +8,14 @@
         <package android:name="cyou.joiplay.runtime.rpgmaker" />
         <package android:name="cyou.joiplay.runtime.renpy" />
         <package android:name="cyou.joiplay.runtime.renpy8" />
+        <package android:name="cyou.joiplay.runtime.godot" />
+        <package android:name="cyou.joiplay.runtime.godot3" />
+        <package android:name="cyou.joiplay.runtime.godot4" />
+        <package android:name="cyou.joiplay.runtime.ruffle" />
+        <intent>
+            <action android:name="android.intent.action.MAIN" />
+            <category android:name="android.intent.category.LAUNCHER" />
+        </intent>
         <intent>
             <action android:name="cyou.joiplay.runtime.rpgmmv.run" />
         </intent>
@@ -28,6 +36,18 @@
         </intent>
         <intent>
             <action android:name="cyou.joiplay.runtime.rpgmxp.run" />
+        </intent>
+        <intent>
+            <action android:name="cyou.joiplay.runtime.godot.run" />
+        </intent>
+        <intent>
+            <action android:name="cyou.joiplay.runtime.godot3.run" />
+        </intent>
+        <intent>
+            <action android:name="cyou.joiplay.runtime.godot4.run" />
+        </intent>
+        <intent>
+            <action android:name="cyou.joiplay.runtime.ruffle.run" />
         </intent>
     </queries>
 
