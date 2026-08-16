@@ -2,6 +2,7 @@ package fr.astragames.app.ui
 
 import fr.astragames.app.BuildConfig
 import android.annotation.SuppressLint
+import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
@@ -97,7 +98,7 @@ import kotlin.math.abs
 
 private enum class Destination(val route: String, val description: String, val visibleInMenu: Boolean = true) {
     LIBRARY("library", "Bibliothèque"), SEARCH("search", "Recherche", false),
-    COLLECTIONS("collections", "Collections"), TAGS("tags", "Tags", false), SETTINGS("settings", "Paramètres")
+    COLLECTIONS("collections", "Collections"), UPDATES("updates", "Mises à jour"), TAGS("tags", "Tags", false), SETTINGS("settings", "Paramètres")
 }
 
 private val menuDestinations = Destination.entries.filter { it.visibleInMenu }
@@ -144,7 +145,7 @@ fun AstraApp(
             LanguageTransition(state.settings.language) { visibleLanguage ->
                 CompositionLocalProvider(LocalAppLanguage provides visibleLanguage) {
                     val visibleState = state.copy(settings = state.settings.copy(language = visibleLanguage))
-                    OnboardingScreen(visibleState, onPickSource, onPickTags, viewModel::setLanguage, viewModel::completeOnboarding)
+                    OnboardingScreen(visibleState, onPickSource, onPickTags, viewModel::setLanguage, viewModel::completeOnboarding, viewModel::connectF95Session, viewModel::disconnectF95)
                 }
             }
         } else {
@@ -182,7 +183,7 @@ fun AstraApp(
                             }
                         }
                     }
-                    if (visibleState.scanProgress.active) ScanProgressOverlay(visibleState.scanProgress)
+                    if (visibleState.scanProgress.active) ScanProgressOverlay(visibleState.scanProgress, viewModel::cancelSyncs)
                     if (scanReports.isNotEmpty()) ScanReportDialog(scanReports, viewModel::dismissScanReports)
                     if (visibleState.setupQueue.isNotEmpty() && scanReports.isEmpty()) {
                         NewGamesSetupWizard(visibleState, viewModel, onPickCover)
@@ -212,7 +213,7 @@ private fun CompactBottomNavigation(route: String, nav: NavHostController, modif
         contentAlignment = Alignment.Center
     ) {
         Surface(
-            Modifier.fillMaxWidth().height(56.dp), RoundedCornerShape(22.dp),
+            Modifier.fillMaxWidth().height(58.dp), RoundedCornerShape(50),
             color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 4.dp, shadowElevation = 4.dp
         ) {
             Row(
@@ -259,18 +260,15 @@ private fun CompactNavigationRail(route: String, nav: NavHostController) {
 
 @Composable
 private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> Unit) {
-    Surface(
-        onClick = onClick,
-        modifier = Modifier.size(46.dp),
-        shape = RoundedCornerShape(16.dp),
-        color = if (selected) MaterialTheme.colorScheme.primaryContainer else Color.Transparent
+    Box(
+        Modifier.size(50.dp).clip(RoundedCornerShape(50)).clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
     ) {
-        Box(contentAlignment = Alignment.Center) {
-            Icon(
-                destination.icon(), AppLocalizer.text(destination.description),
-                tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-            )
-        }
+        Icon(
+            destination.icon(), AppLocalizer.text(destination.description),
+            modifier = Modifier.size(if (selected) 27.dp else 23.dp),
+            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .42f)
+        )
     }
 }
 
@@ -282,6 +280,7 @@ private fun Destination.icon() = when (this) {
     Destination.LIBRARY -> Icons.Default.Home
     Destination.SEARCH -> Icons.Default.Search
     Destination.COLLECTIONS -> Icons.Default.CollectionsBookmark
+    Destination.UPDATES -> Icons.Default.Update
     Destination.TAGS -> Icons.Default.Style
     Destination.SETTINGS -> Icons.Default.Settings
 }
@@ -311,6 +310,7 @@ private fun AppNavHost(
         composable(Destination.LIBRARY.route) { LibraryScreen(state, vm, { nav.navigate("game/$it") }, onPickSource) }
         composable(Destination.SEARCH.route) { SearchScreen(state, vm, { nav.navigate("game/$it") }) }
         composable(Destination.COLLECTIONS.route) { CollectionsScreen(state, vm) { nav.navigate("game/$it") } }
+        composable(Destination.UPDATES.route) { GameUpdatesScreen(state, vm) }
         composable(Destination.TAGS.route) { TagsScreen(state, vm, onPickTags, nav::popBackStack) }
         composable(Destination.SETTINGS.route) {
             SettingsScreen(state, vm, onPickSource, { nav.navigate(Destination.TAGS.route) }, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
@@ -348,9 +348,12 @@ private fun OnboardingScreen(
     onPickSource: () -> Unit,
     onPickTags: () -> Unit,
     onSetLanguage: (AppLanguage) -> Unit,
-    onFinish: () -> Unit
+    onFinish: () -> Unit,
+    onConnectSession: (cookies: String, username: String?) -> Unit,
+    onDisconnectSession: () -> Unit
 ) {
     var step by rememberSaveable { mutableIntStateOf(0) }
+    var showLogin by remember { mutableStateOf(false) }
     val hasSource = state.sources.isNotEmpty()
     val hasTags = state.tags.isNotEmpty()
     val uriHandler = LocalUriHandler.current
@@ -372,7 +375,7 @@ private fun OnboardingScreen(
             Text("Astra détecte, classe et lance vos jeux JoiPlay sans modifier leurs fichiers.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(18.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
-                repeat(4) { index ->
+                repeat(5) { index ->
                     Box(
                         Modifier.width(if (index == step) 34.dp else 10.dp).height(7.dp)
                             .clip(RoundedCornerShape(50))
@@ -417,7 +420,7 @@ private fun OnboardingScreen(
                                 color = MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         }
-                        else -> {
+                        3 -> {
                             Text("Vérifier les runtimes", style = MaterialTheme.typography.titleLarge)
                             Text("Astra vérifie les composants JoiPlay présents sur le téléphone.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                             if (state.runtimes.isEmpty()) Text("Aucun runtime détecté", color = MaterialTheme.colorScheme.error)
@@ -445,11 +448,32 @@ private fun OnboardingScreen(
                                 }
                             }
                         }
+                        else -> {
+                            Text("Compte F95Zone (optionnel)", style = MaterialTheme.typography.titleLarge)
+                            Text("Connectez-vous pour accéder au contenu réservé aux membres et récupérer les versions des jeux.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Row(Modifier.fillMaxWidth().padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Icon(Icons.Default.AccountCircle, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Text(
+                                    if (state.settings.f95SessionUser != null) "Connecté en tant que ${state.settings.f95SessionUser}"
+                                    else "Session F95Zone : non connectée",
+                                    Modifier.weight(1f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                    style = MaterialTheme.typography.bodyMedium
+                                )
+                                if (state.settings.f95SessionUser != null) {
+                                    TextButton(onClick = onDisconnectSession) { Text("Se déconnecter") }
+                                } else {
+                                    Button(onClick = { showLogin = true }) { Text("Se connecter") }
+                                }
+                            }
+                        }
                     }
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         if (step > 0) TextButton(onClick = { step-- }, Modifier.weight(1f)) { Text("Retour") }
                         else Spacer(Modifier.weight(1f))
-                        if (step < 3) {
+                        if (step < 4) {
                             Button(onClick = { step++ }, Modifier.weight(1f)) { Text("Continuer") }
                         } else {
                             Button(onClick = onFinish, Modifier.weight(1f)) { Text("Terminer") }
@@ -462,6 +486,13 @@ private fun OnboardingScreen(
             }
         }
     }
+    if (showLogin) F95LoginDialog(
+        onSessionReady = { cookies, user ->
+            showLogin = false
+            onConnectSession(cookies, user)
+        },
+        onDismiss = { showLogin = false }
+    )
 }
 
 @Composable
@@ -565,7 +596,7 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
                     IconButton(onClick = { bulkDelete = true }) { Icon(Icons.Default.DeleteOutline, "Supprimer") }
                     IconButton(onClick = { selectedGames = emptySet() }) { Icon(Icons.Default.Close, "Quitter la sélection") }
                 } else {
-                Box {
+                if (state.settings.viewMode == LibraryViewMode.GRID) Box {
                     IconButton(onClick = { columnsMenu = true }) { Icon(Icons.Default.ViewColumn, "Nombre de colonnes") }
                     DropdownMenu(columnsMenu, { columnsMenu = false }) {
                         (2..4).forEach { columns ->
@@ -1035,14 +1066,28 @@ private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (
         } else LazyColumn(Modifier.padding(padding).imePadding(), contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = PageBottomPadding)) {
             if (currentId == null) {
                 item { SectionTitle("Collections intelligentes") }
-                items(smartCollections, key = { it.key }) { smart ->
-                    RoundedListItem(
-                        modifier = Modifier.clickable { smartKey = smart.key },
-                        headlineContent = { Text(smart.name) },
-                        supportingContent = { Text("${state.games.count(smart.predicate)} jeux") },
-                        leadingContent = { Icon(smart.icon, null, tint = if (smart.key == "favorites") Color.Red else LocalContentColor.current) },
-                        trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
-                    )
+                item {
+                    LazyVerticalGrid(
+                        GridCells.Fixed(3),
+                        Modifier.fillMaxWidth().height((((smartCollections.size + 2) / 3) * 118).dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(10.dp)
+                    ) {
+                        items(smartCollections, key = { it.key }) { smart ->
+                            Card(
+                                Modifier.fillMaxWidth().height(108.dp).clickable { smartKey = smart.key },
+                                shape = RoundedCornerShape(18.dp),
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                            ) {
+                                Column(Modifier.fillMaxSize().padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                                    Icon(smart.icon, null, Modifier.size(28.dp), tint = if (smart.key == "favorites") Color.Red else MaterialTheme.colorScheme.primary)
+                                    Spacer(Modifier.height(7.dp))
+                                    Text(smart.name, style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Text("${state.games.count(smart.predicate)} jeux", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                }
+                            }
+                        }
+                    }
                 }
                 item {
                     Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -1279,6 +1324,9 @@ private fun SettingsScreen(
                 leadingContent = {
                     if (state.metadataRefresh.running) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Default.AutoAwesome, null)
+                },
+                trailingContent = {
+                    if (state.metadataRefresh.running) IconButton(onClick = { vm.cancelSyncs() }) { Icon(Icons.Default.Close, "Arrêter") }
                 }
             ) }
             item {
@@ -1568,13 +1616,13 @@ private fun GameDetailScreen(
     if (item != null && pickCover) CoverPickerSheet(item, coverState, state.settings.openSearchInExternalBrowser, { vm.chooseRemoteCover(item.id, it) }, {
         onPickCover(item.id); pickCover = false
     }, { vm.removeCover(item.id); pickCover = false }, { pickCover = false; vm.clearCoverSearch() })
-    if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, state.settings.openSearchInExternalBrowser, { vm.fetchF95Metadata(item.id, it) }, {
+    if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, state.settings.openSearchInExternalBrowser, state.settings.f95SessionUser, { vm.fetchF95Metadata(item.id, it) }, {
         vm.prepareF95Search(item.id, item.title)
     }, { tags, image ->
         vm.applyF95Tags(item.id, tags)
         image?.let { vm.chooseF95Cover(item.id, it) }
         importF95 = false
-    }, { importF95 = false; vm.clearF95Import() })
+    }, { importF95 = false; vm.clearF95Import() }, vm::connectF95Session, vm::disconnectF95)
     if (item?.coverUri != null && previewCover) CoverFullscreenDialog(item.coverUri, item.title) { previewCover = false }
     if (item != null && showCompatibilityActions) AlertDialog(
         onDismissRequest = { showCompatibilityActions = false },
@@ -2029,14 +2077,14 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     if (showCover) CoverPickerSheet(game, coverState, state.settings.openSearchInExternalBrowser, { vm.chooseRemoteCover(game.id, it) }, {
         onPickCover(game.id); showCover = false
     }, { vm.removeCover(game.id); showCover = false }, { showCover = false; vm.clearCoverSearch() })
-    if (showF95) F95ImportSheet(game, state.tags, f95State, state.settings.openSearchInExternalBrowser, { vm.fetchF95Metadata(game.id, it) }, {
+    if (showF95) F95ImportSheet(game, state.tags, f95State, state.settings.openSearchInExternalBrowser, state.settings.f95SessionUser, { vm.fetchF95Metadata(game.id, it) }, {
         vm.prepareF95Search(game.id, game.title)
     }, { tags, image ->
         importedF95TagNames = tags.map { it.trim().lowercase(java.util.Locale.ROOT) }.toSet()
         vm.applyF95Tags(game.id, tags)
         image?.let { vm.chooseF95Cover(game.id, it) }
         showF95 = false
-    }, { showF95 = false; vm.clearF95Import() })
+    }, { showF95 = false; vm.clearF95Import() }, vm::connectF95Session, vm::disconnectF95)
 }
 
 @Composable
@@ -2156,21 +2204,25 @@ private fun F95ImportSheet(
     existingTags: List<TagEntity>,
     state: F95ImportState,
     openInExternalBrowser: Boolean,
+    f95SessionUser: String?,
     onFetch: (String) -> Unit,
     onPrepareSearch: () -> Unit,
     onComplete: (Set<String>, CoverCandidate?) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onConnectSession: (cookies: String, username: String?) -> Unit,
+    onDisconnectSession: () -> Unit
 ) {
     var url by remember(game.id) { mutableStateOf(game.f95Url.orEmpty()) }
     val metadata = state.metadata
-    var step by remember(game.id) { mutableIntStateOf(0) }
-    var selectedTags by remember(metadata?.sourceUrl) { mutableStateOf(metadata?.tags?.toSet().orEmpty()) }
-    var selectedImage by remember(metadata?.sourceUrl) { mutableStateOf<CoverCandidate?>(null) }
+    var step by rememberSaveable(game.id) { mutableIntStateOf(0) }
+    var selectedTags by rememberSaveable(metadata?.sourceUrl) { mutableStateOf(metadata?.tags.orEmpty()) }
+    var selectedImageUrl by rememberSaveable(metadata?.sourceUrl) { mutableStateOf<String?>(null) }
     var showSearch by remember(game.id) { mutableStateOf(false) }
+    var showLogin by remember(game.id) { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val existingNames = remember(existingTags) { existingTags.map { it.normalizedName }.toSet() }
     LaunchedEffect(metadata?.sourceUrl) {
-        if (metadata != null) step = 1
+        if (metadata != null && step == 0) step = 1
     }
     LaunchedEffect(game.id) { onPrepareSearch() }
     Dialog(
@@ -2190,6 +2242,26 @@ private fun F95ImportSheet(
                     }
                 }
                 HorizontalDivider()
+                Row(
+                    Modifier.fillMaxWidth().padding(vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Icon(Icons.Default.AccountCircle, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(8.dp))
+                    Text(
+                        if (f95SessionUser != null) "Connecté en tant que ${f95SessionUser}"
+                        else "Session F95Zone : non connectée",
+                        Modifier.weight(1f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        style = MaterialTheme.typography.bodyMedium
+                    )
+                    if (f95SessionUser != null) {
+                        TextButton(onClick = onDisconnectSession) { Text("Se déconnecter") }
+                    } else {
+                        Button(onClick = { showLogin = true }) { Text("Se connecter") }
+                    }
+                }
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val contentModifier = if (maxWidth >= 840.dp) {
                         Modifier.widthIn(max = 920.dp).fillMaxHeight().align(Alignment.Center)
@@ -2242,8 +2314,8 @@ private fun F95ImportSheet(
                             Text("Sélectionner les tags", style = MaterialTheme.typography.titleMedium)
                             Text("${selectedTags.size} sur ${metadata?.tags?.size ?: 0} sélectionné(s)", color = MaterialTheme.colorScheme.onSurfaceVariant)
                         }
-                        TextButton(onClick = { selectedTags = metadata?.tags?.toSet().orEmpty() }) { Text("Tout") }
-                        TextButton(onClick = { selectedTags = emptySet() }) { Text("Aucun") }
+                        TextButton(onClick = { selectedTags = metadata?.tags.orEmpty() }) { Text("Tout") }
+                        TextButton(onClick = { selectedTags = emptyList() }) { Text("Aucun") }
                     }
                     val detectedTags = metadata?.tags.orEmpty()
                     if (detectedTags.isEmpty()) CenterMessage("Aucun tag détecté sur ce thread.", Modifier.height(300.dp))
@@ -2251,10 +2323,10 @@ private fun F95ImportSheet(
                         items(detectedTags, key = { it.lowercase(java.util.Locale.ROOT) }) { tag ->
                             val normalized = tag.normalizeTagName()
                             ListItem(
-                                modifier = Modifier.clickable { selectedTags = selectedTags.toggle(tag) },
+                                modifier = Modifier.clickable { selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag },
                                 headlineContent = { Text(tag) },
                                 supportingContent = { Text(if (normalized in existingNames) "Tag existant" else "Nouveau tag · F95Zone") },
-                                leadingContent = { Checkbox(tag in selectedTags, { selectedTags = selectedTags.toggle(tag) }) }
+                                leadingContent = { Checkbox(tag in selectedTags, { selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag }) }
                             )
                         }
                     }
@@ -2267,21 +2339,22 @@ private fun F95ImportSheet(
                     Text("Choisir une image", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
                     Text("L’image choisie pourra être recadrée avant enregistrement.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     val images = metadata?.images.orEmpty()
+                    val selectedImage = images.firstOrNull { it.imageUrl == selectedImageUrl }
                     if (images.isEmpty()) CenterMessage("Aucune image détectée sur ce thread.", Modifier.height(300.dp))
                     else LazyVerticalGrid(
                         GridCells.Adaptive(150.dp), Modifier.fillMaxWidth().heightIn(max = 440.dp).padding(top = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(images, key = { it.imageUrl }) { image ->
-                            CoverCandidateCard(image, selected = selectedImage?.imageUrl == image.imageUrl) { selectedImage = image }
+                            CoverCandidateCard(image, selected = selectedImageUrl == image.imageUrl) { selectedImageUrl = image.imageUrl }
                         }
                     }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { step = 1 }) { Text("Retour") }
-                        if (selectedImage == null) TextButton(onClick = { onComplete(selectedTags, null) }) { Text("Sans image") }
+                        TextButton(onClick = { step = 1 }, Modifier.weight(1f)) { Text("Retour") }
+                        if (selectedImageUrl == null) TextButton(onClick = { onComplete(selectedTags.toSet(), null) }, Modifier.weight(1f)) { Text("Sans image") }
                         Button(
-                            onClick = { selectedImage?.let { onComplete(selectedTags, it) } },
-                            enabled = selectedImage != null, modifier = Modifier.weight(1f)
+                            onClick = { selectedImage?.let { onComplete(selectedTags.toSet(), it) } },
+                            enabled = selectedImageUrl != null, modifier = Modifier.weight(1f)
                         ) { Icon(Icons.Default.Check, null); Spacer(Modifier.width(6.dp)); Text("Importer") }
                     }
                 }
@@ -2300,6 +2373,13 @@ private fun F95ImportSheet(
             onFetch(selectedUrl)
         },
         onDismiss = { showSearch = false }
+    )
+    if (showLogin) F95LoginDialog(
+        onSessionReady = { cookies, user ->
+            showLogin = false
+            onConnectSession(cookies, user)
+        },
+        onDismiss = { showLogin = false }
     )
 }
 
@@ -2374,6 +2454,74 @@ private fun SearchF95PickerDialog(
                             latestSelection(threadUrl)
                         }
                     }) { Text("Utiliser le lien") }
+                }
+            }
+        }
+    }
+    DisposableEffect(Unit) { onDispose { webView?.destroy() } }
+}
+
+@SuppressLint("SetJavaScriptEnabled")
+@Composable
+private fun F95LoginDialog(
+    onSessionReady: (cookies: String, username: String?) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var webView by remember { mutableStateOf<WebView?>(null) }
+    var username by remember { mutableStateOf<String?>(null) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val latestCallback by rememberUpdatedState(onSessionReady)
+
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+                CompactHeader(
+                    "Se connecter à F95Zone",
+                    "Connectez-vous sur le site puis utilisez le bouton ci-dessous.",
+                    onBack = onDismiss
+                )
+                AndroidView(
+                    factory = { context ->
+                        WebView(context).apply {
+                            settings.javaScriptEnabled = true
+                            settings.domStorageEnabled = true
+                            settings.loadsImagesAutomatically = true
+                            settings.userAgentString = SEARCH_WEBVIEW_USER_AGENT
+                            webViewClient = object : WebViewClient() {
+                                override fun onPageFinished(view: WebView, url: String) {
+                                    super.onPageFinished(view, url)
+                                    view.evaluateJavascript(
+                                        "(function(){var e=document.querySelector('.p-navgroup-linkText');return e?e.textContent.trim():'';})()"
+                                    ) { result ->
+                                        val clean = result.trim('"').ifBlank { null }
+                                        if (clean != null && clean != "null") username = clean
+                                    }
+                                }
+                            }
+                            loadUrl("https://f95zone.to/login")
+                            webView = this
+                        }
+                    },
+                    update = { webView = it },
+                    modifier = Modifier.weight(1f).fillMaxWidth()
+                )
+                error?.let {
+                    Text(
+                        it,
+                        color = MaterialTheme.colorScheme.error,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)
+                    )
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
+                    Button(onClick = {
+                        val cookies = CookieManager.getInstance().getCookie("https://f95zone.to")
+                        if (cookies.isNullOrBlank() || !cookies.contains("xf_user=")) {
+                            error = "Aucune session F95Zone détectée. Connectez-vous d’abord sur le site."
+                        } else {
+                            error = null
+                            latestCallback(cookies, username)
+                        }
+                    }) { Text("Utiliser cette session") }
                 }
             }
         }
@@ -2896,19 +3044,19 @@ private fun SearchableTagSelector(tags: List<TagEntity>, selectedId: String, onS
         OutlinedTextField(
             value = query,
             onValueChange = { query = it },
-            modifier = Modifier.fillMaxWidth(),
+            modifier = Modifier.fillMaxWidth().height(46.dp),
             label = { Text("Rechercher un tag") },
             leadingIcon = { Icon(Icons.Default.Search, null) },
+            textStyle = MaterialTheme.typography.bodySmall,
             singleLine = true
         )
         if (sortedTags.isEmpty()) Text("Aucun tag trouvé", color = MaterialTheme.colorScheme.onSurfaceVariant)
         else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(sortedTags, key = { it.id }) { tag ->
                 ListItem(
-                    modifier = Modifier.clip(RoundedCornerShape(14.dp)).clickable { onSelect(tag.id) },
-                    headlineContent = { Text(tag.name) },
-                    supportingContent = tag.groupName?.let { category -> @Composable { Text(category) } },
-                    leadingContent = { RadioButton(selected = tag.id == selectedId, onClick = { onSelect(tag.id) }) },
+                    modifier = Modifier.height(42.dp).clip(RoundedCornerShape(12.dp)).clickable { onSelect(tag.id) },
+                    headlineContent = { Text(tag.name, style = MaterialTheme.typography.bodyMedium) },
+                    leadingContent = { RadioButton(selected = tag.id == selectedId, onClick = { onSelect(tag.id) }, modifier = Modifier.size(30.dp)) },
                     colors = ListItemDefaults.colors(
                         containerColor = if (tag.id == selectedId) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
                     )
@@ -3190,8 +3338,56 @@ private fun CenterMessage(text: String, modifier: Modifier = Modifier, loading: 
     Column(horizontalAlignment = Alignment.CenterHorizontally) { if (loading) { CircularProgressIndicator(); Spacer(Modifier.height(12.dp)) }; Text(text, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 }
 
+
 @Composable
-private fun ScanProgressOverlay(progress: ScanProgressState) {
+private fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel) {
+    val updates by vm.gameUpdates.collectAsStateWithLifecycle()
+    val checking by vm.updatesChecking.collectAsStateWithLifecycle()
+    val uriHandler = LocalUriHandler.current
+    Scaffold(
+        contentWindowInsets = WindowInsets(0, 0, 0, 0),
+        topBar = { CompactHeader("Mises à jour de jeux") }
+    ) { padding ->
+        Column(Modifier.padding(padding).fillMaxSize()) {
+            Button(
+                onClick = { vm.checkGameUpdates() },
+                enabled = !checking,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)
+            ) { Icon(Icons.Default.Update, null); Spacer(Modifier.width(8.dp)); Text(if (checking) "Vérification en cours…" else "Vérifier les mises à jour") }
+            if (checking) LinearProgressIndicator(Modifier.fillMaxWidth().padding(horizontal = 16.dp))
+            when {
+                checking && updates.isEmpty() -> CenterMessage("Vérification en cours…", Modifier.fillMaxSize(), loading = true)
+                updates.isEmpty() -> CenterMessage("Aucune mise à jour disponible", Modifier.fillMaxSize())
+                else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = PageBottomPadding), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    items(updates, key = { it.game.id }) { update ->
+                        Card(Modifier.fillMaxWidth()) {
+                            Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                GameCover(update.game, Modifier.width(56.dp).aspectRatio(.72f))
+                                Spacer(Modifier.width(12.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text(update.game.title, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    Spacer(Modifier.height(4.dp))
+                                    Text(
+                                        "${update.currentVersion ?: "Version inconnue"} → ${update.latestVersion}",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.primary
+                                    )
+                                }
+                                update.game.f95Url?.let { url ->
+                                    IconButton(onClick = { uriHandler.openUri(url) }) {
+                                        Icon(Icons.AutoMirrored.Filled.OpenInNew, "Ouvrir le thread F95Zone")
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+@Composable
+private fun ScanProgressOverlay(progress: ScanProgressState, onCancel: () -> Unit) {
     Dialog(
         onDismissRequest = {},
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -3230,6 +3426,8 @@ private fun ScanProgressOverlay(progress: ScanProgressState) {
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                Spacer(Modifier.height(28.dp))
+                OutlinedButton(onClick = onCancel) { Icon(Icons.Default.Close, null); Spacer(Modifier.width(6.dp)); Text("Arrêter la synchronisation") }
             }
         }
     }

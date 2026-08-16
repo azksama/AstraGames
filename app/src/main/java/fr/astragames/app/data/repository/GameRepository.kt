@@ -386,14 +386,16 @@ class GameRepository(
     suspend fun setGameTags(gameId: String, tagIds: Set<String>) = dao.replaceGameTags(gameId, tagIds)
 
     suspend fun createTag(name: String, categoryName: String?): Boolean {
-        val clean = name.trim()
+        val clean = formatTagName(name)
         if (clean.isBlank()) return false
-        dao.upsertTag(TagEntity(UUID.randomUUID().toString(), clean, normalize(clean), categoryName))
+        val normalized = normalize(clean)
+        if (dao.getTags().any { tagEquivalent(normalize(it.name), normalized) }) return false
+        dao.upsertTag(TagEntity(UUID.randomUUID().toString(), clean, normalized, categoryName))
         return true
     }
 
     suspend fun editTag(tag: TagEntity, name: String, categoryName: String?) {
-        val clean = name.trim()
+        val clean = formatTagName(name)
         if (clean.isNotBlank()) dao.upsertTag(tag.copy(name = clean, normalizedName = normalize(clean), groupName = categoryName))
     }
 
@@ -449,7 +451,9 @@ class GameRepository(
         originalTitle: String?,
         developer: String?,
         description: String?,
-        f95Url: String?
+        f95Url: String?,
+        version: String? = null,
+        language: String? = null
     ) {
         val game = dao.getGame(gameId) ?: return
         dao.updateGameFields(
@@ -457,9 +461,9 @@ class GameRepository(
             title = game.title,
             originalTitle = game.originalTitle ?: originalTitle.cleanOrNull(),
             developer = game.developer ?: developer.cleanOrNull(),
-            version = game.version,
+            version = game.version ?: version.cleanOrNull(),
             productCode = game.productCode,
-            language = game.language,
+            language = game.language ?: language.cleanOrNull(),
             description = game.description ?: description.cleanOrNull(),
             f95Url = game.f95Url ?: f95Url.cleanF95UrlOrNull()
         )
@@ -474,20 +478,22 @@ class GameRepository(
         associateTagNames(gameId, parseTextTagList(raw), categoryName = null)
 
     private suspend fun associateTagNames(gameId: String, tagNames: Collection<String>, categoryName: String?): Int {
-        val selectedNames = tagNames.map(String::trim).filter(String::isNotBlank).distinctBy(::normalize)
+        val selectedNames = tagNames.flatMap(::parseTagNames).distinctBy(::normalize)
         if (categoryName != null && selectedNames.isNotEmpty() && dao.getTagCategories().none { normalize(it.name) == normalize(categoryName) }) {
             createTagCategory(categoryName)
         }
-        val known = dao.getTags().associateBy { it.normalizedName }.toMutableMap()
+        val known = dao.getTags().toMutableList()
         selectedNames.forEach { name ->
             val normalized = normalize(name)
-            if (known[normalized] == null) {
+            if (known.none { tagEquivalent(normalize(it.name), normalized) }) {
                 val tag = TagEntity(UUID.randomUUID().toString(), name, normalized, categoryName)
                 dao.upsertTag(tag)
-                known[normalized] = tag
+                known += tag
             }
         }
-        val importedIds = selectedNames.mapNotNull { known[normalize(it)]?.id }.toSet()
+        val importedIds = selectedNames.mapNotNull { name ->
+            known.firstOrNull { tagEquivalent(normalize(it.name), normalize(name)) }?.id
+        }.toSet()
         dao.replaceGameTags(gameId, dao.getTagIdsForGame(gameId).toSet() + importedIds)
         return importedIds.size
     }
@@ -527,7 +533,7 @@ class GameRepository(
             mimeType.contains("csv") || extension == "csv" -> parseCsvTags(content)
             else -> parseTextTagList(content).map(::ImportedTag)
         }
-            .map { it.copy(name = it.name.trim(), groupName = it.groupName?.trim()?.ifBlank { null }) }
+            .map { it.copy(name = formatTagName(it.name), groupName = it.groupName?.trim()?.ifBlank { null }) }
             .filter { it.name.isNotBlank() }
             .distinctBy { normalize(it.name) }
 
@@ -665,6 +671,27 @@ class GameRepository(
 
     private fun normalize(value: String): String = Normalizer.normalize(value.trim(), Normalizer.Form.NFD)
         .replace(Regex("\\p{Mn}+"), "").lowercase(Locale.ROOT)
+
+    /** Nettoie et formate un nom de tag : première lettre de chaque mot en majuscule. */
+    private fun formatTagName(raw: String): String =
+        raw.trim().replace(Regex("[\\s_]+"), " ").split(' ').filter(String::isNotBlank)
+            .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() } }
+
+    /** Sépare une saisie en tags : les symboles (#, @, …) et la ponctuation deviennent des séparateurs. */
+    private fun parseTagNames(raw: String): List<String> =
+        raw.replace(Regex("[#@!?&%$^*+=|<>\\[\\]{}()~]"), ",")
+            .split(',', ';', '\n', '\r')
+            .map(::formatTagName)
+            .filter(String::isNotBlank)
+
+    /** Fusionne les doublons proches : « 3D Games » et « 3D Game » sont équivalents. */
+    private fun tagEquivalent(first: String, second: String): Boolean {
+        if (first == second) return true
+        fun stripPlural(value: String): String = value.split(' ').joinToString(" ") { word ->
+            if (word.length > 3 && word.endsWith("s")) word.dropLast(1) else word
+        }
+        return stripPlural(first) == stripPlural(second)
+    }
 
     private fun String?.cleanOrNull() = this?.trim()?.ifBlank { null }
 

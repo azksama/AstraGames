@@ -14,10 +14,28 @@ import java.util.Base64
 data class F95ZoneMetadata(
     val sourceUrl: String,
     val tags: List<String>,
-    val images: List<CoverCandidate>
+    val images: List<CoverCandidate>,
+    val version: String? = null,
+    val language: String? = null
+)
+
+/** Session membre F95Zone récupérée depuis le navigateur intégré. */
+data class F95Session(
+    val user: String?,
+    val xfUser: String,
+    val xfSession: String
 )
 
 class F95ZoneProvider {
+    @Volatile
+    private var session: F95Session? = null
+
+    fun setSession(value: F95Session?) {
+        session = value
+    }
+
+    private fun applySession(connection: org.jsoup.Connection): org.jsoup.Connection =
+        session?.let { connection.cookie("xf_user", it.xfUser).cookie("xf_session", it.xfSession) } ?: connection
     fun searchUrl(gameTitle: String, searchEngine: SearchEngine = SearchEngine.YANDEX): String {
         require(gameTitle.isNotBlank()) { "Le nom du jeu est vide." }
         return searchEngine.webSearchUrl("${gameTitle.trim()} f95zone.to")
@@ -27,7 +45,7 @@ class F95ZoneProvider {
 
     suspend fun findThread(gameTitle: String, searchEngine: SearchEngine = SearchEngine.YANDEX): String? = withContext(Dispatchers.IO) {
         val endpoint = searchUrl(gameTitle, searchEngine)
-        val response = Jsoup.connect(endpoint)
+        val response = applySession(Jsoup.connect(endpoint))
             .userAgent(BROWSER_USER_AGENT)
             .header("Accept-Language", "en-US,en;q=0.9")
             .timeout(20_000)
@@ -41,16 +59,30 @@ class F95ZoneProvider {
 
     suspend fun fetch(rawUrl: String): F95ZoneMetadata = withContext(Dispatchers.IO) {
         val url = validate(rawUrl)
-        val document = Jsoup.connect(url.toString())
+        val document = fetchDocument(url.toString())
+        parse(document, url)
+    }
+
+    /** Récupère uniquement le numéro de version affiché sur le thread (pour la détection de mises à jour). */
+    suspend fun fetchVersion(rawUrl: String): String? = withContext(Dispatchers.IO) {
+        val url = validate(rawUrl)
+        val document = fetchDocument(url.toString(), maxBodySize = 4 * 1024 * 1024)
+        extractField(document, "Version")
+    }
+
+    private suspend fun fetchDocument(rawUrl: String, maxBodySize: Int = 12 * 1024 * 1024): Document {
+        val document = applySession(Jsoup.connect(rawUrl))
             .userAgent("Mozilla/5.0 (Android) AstraGames/1.0")
             .referrer("https://f95zone.to/")
             .timeout(20_000)
-            .maxBodySize(12 * 1024 * 1024)
+            .maxBodySize(maxBodySize)
             .followRedirects(true)
             .get()
         validate(document.location())
-
-        parse(document, url)
+        if (session != null && document.title().contains("Log in", ignoreCase = true)) {
+            throw IllegalStateException("Session F95Zone expirée ou invalide — reconnectez-vous.")
+        }
+        return document
     }
 
     internal fun parseHtml(html: String, baseUrl: String): F95ZoneMetadata {
@@ -80,7 +112,11 @@ class F95ZoneProvider {
             .take(30)
 
         return F95ZoneMetadata(
-            sourceUrl = canonicalF95ThreadUrl(url.toString()) ?: url.toString(), tags = tags, images = images
+            sourceUrl = canonicalF95ThreadUrl(url.toString()) ?: url.toString(),
+            tags = tags,
+            images = images,
+            version = extractField(document, "Version"),
+            language = extractField(document, "Language")
         )
     }
 
@@ -122,6 +158,21 @@ class F95ZoneProvider {
         ).filterNotNull().firstOrNull { it.isNotBlank() && !it.startsWith("data:") } ?: return null
         val absolute = runCatching { pageUrl.resolve(raw).toString() }.getOrNull() ?: return null
         return unwrapProxyUrl(absolute)
+    }
+
+    /** Extrait un champ « Version » / « Language » du premier message d’un thread XenForo. */
+    private fun extractField(document: Document, label: String): String? {
+        val elements = document.select("b, strong, dt")
+        for (element in elements) {
+            if (!element.text().trim().equals(label, ignoreCase = true)) continue
+            (element.nextSibling() as? org.jsoup.nodes.TextNode)?.let { node ->
+                val value = node.text().trim().removePrefix(":").trim()
+                if (value.isNotBlank() && value.length < 80) return value
+            }
+            element.nextElementSibling()?.takeIf { it.tagName() == "dd" }?.text()?.trim()?.takeIf { it.isNotBlank() && it.length < 80 }?.let { return it }
+        }
+        val pattern = Regex("(?i)<b>\\s*" + Regex.escape(label) + "\\s*</b>(?:<[^>]*>|\\s)*:?\\s*([^<\\r\\n]{1,80})")
+        return pattern.find(document.html())?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
     }
 
     private fun looksLikeImage(value: String): Boolean {
