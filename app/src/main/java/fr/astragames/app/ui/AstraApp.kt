@@ -122,6 +122,7 @@ fun AstraApp(
 ) {
     val snackbar = remember { SnackbarHostState() }
     val scanReports by viewModel.scanReports.collectAsStateWithLifecycle()
+    val updateBadgeCount by viewModel.updateBadgeCount.collectAsStateWithLifecycle()
     AppLocalizer.language = state.settings.language
     LaunchedEffect(viewModel) {
         viewModel.events.collectLatest { if (it is UiEvent.Message) snackbar.showSnackbar(AppLocalizer.text(it.text)) }
@@ -165,7 +166,7 @@ fun AstraApp(
                         ) { padding ->
                             if (topLevel && wide) {
                                 Row(Modifier.padding(padding).fillMaxSize()) {
-                                    CompactNavigationRail(route, navController)
+                                    CompactNavigationRail(route, navController, updateBadgeCount)
                                     Box(Modifier.weight(1f).topLevelSwipe(route, navController)) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
                                 }
                             } else Box(Modifier.padding(padding).fillMaxSize()) {
@@ -175,7 +176,7 @@ fun AstraApp(
                                         .then(if (topLevel) Modifier.topLevelSwipe(route, navController) else Modifier)
                                 ) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
                                 if (topLevel) {
-                                    CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter))
+                                    CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter), updateBadgeCount)
                                     if (route != Destination.SEARCH.route) FloatingActionButton(
                                         onClick = { navigate(navController, Destination.SEARCH.route) },
                                         modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 72.dp),
@@ -209,7 +210,7 @@ private fun LanguageTransition(language: AppLanguage, content: @Composable (AppL
 }
 
 @Composable
-private fun CompactBottomNavigation(route: String, nav: NavHostController, modifier: Modifier = Modifier) {
+private fun CompactBottomNavigation(route: String, nav: NavHostController, modifier: Modifier = Modifier, badgeCount: Int = 0) {
     Surface(
         modifier.fillMaxWidth().navigationBarsPadding(),
         color = MaterialTheme.colorScheme.background
@@ -217,7 +218,7 @@ private fun CompactBottomNavigation(route: String, nav: NavHostController, modif
         Row(
             Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 6.dp),
             horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically
-        ) { menuDestinations.forEach { NavIcon(it, route == it.route || (route.isBlank() && it == Destination.LIBRARY)) { navigate(nav, it.route) } } }
+        ) { menuDestinations.forEach { NavIcon(it, route == it.route || (route.isBlank() && it == Destination.LIBRARY), { navigate(nav, it.route) }, badge = if (it == Destination.UPDATES) badgeCount else 0) } }
     }
 }
 
@@ -243,7 +244,7 @@ private fun Modifier.topLevelSwipe(route: String, nav: NavHostController): Modif
 }
 
 @Composable
-private fun CompactNavigationRail(route: String, nav: NavHostController) {
+private fun CompactNavigationRail(route: String, nav: NavHostController, badgeCount: Int = 0) {
     Surface(
         Modifier.width(72.dp).fillMaxHeight().padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
         RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 4.dp
@@ -251,12 +252,12 @@ private fun CompactNavigationRail(route: String, nav: NavHostController) {
         Column(
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
             verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
-        ) { menuDestinations.forEach { NavIcon(it, route == it.route) { navigate(nav, it.route) }; Spacer(Modifier.height(8.dp)) } }
+        ) { menuDestinations.forEach { NavIcon(it, route == it.route, { navigate(nav, it.route) }, badge = if (it == Destination.UPDATES) badgeCount else 0); Spacer(Modifier.height(8.dp)) } }
     }
 }
 
 @Composable
-private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> Unit) {
+private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> Unit, badge: Int = 0) {
     Box(
         Modifier.size(50.dp).clip(RoundedCornerShape(50)).clickable(onClick = onClick),
         contentAlignment = Alignment.Center
@@ -266,6 +267,13 @@ private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> 
             modifier = Modifier.size(if (selected) 27.dp else 23.dp),
             tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .42f)
         )
+        if (badge > 0) {
+            Box(
+                Modifier.align(Alignment.TopEnd).offset(x = 5.dp, y = (-2).dp)
+                    .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
+                    .padding(horizontal = 5.dp, vertical = 1.dp)
+            ) { Text(badge.toString(), color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall) }
+        }
     }
 }
 
@@ -297,9 +305,9 @@ private fun AppNavHost(
         popExitTransition = { fadeOut(tween(PageTransitionDurationMillis)) }
     ) {
         composable(Destination.LIBRARY.route) { LibraryScreen(state, vm, { nav.navigate("game/$it") }, onPickSource) }
-        composable(Destination.SEARCH.route) { SearchScreen(state, vm, { nav.navigate("game/$it") }) }
+        composable(Destination.SEARCH.route) { SearchScreen(state, vm, { nav.navigate("game/$it") }, nav::popBackStack) }
         composable(Destination.COLLECTIONS.route) { CollectionsScreen(state, vm) { nav.navigate("game/$it") } }
-        composable(Destination.UPDATES.route) { GameUpdatesScreen(state, vm) }
+        composable(Destination.UPDATES.route) { GameUpdatesScreen(state, vm) { nav.navigate("game/$it") } }
         composable(Destination.TAGS.route) { TagsScreen(state, vm, onPickTags, nav::popBackStack) }
         composable(Destination.SETTINGS.route) {
             SettingsScreen(state, vm, onPickSource, { nav.navigate(Destination.TAGS.route) }, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
@@ -898,18 +906,23 @@ private fun EmptyLibrary(onAdd: () -> Unit, onScan: () -> Unit) = Box(Modifier.f
 }
 
 @Composable
-private fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit) {
+private fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit, onBack: () -> Unit) {
     var engineMenu by remember { mutableStateOf(false) }
     var tagsMenu by remember { mutableStateOf(false) }
     var systemFolderMenu by remember { mutableStateOf(false) }
     val availableEngines = remember(state.games) {
         state.games.mapNotNull { runCatching { GameEngine.valueOf(it.engine) }.getOrNull() }.distinct()
     }
-    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Recherche") }) { padding ->
+    DisposableEffect(Unit) { onDispose { vm.updateQuery("") } }
+    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Recherche", onBack = onBack) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
             OutlinedTextField(
                 state.filters.query, vm::updateQuery, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null) }, placeholder = { Text("Titre, moteur, développeur…") }
+                singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null) },
+                trailingIcon = {
+                    if (state.filters.query.isNotBlank()) IconButton(onClick = { vm.updateQuery("") }) { Icon(Icons.Default.Close, "Effacer la sélection") }
+                },
+                placeholder = { Text("Titre, moteur, développeur…") }
             )
             Row(
                 Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
@@ -1221,7 +1234,7 @@ private fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () -
                 OutlinedTextField(
                     value = tagQuery,
                     onValueChange = { tagQuery = it },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).height(44.dp),
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
                     placeholder = { Text("Rechercher un tag") },
                     leadingIcon = { Icon(Icons.Default.Search, null) },
                     textStyle = MaterialTheme.typography.bodySmall,
@@ -1369,11 +1382,18 @@ private fun SettingsScreen(
     var showDuplicates by remember { mutableStateOf(false) }
     var showDeleted by remember { mutableStateOf(false) }
     var showAudit by remember { mutableStateOf(false) }
+    var sourcesExpanded by rememberSaveable { mutableStateOf(false) }
+    var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
+    var joiplayExpanded by rememberSaveable { mutableStateOf(false) }
+    var organizationExpanded by rememberSaveable { mutableStateOf(false) }
+    var backupExpanded by rememberSaveable { mutableStateOf(false) }
+    var intervalMenu by remember { mutableStateOf(false) }
     var showRuntimes by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Paramètres") }) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(bottom = PageBottomPadding)) {
-            item { SectionTitle("Sources et scan") }
+            item { SettingsSectionHeader("Sources et scan", sourcesExpanded) { sourcesExpanded = !sourcesExpanded } }
+            if (sourcesExpanded) {
             items(state.sources, key = { it.id }) { source ->
                 RoundedListItem(
                     headlineContent = { Text(source.displayName) }, leadingContent = { Icon(Icons.Default.Source, null) },
@@ -1404,6 +1424,25 @@ private fun SettingsScreen(
                 }
             ) }
             item {
+                Box {
+                    RoundedListItem(
+                        modifier = Modifier.clickable { intervalMenu = true },
+                        headlineContent = { Text("Vérifier les mises à jour") },
+                        supportingContent = { Text(updateIntervalLabel(state.settings.updateCheckInterval)) },
+                        trailingContent = { Icon(Icons.Default.ArrowDropDown, null) }
+                    )
+                    DropdownMenu(intervalMenu, { intervalMenu = false }) {
+                        listOf("LAUNCH", "DAY_1", "DAY_3", "DAY_7", "DAY_15", "DAY_30").forEach { code ->
+                            DropdownMenuItem(
+                                text = { Text(updateIntervalLabel(code)) },
+                                leadingIcon = { if (state.settings.updateCheckInterval == code) Icon(Icons.Default.Check, null) },
+                                onClick = { vm.setUpdateCheckInterval(code); intervalMenu = false }
+                            )
+                        }
+                    }
+                }
+            }
+            item {
                 SearchEngineSelector(
                     state.settings.searchEngine,
                     vm::setSearchEngine,
@@ -1417,7 +1456,9 @@ private fun SettingsScreen(
                     trailingContent = { Switch(state.settings.openSearchInExternalBrowser, vm::setOpenSearchInExternalBrowser) }
                 )
             }
-            item { SectionTitle("Apparence", Modifier.padding(top = 12.dp, bottom = 8.dp)) }
+            }
+            item { SettingsSectionHeader("Apparence", appearanceExpanded) { appearanceExpanded = !appearanceExpanded } }
+            if (appearanceExpanded) {
             item {
                 LanguageSelector(
                     state.settings.language,
@@ -1437,14 +1478,18 @@ private fun SettingsScreen(
             item { LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(ThemeMode.entries) { mode -> FilterChip(state.settings.themeMode == mode, { vm.setTheme(mode) }, { Text(mode.label()) }) }
             } }
-            item { SectionTitle("JoiPlay") }
+            }
+            item { SettingsSectionHeader("JoiPlay", joiplayExpanded) { joiplayExpanded = !joiplayExpanded } }
+            if (joiplayExpanded) {
             item { RoundedListItem(
                 modifier = Modifier.clickable { vm.requestNotificationPermission(); showRuntimes = true },
                 headlineContent = { Text(if (state.joiPlayInstalled) "Gestionnaire de runtimes" else "JoiPlay non détecté") },
                 supportingContent = { Text("${state.runtimes.count { it.installed }}/${state.runtimes.size} composants détectés") },
                 leadingContent = { Icon(Icons.Default.Extension, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
             ) }
-            item { SectionTitle("Organisation") }
+            }
+            item { SettingsSectionHeader("Organisation", organizationExpanded) { organizationExpanded = !organizationExpanded } }
+            if (organizationExpanded) {
             item { RoundedListItem(
                 modifier = Modifier.clickable(onClick = onOpenTags), headlineContent = { Text("Tags et catégories") },
                 supportingContent = { Text("Créer, importer, classer, modifier ou supprimer") },
@@ -1465,7 +1510,9 @@ private fun SettingsScreen(
                 supportingContent = { Text("Fusions de tags, suppressions et modifications") },
                 leadingContent = { Icon(Icons.Default.History, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
             ) }
-            item { SectionTitle("Sauvegarde et restauration") }
+            }
+            item { SettingsSectionHeader("Sauvegarde et restauration", backupExpanded) { backupExpanded = !backupExpanded } }
+            if (backupExpanded) {
             item { RoundedListItem(
                 modifier = Modifier.clickable(onClick = onPickBackupFolder),
                 headlineContent = { Text(if (state.settings.backupFolderUri == null) "Choisir le dossier de sauvegarde" else "Changer le dossier de sauvegarde") },
@@ -1486,6 +1533,7 @@ private fun SettingsScreen(
                 modifier = Modifier.clickable { confirmRestore = true }, headlineContent = { Text("Restaurer une sauvegarde") },
                 supportingContent = { Text("Remplace le catalogue par le contenu de l’archive") }, leadingContent = { Icon(Icons.Default.Restore, null) }
             ) }
+            }
             item {
                 Text(
                     "Version ${BuildConfig.VERSION_NAME}",
@@ -1577,7 +1625,7 @@ private fun GameDetailScreen(
         ) { padding ->
         if (item == null) CenterMessage("Chargement…", Modifier.padding(padding).fillMaxSize(), loading = true)
         else LazyColumn(
-            Modifier.padding(padding).fillMaxWidth().fillMaxHeight(.55f).align(Alignment.BottomCenter).background(MaterialTheme.colorScheme.background),
+            Modifier.padding(padding),
             contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
@@ -1605,11 +1653,18 @@ private fun GameDetailScreen(
                             Spacer(Modifier.height(6.dp))
                             item.developer?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             item.version?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            val latest = latestVersions[id]
-                            if (latest != null && latest != item.version) {
-                                Spacer(Modifier.height(4.dp))
-                                Text("Nouvelle version disponible : ${latest}", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
-                            }
+                        }
+                    }
+                }
+            }
+            item {
+                val latest = latestVersions[id]
+                if (latest != null && latest != item.version) {
+                    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.tertiaryContainer) {
+                        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Icon(Icons.Default.Update, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                            Spacer(Modifier.width(6.dp))
+                            Text("Nouvelle version disponible : ${latest}", color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
                         }
                     }
                 }
@@ -3427,7 +3482,7 @@ private fun CenterMessage(text: String, modifier: Modifier = Modifier, loading: 
 
 
 @Composable
-private fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel) {
+private fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit) {
     val updates by vm.gameUpdates.collectAsStateWithLifecycle()
     val checking by vm.updatesChecking.collectAsStateWithLifecycle()
     val uriHandler = LocalUriHandler.current
@@ -3447,7 +3502,7 @@ private fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel) {
                 updates.isEmpty() -> CenterMessage("Aucune mise à jour disponible", Modifier.fillMaxSize())
                 else -> LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = PageBottomPadding), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     items(updates, key = { it.game.id }) { update ->
-                        Card(Modifier.fillMaxWidth()) {
+                        Card(Modifier.fillMaxWidth().clickable { onGame(update.game.id) }) {
                             Row(Modifier.fillMaxWidth().padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
                                 GameCover(update.game, Modifier.width(56.dp).aspectRatio(.72f))
                                 Spacer(Modifier.width(12.dp))
@@ -3464,6 +3519,9 @@ private fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel) {
                                     IconButton(onClick = { uriHandler.openUri(url) }) {
                                         Icon(Icons.AutoMirrored.Filled.OpenInNew, "Ouvrir le thread F95Zone")
                                     }
+                                }
+                                IconButton(onClick = { vm.acknowledgeGameUpdate(update.game.id) }) {
+                                    Icon(Icons.Default.CheckCircle, "Marquer comme vu", tint = MaterialTheme.colorScheme.primary)
                                 }
                             }
                         }
@@ -3524,6 +3582,17 @@ private fun ScanProgressOverlay(progress: ScanProgressState, onCancel: () -> Uni
 private fun SectionTitle(text: String, modifier: Modifier = Modifier) = Text(text, modifier.padding(start = 16.dp, top = 14.dp, bottom = 5.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 
 @Composable
+private fun SettingsSectionHeader(title: String, expanded: Boolean, onToggle: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+        Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+    }
+}
+
+@Composable
 private fun CompactActionButton(
     onClick: () -> Unit,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -3558,11 +3627,21 @@ private fun RoundedListItem(
 @Composable
 private fun SettingsSwitch(title: String, checked: Boolean, onChange: (Boolean) -> Unit) = RoundedListItem(headlineContent = { Text(title) }, trailingContent = { Switch(checked, onChange) })
 
+private fun updateIntervalLabel(code: String) = when (code) {
+    "LAUNCH" -> "Chaque lancement"
+    "DAY_1" -> "1 jour"
+    "DAY_3" -> "3 jours"
+    "DAY_15" -> "15 jours"
+    "DAY_30" -> "30 jours"
+    else -> "7 jours"
+}
+
 private fun LibrarySort.label() = when (this) {
     LibrarySort.TITLE -> "Titre"
     LibrarySort.RECENTLY_ADDED -> "Ajouts récents"
     LibrarySort.LAST_PLAYED -> "Dernier lancement"
     LibrarySort.MOST_PLAYED -> "Plus joués"
+    LibrarySort.UPDATE_AVAILABLE -> "Mises à jour disponibles"
 }
 
 private fun ThemeMode.label() = when (this) {

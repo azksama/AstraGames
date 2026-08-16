@@ -36,7 +36,8 @@ data class AstraSettings(
     val f95SessionXfUser: String? = null,
     val f95SessionXfSession: String? = null,
     val f95NotifiedUpdates: String = "",
-    val f95LatestVersions: String = ""
+    val f95LatestVersions: String = "",
+    val updateCheckInterval: String = "DAY_7"
 )
 
 class SettingsRepository(private val context: Context) {
@@ -60,6 +61,7 @@ class SettingsRepository(private val context: Context) {
             f95SessionUser = values[F95_SESSION_USER],
             f95NotifiedUpdates = values[F95_NOTIFIED_UPDATES].orEmpty(),
             f95LatestVersions = values[F95_LATEST_VERSIONS].orEmpty(),
+            updateCheckInterval = values[UPDATE_CHECK_INTERVAL] ?: "DAY_7",
             f95SessionXfUser = values[F95_SESSION_XF_USER]?.let { encoded ->
                 runCatching { String(KeystoreCrypto.decrypt(Base64.getDecoder().decode(encoded))) }.getOrNull()
             },
@@ -97,6 +99,10 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setF95LatestVersions(value: String) = context.dataStore.edit { it[F95_LATEST_VERSIONS] = value }
 
+    suspend fun setUpdateCheckInterval(value: String) = context.dataStore.edit { it[UPDATE_CHECK_INTERVAL] = value }
+
+
+
     suspend fun clearF95Session() = context.dataStore.edit {
         it.remove(F95_SESSION_USER)
         it.remove(F95_SESSION_XF_USER)
@@ -127,5 +133,6 @@ class SettingsRepository(private val context: Context) {
         private val F95_SESSION_XF_SESSION = stringPreferencesKey("f95_session_xf_session")
         private val F95_NOTIFIED_UPDATES = stringPreferencesKey("f95_notified_updates")
         private val F95_LATEST_VERSIONS = stringPreferencesKey("f95_latest_versions")
+        private val UPDATE_CHECK_INTERVAL = stringPreferencesKey("update_check_interval")
     }
 }
