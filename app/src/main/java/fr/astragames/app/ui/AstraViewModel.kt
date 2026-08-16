@@ -308,7 +308,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         val settings = values[1] as AstraSettings
         val filter = values[2] as LibraryFilters
         val background = values[3] as BackgroundState
-        val setupIds = values[4] as Set<String>
+        val setupIds = values[4] as List<String>
         val latestVersions = values[5] as Map<String, String>
         val refsByGame = data.refs.groupBy { it.gameId }.mapValues { (_, refs) -> refs.map { it.tagId }.toSet() }
         val playStatsByGame = data.playStats.associateBy { it.gameId }
