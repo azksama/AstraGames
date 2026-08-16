@@ -95,7 +95,8 @@ class VndbProvider {
         .lowercase()
         .replace(Regex("\\[[^\\]]+\\]"), " ")
         .replace(Regex("\\b(v(?:er(?:sion)?)?\\s*)?\\d+(?:[._-]\\d+)+\\b"), " ")
-        .replace(Regex("[^a-z0-9]+"), " ")
+        // Keep every Unicode letter/number so Cyrillic, kana and Han titles remain searchable.
+        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
         .trim()
 
     private fun levenshtein(left: String, right: String): Int {

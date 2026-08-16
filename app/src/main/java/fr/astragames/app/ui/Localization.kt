@@ -1,0 +1,540 @@
+package fr.astragames.app.ui
+
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.Text as MaterialText
+import fr.astragames.app.settings.AppLanguage
+
+val LocalAppLanguage = compositionLocalOf { AppLanguage.ENGLISH }
+
+/**
+ * Small in-app catalogue so the language can change immediately without restarting the activity.
+ * French remains the source language; unknown user data is always kept untouched.
+ */
+object AppLocalizer {
+    @Volatile
+    var language: AppLanguage = AppLanguage.ENGLISH
+
+    private data class Translation(
+        val source: String,
+        val english: String,
+        val spanish: String,
+        val russian: String,
+        val german: String,
+        val chinese: String,
+        val japanese: String
+    ) {
+        fun value(language: AppLanguage): String = when (language) {
+            AppLanguage.ENGLISH -> english
+            AppLanguage.FRENCH -> source
+            AppLanguage.SPANISH -> spanish
+            AppLanguage.RUSSIAN -> russian
+            AppLanguage.GERMAN -> german
+            AppLanguage.CHINESE -> chinese
+            AppLanguage.JAPANESE -> japanese
+        }
+    }
+
+    private fun t(
+        source: String,
+        english: String,
+        spanish: String,
+        russian: String,
+        german: String,
+        chinese: String,
+        japanese: String
+    ) = Translation(source, english, spanish, russian, german, chinese, japanese)
+
+    private val catalog = listOf(
+        t("Bibliothèque", "Library", "Biblioteca", "Библиотека", "Bibliothek", "资料库", "ライブラリ"),
+        t("Recherche", "Search", "Buscar", "Поиск", "Suche", "搜索", "検索"),
+        t("Collections", "Collections", "Colecciones", "Коллекции", "Sammlungen", "收藏", "コレクション"),
+        t("Tags", "Tags", "Etiquetas", "Теги", "Tags", "标签", "タグ"),
+        t("Paramètres", "Settings", "Ajustes", "Настройки", "Einstellungen", "设置", "設定"),
+        t("Retour", "Back", "Atrás", "Назад", "Zurück", "返回", "戻る"),
+        t("Ouvrir", "Open", "Abrir", "Открыть", "Öffnen", "打开", "開く"),
+        t("Rechercher", "Search", "Buscar", "Поиск", "Suchen", "検索", "検索"),
+        t("Fermer", "Close", "Cerrar", "Закрыть", "Schließen", "关闭", "閉じる"),
+        t("Annuler", "Cancel", "Cancelar", "Отмена", "Abbrechen", "取消", "キャンセル"),
+        t("Valider", "Done", "Listo", "Готово", "Fertig", "完成", "完了"),
+        t("Enregistrer", "Save", "Guardar", "Сохранить", "Speichern", "保存", "保存"),
+        t("Supprimer", "Delete", "Eliminar", "Удалить", "Löschen", "删除", "削除"),
+        t("Modifier", "Edit", "Editar", "Изменить", "Bearbeiten", "编辑", "編集"),
+        t("Ajouter", "Add", "Añadir", "Добавить", "Hinzufügen", "添加", "追加"),
+        t("Choisir", "Choose", "Elegir", "Выбрать", "Auswählen", "选择", "選択"),
+        t("Tout", "All", "Todo", "Все", "Alle", "全部", "すべて"),
+        t("Aucun", "None", "Ninguno", "Нет", "Keine", "无", "なし"),
+        t("Aucune", "None", "Ninguna", "Нет", "Keine", "无", "なし"),
+        t("Oui", "Yes", "Sí", "Да", "Ja", "是", "はい"),
+        t("Non", "No", "No", "Нет", "Nein", "否", "いいえ"),
+        t("Scanner", "Scan", "Escanear", "Сканировать", "Scannen", "扫描", "スキャン"),
+        t("Scanner ma bibliothèque", "Scan my library", "Escanear mi biblioteca", "Сканировать библиотеку", "Meine Bibliothek scannen", "扫描我的资料库", "ライブラリをスキャン"),
+        t("Ajouter une source", "Add a game folder", "Añadir una carpeta de juegos", "Добавить папку с играми", "Spieleordner hinzufügen", "添加游戏文件夹", "ゲームフォルダを追加"),
+        t("Configurer plus tard", "Set up later", "Configurar más tarde", "Настроить позже", "Später einrichten", "稍后设置", "後で設定"),
+        t("Toute votre bibliothèque. Un seul ciel.", "Your whole library. One sky.", "Toda tu biblioteca. Un solo cielo.", "Вся ваша библиотека. Одно небо.", "Deine ganze Bibliothek. Ein Himmel.", "整个游戏库，尽在一片天空下。", "すべてのライブラリを、ひとつの空に。"),
+        t("Astra détecte, classe et lance vos jeux JoiPlay sans modifier leurs fichiers.", "Astra detects, organizes and launches your JoiPlay games without changing their files.", "Astra detecta, organiza y lanza tus juegos de JoiPlay sin modificar sus archivos.", "Astra находит, сортирует и запускает игры JoiPlay, не изменяя их файлы.", "Astra erkennt, organisiert und startet deine JoiPlay-Spiele, ohne ihre Dateien zu ändern.", "Astra 会检测、整理并启动 JoiPlay 游戏，不会修改游戏文件。", "Astra はファイルを変更せずに JoiPlay のゲームを検出・整理・起動します。"),
+        t("Langue", "Language", "Idioma", "Язык", "Sprache", "语言", "言語"),
+        t("Choisissez la langue d’Astra", "Choose Astra's language", "Elige el idioma de Astra", "Выберите язык Astra", "Astra-Sprache auswählen", "选择 Astra 的语言", "Astra の言語を選択"),
+        t("Continuer", "Continue", "Continuar", "Продолжить", "Weiter", "继续", "続ける"),
+        t("Choisissez votre dossier de jeux", "Choose your game folder", "Elige tu carpeta de juegos", "Выберите папку с играми", "Spieleordner auswählen", "选择游戏文件夹", "ゲームフォルダを選択"),
+        t("Astra parcourra récursivement tous les niveaux du dossier.", "Astra will scan every level below this folder.", "Astra recorrerá todos los niveles de esta carpeta.", "Astra просканирует все вложенные папки.", "Astra durchsucht alle Unterordner dieses Ordners.", "Astra 会递归扫描此文件夹下的所有层级。", "Astra はこのフォルダ以下を再帰的にスキャンします。"),
+        t("Dossier sélectionné", "Selected folder", "Carpeta seleccionada", "Выбранная папка", "Ausgewählter Ordner", "已选文件夹", "選択したフォルダ"),
+        t("Importer des tags", "Import tags", "Importar etiquetas", "Импортировать теги", "Tags importieren", "导入标签", "タグをインポート"),
+        t("Importez un fichier texte, CSV ou JSON, ou passez cette étape.", "Import a text, CSV or JSON file, or skip this step.", "Importa un archivo de texto, CSV o JSON, o sáltate este paso.", "Импортируйте TXT, CSV или JSON либо пропустите этот шаг.", "Importiere eine Text-, CSV- oder JSON-Datei oder überspringe diesen Schritt.", "导入文本、CSV 或 JSON 文件，也可以跳过此步骤。", "テキスト、CSV、JSON ファイルを読み込むか、この手順をスキップします。"),
+        t("Runtimes JoiPlay", "JoiPlay runtimes", "Runtimes de JoiPlay", "Среды JoiPlay", "JoiPlay-Runtimes", "JoiPlay 运行时", "JoiPlay ランタイム"),
+        t("Vérifier les runtimes", "Check runtimes", "Comprobar runtimes", "Проверить среды", "Runtimes prüfen", "检查运行时", "ランタイムを確認"),
+        t("Détection locale des composants", "Local component detection", "Detección local de componentes", "Локальное обнаружение компонентов", "Lokale Komponentenerkennung", "本地组件检测", "コンポーネントをローカルで検出"),
+        t("Aucun runtime détecté", "No runtime detected", "No se detectó ningún runtime", "Среды не обнаружены", "Keine Runtime erkannt", "未检测到运行时", "ランタイムが見つかりません"),
+        t("Installé", "Installed", "Instalado", "Установлено", "Installiert", "已安装", "インストール済み"),
+        t("Non installé", "Not installed", "No instalado", "Не установлено", "Nicht installiert", "未安装", "未インストール"),
+        t("Requis par votre bibliothèque", "Required by your library", "Necesario para tu biblioteca", "Требуется вашей библиотеке", "Von deiner Bibliothek benötigt", "你的资料库需要", "ライブラリで必要"),
+        t("Télécharger", "Download", "Descargar", "Скачать", "Herunterladen", "下载", "ダウンロード"),
+        t("Mettre à jour", "Update", "Actualizar", "Обновить", "Aktualisieren", "更新", "更新"),
+        t("Scanner au lancement", "Scan on launch", "Escanear al iniciar", "Сканировать при запуске", "Beim Start scannen", "启动时扫描", "起動時にスキャン"),
+        t("Sources et scan", "Sources and scanning", "Fuentes y escaneo", "Источники и сканирование", "Quellen und Scan", "来源与扫描", "ソースとスキャン"),
+        t("Apparence", "Appearance", "Apariencia", "Внешний вид", "Erscheinungsbild", "外观", "外観"),
+        t("Flou des jaquettes", "Cover blur", "Desenfoque de carátulas", "Размытие обложек", "Cover-Unschärfe", "封面模糊", "カバーのぼかし"),
+        t("Désactivé", "Off", "Desactivado", "Отключено", "Aus", "关闭", "オフ"),
+        t("Automatique au démarrage", "Automatic on startup", "Automático al iniciar", "Автоматически при запуске", "Automatisch beim Start", "启动时自动", "起動時に自動"),
+        t("Manuel", "Manual", "Manual", "Вручную", "Manuell", "手动", "手動"),
+        t("Afficher les jaquettes", "Show covers", "Mostrar carátulas", "Показать обложки", "Cover anzeigen", "显示封面", "カバーを表示"),
+        t("Flouter les jaquettes", "Blur covers", "Desenfocar carátulas", "Размыть обложки", "Cover ausblenden", "模糊封面", "カバーをぼかす"),
+        t("Couleurs dynamiques", "Dynamic colors", "Colores dinámicos", "Динамические цвета", "Dynamische Farben", "动态颜色", "ダイナミックカラー"),
+        t("Organisation", "Organization", "Organización", "Организация", "Organisation", "整理", "整理"),
+        t("Sauvegarde et restauration", "Backup and restore", "Copia y restauración", "Резервное копирование и восстановление", "Sicherung und Wiederherstellung", "备份与恢复", "バックアップと復元"),
+        t("Gestionnaire de runtimes", "Runtime manager", "Gestor de runtimes", "Менеджер сред", "Runtime-Manager", "运行时管理器", "ランタイム管理"),
+        t("JoiPlay non détecté", "JoiPlay not detected", "JoiPlay no detectado", "JoiPlay не обнаружен", "JoiPlay nicht erkannt", "未检测到 JoiPlay", "JoiPlay が見つかりません"),
+        t("Tags et catégories", "Tags and categories", "Etiquetas y categorías", "Теги и категории", "Tags und Kategorien", "标签与分类", "タグとカテゴリ"),
+        t("Créer, importer, classer, modifier ou supprimer", "Create, import, organize, edit or delete", "Crear, importar, organizar, editar o eliminar", "Создавайте, импортируйте, сортируйте, изменяйте и удаляйте", "Erstellen, importieren, organisieren, bearbeiten oder löschen", "创建、导入、整理、编辑或删除", "作成、読み込み、整理、編集、削除"),
+        t("Détection des doublons", "Duplicate detection", "Detección de duplicados", "Поиск дубликатов", "Duplikaterkennung", "重复项检测", "重複検出"),
+        t("Jeux supprimés", "Deleted games", "Juegos eliminados", "Удалённые игры", "Gelöschte Spiele", "已删除的游戏", "削除したゲーム"),
+        t("Choisir le dossier de sauvegarde", "Choose backup folder", "Elegir carpeta de copia", "Выбрать папку для резервных копий", "Sicherungsordner auswählen", "选择备份文件夹", "バックアップフォルダを選択"),
+        t("Changer le dossier de sauvegarde", "Change backup folder", "Cambiar carpeta de copia", "Изменить папку для резервных копий", "Sicherungsordner ändern", "更改备份文件夹", "バックアップフォルダを変更"),
+        t("Aucun dossier configuré", "No folder configured", "Ninguna carpeta configurada", "Папка не настроена", "Kein Ordner eingerichtet", "未配置文件夹", "フォルダ未設定"),
+        t("Sauvegarder maintenant", "Back up now", "Crear copia ahora", "Создать резервную копию", "Jetzt sichern", "立即备份", "今すぐバックアップ"),
+        t("Restaurer une sauvegarde", "Restore a backup", "Restaurar una copia", "Восстановить резервную копию", "Sicherung wiederherstellen", "恢复备份", "バックアップを復元"),
+        t("Actualiser les métadonnées manquantes", "Refresh missing metadata", "Actualizar metadatos faltantes", "Обновить отсутствующие метаданные", "Fehlende Metadaten aktualisieren", "刷新缺失的元数据", "不足しているメタデータを更新"),
+        t("Jaquettes, descriptions et développeurs • VNDB, sans tags", "Covers, descriptions and developers • VNDB, no tags", "Carátulas, descripciones y desarrolladores • VNDB, sin etiquetas", "Обложки, описания и разработчики • VNDB, без тегов", "Cover, Beschreibungen und Entwickler • VNDB, ohne Tags", "封面、简介和开发者 • VNDB，不导入标签", "カバー、説明、開発者 • VNDB、タグなし"),
+        t("Moteur de recherche", "Search engine", "Motor de búsqueda", "Поисковая система", "Suchmaschine", "搜索引擎", "検索エンジン"),
+        t("Choisir le moteur de recherche", "Choose a search engine", "Elegir un motor de búsqueda", "Выберите поисковую систему", "Suchmaschine auswählen", "选择搜索引擎", "検索エンジンを選択"),
+        t("Les recherches du moteur sélectionné s’ouvrent directement dans le navigateur du téléphone.", "Searches from the selected engine open directly in the phone browser.", "Las búsquedas del motor seleccionado se abren directamente en el navegador del teléfono.", "Поиск выбранной системы открывается прямо в браузере телефона.", "Suchen der ausgewählten Suchmaschine werden direkt im Handy-Browser geöffnet.", "所选搜索引擎的搜索会直接在手机浏览器中打开。", "選択した検索エンジンの検索をスマートフォンのブラウザで直接開きます。"),
+        t("Ouvrir dans le navigateur", "Open in browser", "Abrir en el navegador", "Открыть в браузере", "Im Browser öffnen", "在浏览器中打开", "ブラウザで開く"),
+        t("Afficher dans Astra", "Show in Astra", "Mostrar en Astra", "Показать в Astra", "In Astra anzeigen", "在 Astra 中显示", "Astra で表示"),
+        t("Rechercher automatiquement", "Search automatically", "Buscar automáticamente", "Искать автоматически", "Automatisch suchen", "自动搜索", "自動検索"),
+        t("Aucune image trouvée automatiquement.", "No image found automatically.", "No se encontró ninguna imagen automáticamente.", "Автоматически изображения не найдены.", "Automatisch wurden keine Bilder gefunden.", "未自动找到图片。", "自動検索で画像が見つかりません。"),
+        t("Utiliser l’image affichée", "Use displayed image", "Usar la imagen mostrada", "Использовать показанное изображение", "Angezeigtes Bild verwenden", "使用当前显示的图片", "表示中の画像を使う"),
+        t("Recherche d’images", "Image search", "Búsqueda de imágenes", "Поиск изображений", "Bildersuche", "图片搜索", "画像検索"),
+        t("Recherche d’images…", "Image search…", "Búsqueda de imágenes…", "Поиск изображений…", "Bildersuche…", "图片搜索…", "画像検索…"),
+        t("Rechercher dans le navigateur", "Open searches in browser", "Abrir búsquedas en el navegador", "Открывать поиск в браузере", "Suchen im Browser öffnen", "在浏览器中打开搜索", "検索をブラウザで開く"),
+        t("Favoris", "Favorites", "Favoritos", "Избранное", "Favoriten", "收藏", "お気に入り"),
+        t("Filtres", "Filters", "Filtros", "Фильтры", "Filter", "筛选", "フィルター"),
+        t("Réinitialiser", "Reset", "Restablecer", "Сбросить", "Zurücksetzen", "重置", "リセット"),
+        t("Afficher les jeux", "Show games", "Mostrar juegos", "Показать игры", "Spiele anzeigen", "显示游戏", "ゲームを表示"),
+        t("Favoris uniquement", "Favorites only", "Solo favoritos", "Только избранное", "Nur Favoriten", "仅收藏", "お気に入りのみ"),
+        t("Jeux introuvables", "Missing games", "Juegos faltantes", "Пропавшие игры", "Fehlende Spiele", "缺失的游戏", "見つからないゲーム"),
+        t("Tous les moteurs", "All engines", "Todos los motores", "Все движки", "Alle Engines", "所有引擎", "すべてのエンジン"),
+        t("Tous les dossiers système", "All system folders", "Todas las carpetas del sistema", "Все системные папки", "Alle Systemordner", "所有系统文件夹", "すべてのシステムフォルダ"),
+        t("Tous les tags", "All tags", "Todas las etiquetas", "Все теги", "Alle Tags", "所有标签", "すべてのタグ"),
+        t("Titre, moteur, développeur…", "Title, engine, developer…", "Título, motor, desarrollador…", "Название, движок, разработчик…", "Titel, Engine, Entwickler…", "标题、引擎、开发者…", "タイトル、エンジン、開発者…"),
+        t("Votre bibliothèque attend ses jeux", "Your library is waiting for games", "Tu biblioteca espera tus juegos", "Ваша библиотека ждёт игры", "Deine Bibliothek wartet auf Spiele", "你的资料库正在等待游戏", "ライブラリにゲームを追加しましょう"),
+        t("Aucun jeu ne correspond aux filtres", "No games match the filters", "Ningún juego coincide con los filtros", "Игры не соответствуют фильтрам", "Keine Spiele passen zu den Filtern", "没有符合筛选条件的游戏", "条件に一致するゲームはありません"),
+        t("Exploration de tous les sous-dossiers…", "Scanning all subfolders…", "Explorando todas las subcarpetas…", "Сканирование всех подпапок…", "Alle Unterordner werden durchsucht…", "正在扫描所有子文件夹…", "すべてのサブフォルダをスキャン中…"),
+        t("Description", "Description", "Descripción", "Описание", "Beschreibung", "简介", "説明"),
+        t("Informations", "Information", "Información", "Информация", "Informationen", "信息", "情報"),
+        t("Moteur", "Engine", "Motor", "Движок", "Engine", "引擎", "エンジン"),
+        t("Lancements", "Launches", "Lanzamientos", "Запусков", "Starts", "启动次数", "起動回数"),
+        t("Dernier lancement", "Last launch", "Último lanzamiento", "Последний запуск", "Letzter Start", "上次启动", "最終起動"),
+        t("Temps de jeu", "Play time", "Tiempo de juego", "Время игры", "Spielzeit", "游戏时间", "プレイ時間"),
+        t("Source", "Source", "Fuente", "Источник", "Quelle", "来源", "ソース"),
+        t("Jouer", "Play", "Jugar", "Играть", "Spielen", "开始游戏", "プレイ"),
+        t("Compatibilité", "Compatibility", "Compatibilidad", "Совместимость", "Kompatibilität", "兼容性", "互換性"),
+        t("Vérification en cours…", "Checking…", "Comprobando…", "Проверка…", "Prüfung läuft…", "正在检查…", "確認中…"),
+        t("Aucun tag associé", "No tags assigned", "Ninguna etiqueta asignada", "Теги не назначены", "Keine Tags zugewiesen", "未关联标签", "タグはありません"),
+        t("Classer dans un dossier", "Organize in a folder", "Organizar en una carpeta", "Переместить в папку", "In einem Ordner ablegen", "整理到文件夹", "フォルダに整理"),
+        t("Ouvrir le dossier des sauvegardes", "Open save folder", "Abrir carpeta de guardados", "Открыть папку сохранений", "Save-Ordner öffnen", "打开存档文件夹", "セーブフォルダを開く"),
+        t("Ce jeu est introuvable. Rescannez sa source.", "This game cannot be found. Scan its source again.", "No se encuentra este juego. Vuelve a escanear su fuente.", "Игра не найдена. Повторно просканируйте источник.", "Dieses Spiel wurde nicht gefunden. Scanne die Quelle erneut.", "找不到此游戏，请重新扫描来源。", "このゲームが見つかりません。ソースを再スキャンしてください。"),
+        t("Jaquette", "Cover", "Carátula", "Обложка", "Cover", "封面", "カバー"),
+        t("Changer", "Change", "Cambiar", "Изменить", "Ändern", "更换", "変更"),
+        t("Modifier le jeu", "Edit game", "Editar juego", "Изменить игру", "Spiel bearbeiten", "编辑游戏", "ゲームを編集"),
+        t("Métadonnées", "Metadata", "Metadatos", "Метаданные", "Metadaten", "元数据", "メタデータ"),
+        t("Zone sensible", "Danger zone", "Zona peligrosa", "Опасная зона", "Gefahrenzone", "危险区域", "危険ゾーン"),
+        t("Importer depuis F95Zone", "Import from F95Zone", "Importar desde F95Zone", "Импортировать из F95Zone", "Aus F95Zone importieren", "从 F95Zone 导入", "F95Zone から読み込む"),
+        t("Titre", "Title", "Título", "Название", "Titel", "标题", "タイトル"),
+        t("Titre original", "Original title", "Título original", "Оригинальное название", "Originaltitel", "原始标题", "原題"),
+        t("Développeur", "Developer", "Desarrollador", "Разработчик", "Entwickler", "开发者", "開発者"),
+        t("Version", "Version", "Versión", "Версия", "Version", "版本", "バージョン"),
+        t("Lien F95Zone", "F95Zone link", "Enlace F95Zone", "Ссылка F95Zone", "F95Zone-Link", "F95Zone 链接", "F95Zone リンク"),
+        t("Ajouter des tags", "Add tags", "Añadir etiquetas", "Добавить теги", "Tags hinzufügen", "添加标签", "タグを追加"),
+        t("Séparez-les par des virgules ou écrivez [tag] [tag]. Les tags existants seront réutilisés.", "Separate them with commas or write [tag] [tag]. Existing tags will be reused.", "Sepáralas con comas o escribe [tag] [tag]. Se reutilizarán las etiquetas existentes.", "Разделяйте запятыми или пишите [tag] [tag]. Существующие теги будут переиспользованы.", "Trenne sie mit Kommas oder schreibe [tag] [tag]. Vorhandene Tags werden wiederverwendet.", "用逗号分隔，或写成 [tag] [tag]。现有标签会被复用。", "カンマで区切るか [tag] [tag] と入力してください。既存のタグを再利用します。"),
+        t("Choisir les tags", "Choose tags", "Elegir etiquetas", "Выбрать теги", "Tags auswählen", "选择标签", "タグを選択"),
+        t("Sélectionner les tags", "Select tags", "Seleccionar etiquetas", "Выбрать теги", "Tags auswählen", "标签を选择", "タグを選択"),
+        t("Choisir une image", "Choose an image", "Elegir una imagen", "Выбрать изображение", "Bild auswählen", "选择图片", "画像を選択"),
+        t("L’image choisie pourra être recadrée avant enregistrement.", "The selected image can be cropped before saving.", "La imagen elegida se puede recortar antes de guardarla.", "Выбранное изображение можно обрезать перед сохранением.", "Das ausgewählte Bild kann vor dem Speichern zugeschnitten werden.", "选中的图片可以在保存前裁剪。", "選択した画像は保存前にトリミングできます。"),
+        t("Importer", "Import", "Importar", "Импортировать", "Importieren", "导入", "読み込む"),
+        t("Sans image", "Without image", "Sin imagen", "Без изображения", "Ohne Bild", "不使用图片", "画像なし"),
+        t("Analyser le lien", "Analyze link", "Analizar enlace", "Проанализировать ссылку", "Link analysieren", "分析链接", "リンクを解析"),
+        t("Lien du thread", "Thread link", "Enlace del hilo", "Ссылка на тему", "Thread-Link", "主题链接", "スレッドリンク"),
+        t("Rechercher le thread sur Yandex", "Search for the thread on Yandex", "Buscar el hilo en Yandex", "Найти тему в Yandex", "Thread auf Yandex suchen", "在 Yandex 中搜索主题", "Yandex でスレッドを検索"),
+        t("Rechercher sur Yandex", "Search on Yandex", "Buscar en Yandex", "Поиск в Yandex", "Auf Yandex suchen", "在 Yandex 中搜索", "Yandex で検索"),
+        t("Appui long sur le bon résultat F95Zone", "Long-press the correct F95Zone result", "Mantén pulsado el resultado correcto de F95Zone", "Удерживайте правильный результат F95Zone", "Halte das richtige F95Zone-Ergebnis gedrückt", "长按正确的 F95Zone 结果", "正しい F95Zone の結果を長押し"),
+        t("Étape", "Step", "Paso", "Шаг", "Schritt", "步骤", "ステップ"),
+        t("Tag existant", "Existing tag", "Etiqueta existente", "Существующий тег", "Vorhandener Tag", "已有标签", "既存のタグ"),
+        t("Nouveau tag · F95Zone", "New tag · F95Zone", "Nueva etiqueta · F95Zone", "Новый тег · F95Zone", "Neuer Tag · F95Zone", "新标签 · F95Zone", "新しいタグ · F95Zone"),
+        t("Aucun tag détecté sur ce thread.", "No tags found on this thread.", "No se encontraron etiquetas en este hilo.", "В этой теме теги не найдены.", "Keine Tags in diesem Thread gefunden.", "此主题中未找到标签。", "このスレッドにタグはありません。"),
+        t("Aucune image détectée sur ce thread.", "No image found on this thread.", "No se encontró ninguna imagen en este hilo.", "В этой теме изображения не найдены.", "Kein Bild in diesem Thread gefunden.", "此主题中未找到图片。", "このスレッドに画像はありません。"),
+        t("Image locale", "Local image", "Imagen local", "Локальное изображение", "Lokales Bild", "本地图片", "ローカル画像"),
+        t("Image sélectionnée", "Selected image", "Imagen seleccionada", "Выбранное изображение", "Ausgewähltes Bild", "已选图片", "選択した画像"),
+        t("Utiliser l’image affichée", "Use displayed image", "Usar la imagen mostrada", "Использовать показанное изображение", "Angezeigtes Bild verwenden", "使用当前图片", "表示中の画像を使う"),
+        t("Ouvrir directement l’image", "Open image directly", "Abrir imagen directamente", "Открыть изображение", "Bild direkt öffnen", "直接打开图片", "画像を直接開く"),
+        t("Utiliser cette image", "Use this image", "Usar esta imagen", "Использовать это изображение", "Dieses Bild verwenden", "使用此图片", "この画像を使う"),
+        t("Choisissez l’action à effectuer avec cette image.", "Choose what to do with this image.", "Elige qué hacer con esta imagen.", "Выберите действие для этого изображения.", "Wähle eine Aktion für dieses Bild.", "选择对这张图片的操作。", "この画像に対する操作を選択してください。"),
+        t("Recherche des sauvegardes…", "Searching for saves…", "Buscando partidas guardadas…", "Поиск сохранений…", "Speicherstände werden gesucht…", "正在查找存档…", "セーブを検索中…"),
+        t("Après la fusion", "After merging", "Después de fusionar", "После объединения", "Nach dem Zusammenführen", "合并后", "統合後"),
+        t("Supprimer le dossier secondaire", "Delete the secondary folder", "Eliminar la carpeta secundaria", "Удалить дополнительную папку", "Sekundären Ordner löschen", "删除次要文件夹", "重複側のフォルダを削除"),
+        t("Ignorer ce groupe", "Ignore this group", "Ignorar este grupo", "Игнорировать эту группу", "Diese Gruppe ignorieren", "忽略此组", "このグループを無視"),
+        t("Fusionner", "Merge", "Fusionar", "Объединить", "Zusammenführen", "合并", "統合"),
+        t("Sauvegardes", "Saves", "Guardados", "Сохранения", "Speicherstände", "存档", "セーブ"),
+        t("Récupérer les sauvegardes du doublon", "Recover saves from the duplicate", "Recuperar los guardados del duplicado", "Перенести сохранения из дубликата", "Speicherstände des Duplikats übernehmen", "恢复重复项的存档", "重複側のセーブを復元"),
+        t("Jeux supprimés", "Deleted games", "Juegos eliminados", "Удалённые игры", "Gelöschte Spiele", "已删除的游戏", "削除したゲーム"),
+        t("Réautoriser", "Restore", "Volver a autorizar", "Разрешить снова", "Wieder zulassen", "恢复允许", "再許可"),
+        t("Synchronisation en cours", "Sync in progress", "Sincronización en curso", "Синхронизация выполняется", "Synchronisierung läuft", "正在同步", "同期中"),
+        t("Préparation…", "Preparing…", "Preparando…", "Подготовка…", "Vorbereitung…", "准备中…", "準備中…"),
+        t("Rapport de scan", "Scan report", "Informe del escaneo", "Отчёт сканирования", "Scanbericht", "扫描报告", "スキャンレポート"),
+        t("Vérification de la configuration…", "Checking configuration…", "Comprobando la configuración…", "Проверка конфигурации…", "Konfiguration wird geprüft…", "正在检查配置…", "設定を確認中…"),
+        t("Diagnostic", "Diagnostics", "Diagnóstico", "Диагностика", "Diagnose", "诊断", "診断"),
+        t("Profil de lancement", "Launch profile", "Perfil de lanzamiento", "Профиль запуска", "Startprofil", "启动配置", "起動プロファイル"),
+        t("Application externe", "External app", "Aplicación externa", "Внешнее приложение", "Externe App", "外部应用", "外部アプリ"),
+        t("Automatique", "Automatic", "Automático", "Автоматически", "Automatisch", "自动", "自動"),
+        t("Tester", "Test", "Probar", "Проверить", "Testen", "测试", "テスト"),
+        t("Rétablir la détection automatique", "Restore automatic detection", "Restaurar detección automática", "Восстановить автоматическое определение", "Automatische Erkennung wiederherstellen", "恢复自动检测", "自動検出に戻す"),
+        t("Terminer", "Finish", "Terminar", "Завершить", "Fertigstellen", "完成", "完了"),
+        t("Enregistrer et suivant", "Save and next", "Guardar y siguiente", "Сохранить и далее", "Speichern und weiter", "保存并继续", "保存して次へ"),
+        t("Ignorer ce jeu", "Skip this game", "Omitir este juego", "Пропустить игру", "Dieses Spiel überspringen", "跳过此游戏", "このゲームをスキップ"),
+        t("Voulez-vous configurer chaque jeu maintenant ? Astra passera automatiquement au suivant.", "Would you like to configure each game now? Astra will move to the next one automatically.", "¿Quieres configurar cada juego ahora? Astra pasará al siguiente automáticamente.", "Настроить каждую игру сейчас? Astra автоматически перейдёт к следующей.", "Möchtest du jedes Spiel jetzt konfigurieren? Astra wechselt automatisch zum nächsten.", "现在配置每个游戏吗？Astra 会自动进入下一个。", "今すぐ各ゲームを設定しますか？Astra が自動的に次へ進みます。"),
+        t("Plus tard", "Later", "Más tarde", "Позже", "Später", "稍后", "後で"),
+        t("Nouvelle collection", "New collection", "Nueva colección", "Новая коллекция", "Neue Sammlung", "新建收藏", "新しいコレクション"),
+        t("Modifier la collection", "Edit collection", "Editar colección", "Изменить коллекцию", "Sammlung bearbeiten", "编辑收藏", "コレクションを編集"),
+        t("Collection intelligente personnelle", "Personal smart collection", "Colección inteligente personal", "Личная умная коллекция", "Persönliche intelligente Sammlung", "个人智能收藏", "個人スマートコレクション"),
+        t("Collections intelligentes", "Smart collections", "Colecciones inteligentes", "Умные коллекции", "Intelligente Sammlungen", "智能收藏", "スマートコレクション"),
+        t("Nouvelle catégorie", "New category", "Nueva categoría", "Новая категория", "Neue Kategorie", "新建分类", "新しいカテゴリ"),
+        t("Renommer la catégorie", "Rename category", "Renombrar categoría", "Переименовать категорию", "Kategorie umbenennen", "重命名分类", "カテゴリ名を変更"),
+        t("Nouveau tag", "New tag", "Nueva etiqueta", "Новый тег", "Neuer Tag", "新标签", "新しいタグ"),
+        t("Modifier le tag", "Edit tag", "Editar etiqueta", "Изменить тег", "Tag bearbeiten", "编辑标签", "タグを編集"),
+        t("Catégorie", "Category", "Categoría", "Категория", "Kategorie", "分类", "カテゴリ"),
+        t("Classer les tags", "Organize tags", "Organizar etiquetas", "Распределить теги", "Tags organisieren", "整理标签", "タグを整理"),
+        t("Sans catégorie", "No category", "Sin categoría", "Без категории", "Keine Kategorie", "无分类", "カテゴリなし"),
+        t("Nom", "Name", "Nombre", "Название", "Name", "名称", "名前"),
+        t("Nouvelle collection", "New collection", "Nueva colección", "Новая коллекция", "Neue Sammlung", "新建收藏", "新しいコレクション"),
+        t("Correspondance", "Match", "Coincidencia", "Соответствие", "Übereinstimmung", "匹配", "一致条件"),
+        t("Toutes les règles (ET)", "All rules (AND)", "Todas las reglas (Y)", "Все правила (И)", "Alle Regeln (UND)", "所有规则（与）", "すべての条件（AND）"),
+        t("Au moins une (OU)", "At least one (OR)", "Al menos una (O)", "Хотя бы одно (ИЛИ)", "Mindestens eine (ODER)", "至少一条（或）", "1つ以上（OR）"),
+        t("Ajouter une règle", "Add a rule", "Añadir una regla", "Добавить правило", "Regel hinzufügen", "添加规则", "ルールを追加"),
+        t("Règle de collection", "Collection rule", "Regla de colección", "Правило коллекции", "Sammlungsregel", "收藏规则", "コレクションルール"),
+        t("Champ", "Field", "Campo", "Поле", "Feld", "字段", "フィールド"),
+        t("Condition", "Condition", "Condición", "Условие", "Bedingung", "条件", "条件"),
+        t("Valeur", "Value", "Valor", "Значение", "Wert", "值", "値"),
+        t("Rechercher un tag", "Search for a tag", "Buscar una etiqueta", "Найти тег", "Tag suchen", "搜索标签", "タグを検索"),
+        t("Aucun tag trouvé", "No tags found", "No se encontraron etiquetas", "Теги не найдены", "Keine Tags gefunden", "未找到标签", "タグが見つかりません"),
+        t("Aucun doublon détecté", "No duplicates detected", "No se detectaron duplicados", "Дубликаты не найдены", "Keine Duplikate erkannt", "未检测到重复项", "重複はありません"),
+        t("Aucun jeu supprimé", "No deleted games", "No hay juegos eliminados", "Удалённых игр нет", "Keine gelöschten Spiele", "没有已删除的游戏", "削除したゲームはありません"),
+        t("Aucun dossier ni jeu ici", "No folder or game here", "No hay carpetas ni juegos aquí", "Здесь нет папок или игр", "Hier gibt es keine Ordner oder Spiele", "此处没有文件夹或游戏", "ここにフォルダやゲームはありません"),
+        t("Aucun détail disponible pour ce rapport.", "No details available for this report.", "No hay detalles disponibles para este informe.", "Для этого отчёта нет подробностей.", "Für diesen Bericht sind keine Details verfügbar.", "此报告没有可用详情。", "このレポートに詳細はありません。"),
+        t("Aucun tag dans cette catégorie", "No tags in this category", "No hay etiquetas en esta categoría", "В этой категории нет тегов", "Keine Tags in dieser Kategorie", "此分类没有标签", "このカテゴリにタグはありません"),
+        t("Supprimer la jaquette ?", "Delete cover?", "¿Eliminar la carátula?", "Удалить обложку?", "Cover löschen?", "删除封面？", "カバーを削除しますか？"),
+        t("Le jeu restera dans la bibliothèque. Seule sa jaquette sera retirée.", "The game will stay in the library. Only its cover will be removed.", "El juego permanecerá en la biblioteca. Solo se quitará la carátula.", "Игра останется в библиотеке. Будет удалена только обложка.", "Das Spiel bleibt in der Bibliothek. Nur das Cover wird entfernt.", "游戏会保留在资料库中，只删除封面。", "ゲームはライブラリに残り、カバーだけを削除します。"),
+        t("Supprimer le jeu", "Delete game", "Eliminar juego", "Удалить игру", "Spiel löschen", "删除游戏", "ゲームを削除"),
+        t("Supprimer aussi les fichiers associés", "Also delete associated files", "Eliminar también los archivos asociados", "Также удалить связанные файлы", "Zugehörige Dateien ebenfalls löschen", "同时删除相关文件", "関連ファイルも削除"),
+        t("Cette action est irréversible et le jeu ne figurera pas dans l’historique des jeux supprimés.", "This action is irreversible and the game will not appear in deleted-game history.", "Esta acción es irreversible y el juego no aparecerá en el historial de juegos eliminados.", "Это действие необратимо, и игра не появится в истории удалённых игр.", "Diese Aktion ist irreversibel und das Spiel erscheint nicht im Verlauf gelöschter Spiele.", "此操作不可撤销，游戏不会出现在已删除游戏历史中。", "この操作は取り消せず、削除したゲームの履歴にも残りません。"),
+        t("Démarrer une sélection multiple", "Start multi-selection", "Iniciar selección múltiple", "Начать множественный выбор", "Mehrfachauswahl starten", "开始多选", "複数選択を開始"),
+        t("Ouvrir la fiche", "Open details", "Abrir ficha", "Открыть карточку", "Details öffnen", "打开详情", "詳細を開く"),
+        t("Retirer des favoris", "Remove from favorites", "Quitar de favoritos", "Убрать из избранного", "Aus Favoriten entfernen", "取消收藏", "お気に入りから削除"),
+        t("Ajouter aux favoris", "Add to favorites", "Añadir a favoritos", "Добавить в избранное", "Zu Favoriten hinzufügen", "加入收藏", "お気に入りに追加"),
+        t("Rapport", "Report", "Informe", "Отчёт", "Bericht", "报告", "レポート"),
+        t("Terminé", "Finished", "Terminado", "Завершено", "Fertig", "已完成", "完了"),
+        t("Trouvés", "Found", "Encontrados", "Найдено", "Gefunden", "找到", "検出"),
+        t("Ajoutés", "Added", "Añadidos", "Добавлено", "Hinzugefügt", "已添加", "追加"),
+        t("Actualisés", "Updated", "Actualizados", "Обновлено", "Aktualisiert", "已更新", "更新"),
+        t("Déjà connus", "Already known", "Ya conocidos", "Уже известные", "Bereits bekannt", "已知", "既知"),
+        t("Déplacés", "Moved", "Movidos", "Перемещено", "Verschoben", "已移动", "移動"),
+        t("Manquants", "Missing", "Faltantes", "Отсутствует", "Fehlend", "缺失", "不足"),
+        t("Ignorés", "Ignored", "Ignorados", "Проигнорировано", "Ignoriert", "已忽略", "無視"),
+        t("Erreurs", "Errors", "Errores", "Ошибки", "Fehler", "错误", "エラー"),
+        t("Aucun rapport disponible pour cette source", "No report available for this source", "No hay informe para esta fuente", "Для этого источника нет отчёта", "Kein Bericht für diese Quelle verfügbar", "此来源没有报告", "このソースのレポートはありません"),
+        t("Source ajoutée", "Source added", "Fuente añadida", "Источник добавлен", "Quelle hinzugefügt", "来源已添加", "ソースを追加しました"),
+        t("Source retirée. Les fichiers du dossier sont conservés.", "Source removed. Folder files are kept.", "Fuente eliminada. Los archivos de la carpeta se conservan.", "Источник удалён. Файлы папки сохранены.", "Quelle entfernt. Die Dateien des Ordners bleiben erhalten.", "来源已移除，文件夹中的文件会保留。", "ソースを削除しました。フォルダのファイルは保持されます。"),
+        t("Dossier du jeu mis à jour", "Game folder updated", "Carpeta del juego actualizada", "Папка игры обновлена", "Spielordner aktualisiert", "游戏文件夹已更新", "ゲームフォルダを更新しました"),
+        t("Tags enregistrés", "Tags saved", "Etiquetas guardadas", "Теги сохранены", "Tags gespeichert", "标签已保存", "タグを保存しました"),
+        t("Tag créé", "Tag created", "Etiqueta creada", "Тег создан", "Tag erstellt", "标签已创建", "タグを作成しました"),
+        t("Tag modifié", "Tag updated", "Etiqueta modificada", "Тег изменён", "Tag geändert", "标签已修改", "タグを変更しました"),
+        t("Catégorie appliquée", "Category applied", "Categoría aplicada", "Категория применена", "Kategorie angewendet", "分类已应用", "カテゴリを適用しました"),
+        t("Collection intelligente enregistrée", "Smart collection saved", "Colección inteligente guardada", "Умная коллекция сохранена", "Intelligente Sammlung gespeichert", "智能收藏已保存", "スマートコレクションを保存しました"),
+        t("Collection supprimée", "Collection deleted", "Colección eliminada", "Коллекция удалена", "Sammlung gelöscht", "收藏已删除", "コレクションを削除しました"),
+        t("Jaquette enregistrée", "Cover saved", "Carátula guardada", "Обложка сохранена", "Cover gespeichert", "封面已保存", "カバーを保存しました"),
+        t("Jaquette supprimée", "Cover deleted", "Carátula eliminada", "Обложка удалена", "Cover gelöscht", "封面已删除", "カバーを削除しました"),
+        t("Jeu mis à jour", "Game updated", "Juego actualizado", "Игра обновлена", "Spiel aktualisiert", "游戏已更新", "ゲームを更新しました"),
+        t("Jeu configuré", "Game configured", "Juego configurado", "Игра настроена", "Spiel konfiguriert", "游戏已配置", "ゲームを設定しました"),
+        t("Jeu réautorisé. Relancez le scan de sa source.", "Game restored. Scan its source again.", "Juego restaurado. Vuelve a escanear su fuente.", "Игра восстановлена. Повторно просканируйте источник.", "Spiel wieder zugelassen. Scanne die Quelle erneut.", "游戏已恢复，请重新扫描来源。", "ゲームを再許可しました。ソースを再スキャンしてください。"),
+        t("Sauvegarde restaurée", "Backup restored", "Copia restaurada", "Резервная копия восстановлена", "Sicherung wiederhergestellt", "备份已恢复", "バックアップを復元しました"),
+        t("Test envoyé au lanceur configuré", "Test sent to configured launcher", "Prueba enviada al lanzador configurado", "Тест отправлен настроенному лаунчеру", "Test an den konfigurierten Starter gesendet", "测试已发送到配置的启动器", "設定したランチャーにテストを送信しました"),
+        t("Ce groupe de doublons sera désormais ignoré", "This duplicate group will now be ignored", "Este grupo de duplicados se ignorará", "Эта группа дубликатов будет игнорироваться", "Diese Duplikatgruppe wird jetzt ignoriert", "此重复组将被忽略", "この重複グループを無視します"),
+        t("Détection automatique restaurée", "Automatic detection restored", "Detección automática restaurada", "Автоматическое определение восстановлено", "Automatische Erkennung wiederhergestellt", "自动检测已恢复", "自動検出に戻しました"),
+        t("Profil de lancement enregistré", "Launch profile saved", "Perfil de lanzamiento guardado", "Профиль запуска сохранён", "Startprofil gespeichert", "启动配置已保存", "起動プロファイルを保存しました"),
+        t("Astra vérifie les composants JoiPlay présents sur le téléphone.", "Astra checks the JoiPlay components installed on the phone.", "Astra comprueba los componentes de JoiPlay instalados en el teléfono.", "Astra проверяет компоненты JoiPlay на телефоне.", "Astra prüft die auf dem Telefon installierten JoiPlay-Komponenten.", "Astra 会检查手机上安装的 JoiPlay 组件。", "Astra がスマートフォンの JoiPlay コンポーネントを確認します。"),
+        t("Aucun dossier sélectionné", "No folder selected", "No se ha seleccionado ninguna carpeta", "Папка не выбрана", "Kein Ordner ausgewählt", "未选择文件夹", "フォルダが選択されていません"),
+        t("Aucun tag importé", "No tags imported", "No se han importado etiquetas", "Теги не импортированы", "Keine Tags importiert", "未导入标签", "タグは読み込まれていません"),
+        t("Dossier sélectionné", "Selected folder", "Carpeta seleccionada", "Выбранная папка", "Ausgewählter Ordner", "已选文件夹", "選択したフォルダ"),
+        t("La langue est modifiable à tout moment dans Paramètres.", "You can change the language at any time in Settings.", "Puedes cambiar el idioma en cualquier momento desde Ajustes.", "Язык можно изменить в настройках в любое время.", "Die Sprache kann jederzeit in den Einstellungen geändert werden.", "你可以随时在设置中更改语言。", "言語は設定からいつでも変更できます。"),
+        t("Aucun runtime détecté", "No runtime detected", "No se detectó ningún runtime", "Среды не обнаружены", "Keine Runtime erkannt", "未检测到运行时", "ランタイムが見つかりません"),
+        t("Non installé", "Not installed", "No instalado", "Не установлено", "Nicht installiert", "未安装", "未インストール"),
+        t("Catégories", "Categories", "Categorías", "Категории", "Kategorien", "分类", "カテゴリ"),
+        t("Catalogue, réglages de jeux et jaquettes", "Catalog, game settings and covers", "Catálogo, ajustes de juegos y carátulas", "Каталог, настройки игр и обложки", "Katalog, Spieleinstellungen und Cover", "目录、游戏设置和封面", "カタログ、ゲーム設定、カバー"),
+        t("Dossier configuré et accessible par le bouton rapide ci-dessous", "Folder configured and available from the quick button below", "Carpeta configurada y accesible desde el botón rápido de abajo", "Папка настроена и доступна через кнопку ниже", "Ordner eingerichtet und über die Schnellschaltfläche erreichbar", "文件夹已配置，可通过下方快捷按钮访问", "フォルダを設定しました。下のショートカットから開けます"),
+        t("Restaurer une sauvegarde ?", "Restore a backup?", "¿Restaurar una copia?", "Восстановить резервную копию?", "Sicherung wiederherstellen?", "恢复备份？", "バックアップを復元しますか？"),
+        t("Le catalogue actuel sera remplacé par la sauvegarde sélectionnée. Les fichiers des jeux ne seront pas modifiés.", "The current catalog will be replaced by the selected backup. Game files will not be changed.", "El catálogo actual se sustituirá por la copia seleccionada. Los archivos de los juegos no cambiarán.", "Текущий каталог будет заменён выбранной копией. Файлы игр не изменятся.", "Der aktuelle Katalog wird durch die ausgewählte Sicherung ersetzt. Spieldateien werden nicht geändert.", "当前目录会被选中的备份替换，游戏文件不会改变。", "現在のカタログを選択したバックアップで置き換えます。ゲームファイルは変更されません。"),
+        t("Dossier système", "System folder", "Carpeta del sistema", "Системная папка", "Systemordner", "系统文件夹", "システムフォルダ"),
+        t("Tri", "Sort", "Ordenar", "Сортировка", "Sortieren", "排序", "並べ替え"),
+        t("Ajouts récents", "Recently added", "Añadidos recientemente", "Недавно добавленные", "Kürzlich hinzugefügt", "最近添加", "最近追加"),
+        t("Dernier lancement", "Last launch", "Último lanzamiento", "Последний запуск", "Letzter Start", "上次启动", "最終起動"),
+        t("Plus joués", "Most played", "Más jugados", "Чаще всего играли", "Am häufigsten gespielt", "最常玩", "よく遊ぶ"),
+        t("Tous", "All", "Todos", "Все", "Alle", "全部", "すべて"),
+        t("Toutes", "All", "Todas", "Все", "Alle", "全部", "すべて"),
+        t("Classer", "Organize", "Organizar", "Распределить", "Organisieren", "整理", "整理"),
+        t("Classer le jeu", "Organize game", "Organizar juego", "Распределить игру", "Spiel organisieren", "整理游戏", "ゲームを整理"),
+        t("Classer les tags", "Organize tags", "Organizar etiquetas", "Распределить теги", "Tags organisieren", "整理标签", "タグを整理"),
+        t("Sans collection", "No collection", "Sin colección", "Без коллекции", "Keine Sammlung", "无收藏", "コレクションなし"),
+        t("Sans dossier", "No folder", "Sin carpeta", "Без папки", "Kein Ordner", "无文件夹", "フォルダなし"),
+        t("Jeux dans ce dossier", "Games in this folder", "Juegos en esta carpeta", "Игры в этой папке", "Spiele in diesem Ordner", "此文件夹中的游戏", "このフォルダのゲーム"),
+        t("Mes collections intelligentes", "My smart collections", "Mis colecciones inteligentes", "Мои умные коллекции", "Meine intelligenten Sammlungen", "我的智能收藏", "マイスマートコレクション"),
+        t("Les jeux ne seront pas supprimés. Ses sous-dossiers remonteront au niveau actuel.", "Games will not be deleted. Its subfolders will move up one level.", "Los juegos no se eliminarán. Sus subcarpetas subirán al nivel actual.", "Игры не будут удалены. Подпапки поднимутся на текущий уровень.", "Spiele werden nicht gelöscht. Unterordner werden eine Ebene nach oben verschoben.", "游戏不会删除，子文件夹会移动到当前层级。", "ゲームは削除されず、サブフォルダが現在の階層に移動します。"),
+        t("Les jeux de cette source seront retirés de la bibliothèque Astra. Aucun fichier ne sera supprimé du téléphone.", "Games from this source will be removed from the Astra library. No phone files will be deleted.", "Los juegos de esta fuente se quitarán de la biblioteca Astra. No se eliminarán archivos del teléfono.", "Игры из этого источника будут удалены из библиотеки Astra. Файлы на телефоне не будут удалены.", "Spiele dieser Quelle werden aus der Astra-Bibliothek entfernt. Keine Dateien auf dem Telefon werden gelöscht.", "此来源的游戏会从 Astra 资料库中移除，不会删除手机上的文件。", "このソースのゲームを Astra ライブラリから削除します。スマートフォンのファイルは削除されません。"),
+        t("Retirer la source", "Remove source", "Eliminar fuente", "Удалить источник", "Quelle entfernen", "移除来源", "ソースを削除"),
+        t("Chemin du dossier", "Folder path", "Ruta de la carpeta", "Путь к папке", "Ordnerpfad", "文件夹路径", "フォルダのパス"),
+        t("Exécutable ou fichier d'entrée", "Executable or entry file", "Ejecutable o archivo de entrada", "Исполняемый или входной файл", "Ausführbare oder Startdatei", "可执行文件或入口文件", "実行ファイルまたはエントリーファイル"),
+        t("Package Android (facultatif)", "Android package (optional)", "Paquete Android (opcional)", "Пакет Android (необязательно)", "Android-Paket (optional)", "Android 包（可选）", "Android パッケージ（任意）"),
+        t("Action Android", "Android action", "Acción de Android", "Действие Android", "Android-Aktion", "Android 操作", "Android アクション"),
+        t("Arguments personnalisés", "Custom arguments", "Argumentos personalizados", "Пользовательские аргументы", "Benutzerdefinierte Argumente", "自定义参数", "カスタム引数"),
+        t("Nombre de jours", "Number of days", "Número de días", "Количество дней", "Anzahl der Tage", "天数", "日数"),
+        t("Durée en heures", "Duration in hours", "Duración en horas", "Продолжительность в часах", "Dauer in Stunden", "小时数", "時間（小时）"),
+        t("Ils seront ignorés lors des prochains scans. Aucun fichier ne sera supprimé.", "They will be ignored during future scans. No files will be deleted.", "Se ignorarán en los próximos escaneos. No se eliminarán archivos.", "Они будут игнорироваться при следующих сканированиях. Файлы не будут удалены.", "Sie werden bei künftigen Scans ignoriert. Keine Dateien werden gelöscht.", "下次扫描时会忽略它们，不会删除任何文件。", "次回以降のスキャンで無視します。ファイルは削除されません。"),
+        t("Aucun dossier de sauvegarde détecté", "No save folder detected", "No se detectó ninguna carpeta de guardado", "Папка сохранений не найдена", "Kein Save-Ordner erkannt", "未检测到存档文件夹", "セーブフォルダが見つかりません"),
+        t("Choisissez d’abord un dossier de sauvegarde", "Choose a backup folder first", "Elige primero una carpeta de copia", "Сначала выберите папку для резервных копий", "Wähle zuerst einen Sicherungsordner", "请先选择备份文件夹", "先にバックアップフォルダを選択してください"),
+        t("Recherche Yandex", "Yandex search", "Búsqueda de Yandex", "Поиск Yandex", "Yandex-Suche", "Yandex 搜索", "Yandex 検索"),
+        t("Ouvrir la recherche sur Yandex", "Open search on Yandex", "Abrir la búsqueda en Yandex", "Открыть поиск в Yandex", "Suche auf Yandex öffnen", "在 Yandex 中打开搜索", "Yandex で検索を開く"),
+        t("Yandex Images", "Yandex Images", "Yandex Imágenes", "Yandex Картинки", "Yandex-Bilder", "Yandex 图片", "Yandex 画像"),
+        t("Ouvrir Yandex Images", "Open Yandex Images", "Abrir Yandex Imágenes", "Открыть Yandex Картинки", "Yandex-Bilder öffnen", "打开 Yandex 图片", "Yandex 画像を開く"),
+        t("Touchez une image pour afficher son aperçu", "Tap an image to show its preview", "Toca una imagen para ver su vista previa", "Нажмите на изображение для предпросмотра", "Tippe auf ein Bild, um die Vorschau anzuzeigen", "点击图片查看预览", "画像をタップしてプレビューを表示"),
+        t("Ce lien n’est pas un thread F95Zone valide. Maintenez le titre d’un résultat F95Zone.", "This link is not a valid F95Zone thread. Long-press the title of an F95Zone result.", "Este enlace no es un hilo F95Zone válido. Mantén pulsado el título de un resultado F95Zone.", "Это недействительная тема F95Zone. Удерживайте заголовок результата F95Zone.", "Dieser Link ist kein gültiger F95Zone-Thread. Halte den Titel eines F95Zone-Ergebnisses gedrückt.", "此链接不是有效的 F95Zone 主题，请长按 F95Zone 结果标题。", "このリンクは有効な F95Zone スレッドではありません。F95Zone の結果タイトルを長押ししてください。"),
+        t("Cette image ne possède pas d’adresse HTTPS exploitable.", "This image has no usable HTTPS address.", "Esta imagen no tiene una dirección HTTPS utilizable.", "У изображения нет рабочего HTTPS-адреса.", "Dieses Bild hat keine nutzbare HTTPS-Adresse.", "此图片没有可用的 HTTPS 地址。", "この画像には利用できる HTTPS アドレスがありません。"),
+        t("Touchez d’abord une image pour afficher son aperçu.", "Tap an image first to show its preview.", "Toca primero una imagen para ver su vista previa.", "Сначала нажмите на изображение для предпросмотра.", "Tippe zuerst auf ein Bild, um die Vorschau anzuzeigen.", "请先点击图片查看预览。", "まず画像をタップしてプレビューを表示してください。"),
+        t("Aucun jeu ne correspond aux filtres", "No games match the filters", "Ningún juego coincide con los filtros", "Игры не соответствуют фильтрам", "Keine Spiele passen zu den Filtern", "没有符合筛选条件的游戏", "条件に一致するゲームはありません"),
+        t("Sous-dossier — niveau", "Subfolder — level", "Subcarpeta — nivel", "Подпапка — уровень", "Unterordner — Ebene", "子文件夹 — 层级", "サブフォルダ — レベル"),
+        t("Après installation ou mise à jour d’un plugin, fermez puis rouvrez ce gestionnaire pour relancer la détection.", "After installing or updating a plugin, close and reopen this manager to detect it again.", "Después de instalar o actualizar un plugin, cierra y vuelve a abrir este gestor para detectarlo de nuevo.", "После установки или обновления плагина закройте и снова откройте менеджер для повторного обнаружения.", "Schließe diesen Manager nach der Plugin-Installation oder -Aktualisierung und öffne ihn erneut.", "安装或更新插件后，请关闭并重新打开管理器以重新检测。", "プラグインのインストールまたは更新後、この管理画面を閉じて再度開くと再検出します。"),
+        t("Dossier du jeu mis à jour", "Game folder updated", "Carpeta del juego actualizada", "Папка игры обновлена", "Spielordner aktualisiert", "游戏文件夹已更新", "ゲームフォルダを更新しました"),
+        t("Nouveau dossier", "New folder", "Nueva carpeta", "Новая папка", "Neuer Ordner", "新建文件夹", "新しいフォルダ"),
+        t("Modifier le dossier", "Edit folder", "Editar carpeta", "Изменить папку", "Ordner bearbeiten", "编辑文件夹", "フォルダを編集"),
+        t("Supprimer le dossier secondaire ?", "Delete the secondary folder?", "¿Eliminar la carpeta secundaria?", "Удалить дополнительную папку?", "Sekundären Ordner löschen?", "删除次要文件夹？", "重複側のフォルダを削除しますか？"),
+        t("Les sauvegardes sont traitées avant la suppression. Le dossier sera ensuite supprimé définitivement du téléphone.", "Saves are handled before deletion. The folder will then be permanently deleted from the phone.", "Los guardados se procesan antes de eliminar. Después se borrará la carpeta del teléfono.", "Сохранения будут обработаны до удаления. Затем папка будет навсегда удалена с телефона.", "Speicherstände werden vor dem Löschen verarbeitet. Danach wird der Ordner dauerhaft vom Telefon gelöscht.", "删除前会先处理存档，然后从手机永久删除文件夹。", "削除前にセーブを処理し、その後フォルダをスマートフォンから完全に削除します。"),
+        t("Suppression physique irréversible après confirmation", "Physical deletion is irreversible after confirmation", "La eliminación física es irreversible tras confirmarla", "Физическое удаление необратимо после подтверждения", "Die physische Löschung ist nach Bestätigung irreversibel", "确认后无法撤销物理删除", "確認後の物理削除は取り消せません"),
+        t("Conserver les fichiers et ignorer définitivement ce doublon", "Keep files and permanently ignore this duplicate", "Conservar los archivos e ignorar este duplicado definitivamente", "Сохранить файлы и навсегда игнорировать этот дубликат", "Dateien behalten und dieses Duplikat dauerhaft ignorieren", "保留文件并永久忽略此重复项", "ファイルを残し、この重複を完全に無視"),
+        t("Choisissez l’exemplaire principal", "Choose the primary copy", "Elige la copia principal", "Выберите основной экземпляр", "Wähle das Haupt-Exemplar", "选择主副本", "メインのコピーを選択"),
+        t("Comparer les doublons", "Compare duplicates", "Comparar duplicados", "Сравнить дубликаты", "Duplikate vergleichen", "比较重复项", "重複を比較"),
+        t("Doublons détectés", "Detected duplicates", "Duplicados detectados", "Найденные дубликаты", "Erkannte Duplikate", "检测到的重复项", "検出した重複"),
+        t("Exemplaire principal", "Primary copy", "Copia principal", "Основной экземпляр", "Haupt-Exemplar", "主副本", "メインのコピー"),
+        t("Choisir comme principal", "Choose as primary", "Elegir como principal", "Выбрать основным", "Als Haupt-Exemplar auswählen", "设为主副本", "メインにする"),
+        t("Garder le principal", "Keep primary", "Conservar el principal", "Оставить основной", "Haupt-Exemplar behalten", "保留主副本", "メインを保持"),
+        t("Remplacer", "Replace", "Reemplazar", "Заменить", "Ersetzen", "替换", "置き換え"),
+        t("Conserver les deux", "Keep both", "Conservar ambos", "Сохранить оба", "Beide behalten", "保留两者", "両方を保持"),
+        t("En cas de même nom", "When names match", "Si tienen el mismo nombre", "При одинаковом имени", "Bei gleichem Namen", "名称相同时", "同名の場合"),
+        t("Après cette fusion, les exemplaires restants seront reproposés un par un.", "After this merge, remaining copies will be offered one at a time.", "Después de esta fusión, las copias restantes se propondrán una a una.", "После объединения оставшиеся экземпляры будут предложены по одному.", "Nach diesem Zusammenführen werden die übrigen Exemplare einzeln angeboten.", "合并后会逐一处理剩余副本。", "この統合後、残りのコピーを1つずつ確認します。"),
+        t("Retirer", "Remove", "Quitar", "Убрать", "Entfernen", "移除", "削除"),
+        t("Nom copié", "Name copied", "Nombre copiado", "Имя скопировано", "Name kopiert", "名称已复制", "名前をコピーしました"),
+        t("Nom du jeu copié", "Game name copied", "Nombre del juego copiado", "Название игры скопировано", "Spielname kopiert", "游戏名称已复制", "ゲーム名をコピーしました"),
+        t("Rapport de scan", "Scan report", "Informe del escaneo", "Отчёт сканирования", "Scanbericht", "扫描报告", "スキャンレポート"),
+        t("Dossiers", "Folders", "Carpetas", "Папки", "Ordner", "文件夹", "フォルダ"),
+        t("Composants détectés", "Components detected", "Componentes detectados", "Обнаруженные компоненты", "Erkannte Komponenten", "检测到的组件", "検出したコンポーネント"),
+        t("Version", "Version", "Versión", "Версия", "Version", "版本", "バージョン"),
+        t("Récemment ajoutés", "Recently added", "Añadidos recientemente", "Недавно добавленные", "Kürzlich hinzugefügt", "最近添加", "最近追加"),
+        t("Joués récemment", "Recently played", "Jugados recientemente", "Недавно запускались", "Kürzlich gespielt", "最近玩过", "最近プレイ"),
+        t("Jamais joués", "Never played", "Nunca jugados", "Никогда не запускались", "Nie gespielt", "从未玩过", "未プレイ"),
+        t("Jamais lancé", "Never launched", "Nunca iniciado", "Никогда не запускалась", "Nie gestartet", "从未启动", "未起動"),
+        t("Détection locale des composants", "Local component detection", "Detección local de componentes", "Локальное обнаружение компонентов", "Lokale Komponentenerkennung", "本地组件检测", "コンポーネントをローカルで検出"),
+        t("Installé", "Installed", "Instalado", "Установлено", "Installiert", "已安装", "インストール済み"),
+        t("Requis par votre bibliothèque • non installé", "Required by your library • not installed", "Necesario para tu biblioteca • no instalado", "Требуется вашей библиотеке • не установлено", "Von deiner Bibliothek benötigt • nicht installiert", "你的资料库需要 • 未安装", "ライブラリで必要 • 未インストール"),
+        t("Après installation ou mise à jour d’un plugin, fermez puis rouvrez ce gestionnaire pour relancer la détection.", "After installing or updating a plugin, close and reopen this manager to detect it again.", "Después de instalar o actualizar un plugin, cierra y vuelve a abrir este gestor para detectarlo de nuevo.", "После установки или обновления плагина закройте и снова откройте менеджер для повторного обнаружения.", "Schließe diesen Manager nach der Plugin-Installation oder -Aktualisierung und öffne ihn erneut.", "安装或更新插件后，请关闭并重新打开管理器以重新检测。", "プラグインのインストールまたは更新後、この管理画面を閉じて再度開くと再検出します。"),
+        t("Sous-dossier — niveau", "Subfolder — level", "Subcarpeta — nivel", "Подпапка — уровень", "Unterordner — Ebene", "子文件夹 — 层级", "サブフォルダ — レベル"),
+        t("Collections Astra", "Astra collections", "Colecciones de Astra", "Коллекции Astra", "Astra-Sammlungen", "Astra 收藏", "Astra コレクション"),
+        t("Continuer vers les images", "Continue to images", "Continuar a las imágenes", "Перейти к изображениям", "Weiter zu Bildern", "继续选择图片", "画像へ進む"),
+        t("Créer", "Create", "Crear", "Создать", "Erstellen", "创建", "作成"),
+        t("Effacer la sélection", "Clear selection", "Borrar selección", "Очистить выбор", "Auswahl löschen", "Auswahl löschen", "選択を解除"),
+        t("Ouvrir le dossier de sauvegarde", "Open backup folder", "Abrir carpeta de copia", "Открыть папку резервных копий", "Sicherungsordner öffnen", "打开备份文件夹", "バックアップフォルダを開く"),
+        t("Ouvrir le thread F95Zone", "Open F95Zone thread", "Abrir el hilo de F95Zone", "Открыть тему F95Zone", "F95Zone-Thread öffnen", "打开 F95Zone 主题", "F95Zone スレッドを開く"),
+        t("Remplace le catalogue par le contenu de l’archive", "Replaces the catalog with the archive contents", "Sustituye el catálogo por el contenido del archivo", "Заменяет каталог содержимым архива", "Ersetzt den Katalog durch den Inhalt des Archivs", "用归档内容替换目录", "アーカイブの内容でカタログを置き換えます"),
+        t("Système", "System", "Sistema", "Система", "System", "系统", "システム"),
+        t("Clair", "Light", "Claro", "Светлая", "Hell", "浅色", "ライト"),
+        t("Sombre", "Dark", "Oscuro", "Тёмная", "Dunkel", "深色", "ダーク")
+    )
+
+    private val translations = AppLanguage.entries.associateWith { language ->
+        catalog.associate { it.source to it.value(language) }
+    }
+
+    fun text(source: String, selectedLanguage: AppLanguage = language): String {
+        val current = selectedLanguage
+        if (current == AppLanguage.FRENCH) return source
+        translations[current]?.get(source)?.let { return it }
+        translateDynamic(source, current)?.let { return it }
+        // English is the intentional fallback for newly added strings in non-French locales.
+        return translations[AppLanguage.ENGLISH]?.get(source) ?: source
+    }
+
+    private fun translateDynamic(source: String, language: AppLanguage): String? {
+        fun count(pattern: Regex, value: (Int) -> String): String? = pattern.matchEntire(source)?.groupValues?.get(1)?.toIntOrNull()?.let(value)
+        count(Regex("(\\d+) colonnes")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number columns"; AppLanguage.SPANISH -> "$number columnas"; AppLanguage.RUSSIAN -> "$number столбцов"; AppLanguage.GERMAN -> "$number Spalten"; AppLanguage.CHINESE -> "$number 列"; AppLanguage.JAPANESE -> "$number 列"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) jeux")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number games"; AppLanguage.SPANISH -> "$number juegos"; AppLanguage.RUSSIAN -> "$number игр"; AppLanguage.GERMAN -> "$number Spiele"; AppLanguage.CHINESE -> "$number 个游戏"; AppLanguage.JAPANESE -> "$number 本のゲーム"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) jeu\\(x\\)")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number game(s)"; AppLanguage.SPANISH -> "$number juego(s)"; AppLanguage.RUSSIAN -> "$number игр"; AppLanguage.GERMAN -> "$number Spiel(e)"; AppLanguage.CHINESE -> "$number 个游戏"; AppLanguage.JAPANESE -> "$number 本のゲーム"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) tag\\(s\\)")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number tag(s)"; AppLanguage.SPANISH -> "$number etiqueta(s)"; AppLanguage.RUSSIAN -> "$number тег(ов)"; AppLanguage.GERMAN -> "$number Tag(s)"; AppLanguage.CHINESE -> "$number 个标签"; AppLanguage.JAPANESE -> "$number 個のタグ"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) dossiers")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number folders"; AppLanguage.SPANISH -> "$number carpetas"; AppLanguage.RUSSIAN -> "$number папок"; AppLanguage.GERMAN -> "$number Ordner"; AppLanguage.CHINESE -> "$number 个文件夹"; AppLanguage.JAPANESE -> "$number 個のフォルダ"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) sous-dossier\\(s\\)")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number subfolder(s)"; AppLanguage.SPANISH -> "$number subcarpeta(s)"; AppLanguage.RUSSIAN -> "$number подпапок"; AppLanguage.GERMAN -> "$number Unterordner"; AppLanguage.CHINESE -> "$number 个子文件夹"; AppLanguage.JAPANESE -> "$number 個のサブフォルダ"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) groupe\\(s\\)")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number group(s)"; AppLanguage.SPANISH -> "$number grupo(s)"; AppLanguage.RUSSIAN -> "$number групп"; AppLanguage.GERMAN -> "$number Gruppe(n)"; AppLanguage.CHINESE -> "$number 个组"; AppLanguage.JAPANESE -> "$number グループ"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) sélectionné\\(s\\)")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number selected"; AppLanguage.SPANISH -> "$number seleccionados"; AppLanguage.RUSSIAN -> "Выбрано: $number"; AppLanguage.GERMAN -> "$number ausgewählt"; AppLanguage.CHINESE -> "已选择 $number 项"; AppLanguage.JAPANESE -> "$number 件を選択"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) tags importés")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number tags imported"; AppLanguage.SPANISH -> "$number etiquetas importadas"; AppLanguage.RUSSIAN -> "Импортировано тегов: $number"; AppLanguage.GERMAN -> "$number Tags importiert"; AppLanguage.CHINESE -> "已导入 $number 个标签"; AppLanguage.JAPANESE -> "$number 個のタグを読み込みました"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) composants détectés")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number components detected"; AppLanguage.SPANISH -> "$number componentes detectados"; AppLanguage.RUSSIAN -> "Обнаружено компонентов: $number"; AppLanguage.GERMAN -> "$number Komponenten erkannt"; AppLanguage.CHINESE -> "检测到 $number 个组件"; AppLanguage.JAPANESE -> "$number 個のコンポーネントを検出"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        Regex("^(\\d+) sur (\\d+) sélectionné\\(s\\)$").matchEntire(source)?.let { match ->
+            val selected = match.groupValues[1]; val total = match.groupValues[2]
+            return when (language) {
+                AppLanguage.ENGLISH -> "$selected of $total selected"; AppLanguage.SPANISH -> "$selected de $total seleccionados"; AppLanguage.RUSSIAN -> "Выбрано $selected из $total"; AppLanguage.GERMAN -> "$selected von $total ausgewählt"; AppLanguage.CHINESE -> "已选择 $selected / $total"; AppLanguage.JAPANESE -> "$total 件中 $selected 件を選択"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^(\\d+) jeux trouvés, (\\d+) ajoutés$").matchEntire(source)?.let { match ->
+            val found = match.groupValues[1]; val added = match.groupValues[2]
+            return when (language) {
+                AppLanguage.ENGLISH -> "$found games found, $added added"; AppLanguage.SPANISH -> "$found juegos encontrados, $added añadidos"; AppLanguage.RUSSIAN -> "Найдено игр: $found, добавлено: $added"; AppLanguage.GERMAN -> "$found Spiele gefunden, $added hinzugefügt"; AppLanguage.CHINESE -> "找到 $found 个游戏，添加 $added 个"; AppLanguage.JAPANESE -> "$found 本のゲームを検出、$added 本を追加"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^(\\d+) jeux détectés$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "$number games detected"; AppLanguage.SPANISH -> "$number juegos detectados"; AppLanguage.RUSSIAN -> "Обнаружено игр: $number"; AppLanguage.GERMAN -> "$number Spiele erkannt"; AppLanguage.CHINESE -> "检测到 $number 个游戏"; AppLanguage.JAPANESE -> "$number 本のゲームを検出"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^(\\d+) jeu\\(x\\) classé\\(s\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "$number game(s) organized"; AppLanguage.SPANISH -> "$number juego(s) organizados"; AppLanguage.RUSSIAN -> "Игр распределено: $number"; AppLanguage.GERMAN -> "$number Spiel(e) organisiert"; AppLanguage.CHINESE -> "已整理 $number 个游戏"; AppLanguage.JAPANESE -> "$number 本のゲームを整理"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^(\\d+) jeu\\(x\\) mis à jour$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "$number game(s) updated"; AppLanguage.SPANISH -> "$number juego(s) actualizados"; AppLanguage.RUSSIAN -> "Игр обновлено: $number"; AppLanguage.GERMAN -> "$number Spiel(e) aktualisiert"; AppLanguage.CHINESE -> "已更新 $number 个游戏"; AppLanguage.JAPANESE -> "$number 本のゲームを更新"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Tags ajoutés à (\\d+) jeu\\(x\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Tags added to $number game(s)"; AppLanguage.SPANISH -> "Etiquetas añadidas a $number juego(s)"; AppLanguage.RUSSIAN -> "Теги добавлены к играм: $number"; AppLanguage.GERMAN -> "Tags zu $number Spiel(en) hinzugefügt"; AppLanguage.CHINESE -> "已为 $number 个游戏添加标签"; AppLanguage.JAPANESE -> "$number 本のゲームにタグを追加"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Actualisation terminée pour (\\d+) jeu\\(x\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Refresh finished for $number game(s)"; AppLanguage.SPANISH -> "Actualización terminada para $number juego(s)"; AppLanguage.RUSSIAN -> "Обновление завершено для игр: $number"; AppLanguage.GERMAN -> "Aktualisierung für $number Spiel(e) abgeschlossen"; AppLanguage.CHINESE -> "已完成 $number 个游戏的刷新"; AppLanguage.JAPANESE -> "$number 本のゲームの更新が完了"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Sauvegarde créée : (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { name ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Backup created: $name"; AppLanguage.SPANISH -> "Copia creada: $name"; AppLanguage.RUSSIAN -> "Резервная копия создана: $name"; AppLanguage.GERMAN -> "Sicherung erstellt: $name"; AppLanguage.CHINESE -> "已创建备份：$name"; AppLanguage.JAPANESE -> "バックアップを作成しました: $name"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Sous-dossier — niveau (\\d+)$").matchEntire(source)?.groupValues?.get(1)?.let { level ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Subfolder — level $level"; AppLanguage.SPANISH -> "Subcarpeta — nivel $level"; AppLanguage.RUSSIAN -> "Подпапка — уровень $level"; AppLanguage.GERMAN -> "Unterordner — Ebene $level"; AppLanguage.CHINESE -> "子文件夹 — 层级 $level"; AppLanguage.JAPANESE -> "サブフォルダ — レベル $level"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Automatique \\((.+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { engine ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Automatic ($engine)"; AppLanguage.SPANISH -> "Automático ($engine)"; AppLanguage.RUSSIAN -> "Автоматически ($engine)"; AppLanguage.GERMAN -> "Automatisch ($engine)"; AppLanguage.CHINESE -> "自动（$engine）"; AppLanguage.JAPANESE -> "自動（$engine）"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Rechercher sur (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { engine ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Search on $engine"; AppLanguage.SPANISH -> "Buscar en $engine"; AppLanguage.RUSSIAN -> "Поиск в $engine"; AppLanguage.GERMAN -> "Auf $engine suchen"; AppLanguage.CHINESE -> "在 $engine 中搜索"; AppLanguage.JAPANESE -> "$engine で検索"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Filtres \\((\\d+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Filters ($number)"; AppLanguage.SPANISH -> "Filtros ($number)"; AppLanguage.RUSSIAN -> "Фильтры ($number)"; AppLanguage.GERMAN -> "Filter ($number)"; AppLanguage.CHINESE -> "筛选（$number）"; AppLanguage.JAPANESE -> "フィルター（$number）"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Version (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { version ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Version $version"; AppLanguage.SPANISH -> "Versión $version"; AppLanguage.RUSSIAN -> "Версия $version"; AppLanguage.GERMAN -> "Version $version"; AppLanguage.CHINESE -> "版本 $version"; AppLanguage.JAPANESE -> "バージョン $version"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Configurer (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { title ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Configure $title"; AppLanguage.SPANISH -> "Configurar $title"; AppLanguage.RUSSIAN -> "Настроить: $title"; AppLanguage.GERMAN -> "$title konfigurieren"; AppLanguage.CHINESE -> "配置 $title"; AppLanguage.JAPANESE -> "$title を設定"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Jaquette de (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { title ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Cover for $title"; AppLanguage.SPANISH -> "Carátula de $title"; AppLanguage.RUSSIAN -> "Обложка: $title"; AppLanguage.GERMAN -> "Cover von $title"; AppLanguage.CHINESE -> "$title 的封面"; AppLanguage.JAPANESE -> "$title のカバー"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Étape (\\d+) sur 3 · (.+)$").matchEntire(source)?.let { match ->
+            val number = match.groupValues[1]; val title = match.groupValues[2]
+            return when (language) {
+                AppLanguage.ENGLISH -> "Step $number of 3 · $title"; AppLanguage.SPANISH -> "Paso $number de 3 · $title"; AppLanguage.RUSSIAN -> "Шаг $number из 3 · $title"; AppLanguage.GERMAN -> "Schritt $number von 3 · $title"; AppLanguage.CHINESE -> "第 $number/3 步 · $title"; AppLanguage.JAPANESE -> "ステップ $number/3 · $title"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^(.+) \\((\\d+)\\)$").matchEntire(source)?.let { match ->
+            val prefix = text(match.groupValues[1]); val number = match.groupValues[2]
+            return "$prefix ($number)"
+        }
+        return null
+    }
+}
+
+/** Drop-in text wrapper used by the Compose UI so existing user data is never translated. */
+@Composable
+internal fun Text(
+    text: String,
+    modifier: Modifier = Modifier,
+    color: Color = Color.Unspecified,
+    fontWeight: FontWeight? = null,
+    maxLines: Int = Int.MAX_VALUE,
+    overflow: TextOverflow = TextOverflow.Clip,
+    style: TextStyle = LocalTextStyle.current
+) {
+    val language = LocalAppLanguage.current
+    MaterialText(
+        text = AppLocalizer.text(text, language),
+        modifier = modifier,
+        color = color,
+        fontWeight = fontWeight,
+        maxLines = maxLines,
+        overflow = overflow,
+        style = style
+    )
+}

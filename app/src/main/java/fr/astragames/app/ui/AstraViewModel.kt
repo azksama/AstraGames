@@ -40,6 +40,9 @@ import fr.astragames.app.launcher.CompatibilityDiagnostic
 import fr.astragames.app.launcher.JoiPlayRuntimeInfo
 import fr.astragames.app.launcher.JoiPlayRuntimeManager
 import fr.astragames.app.settings.AstraSettings
+import fr.astragames.app.settings.AppLanguage
+import fr.astragames.app.settings.CoverBlurMode
+import fr.astragames.app.settings.SearchEngine
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -129,7 +132,8 @@ data class CoverSearchState(
     val results: List<CoverCandidate> = emptyList(),
     val error: String? = null,
     val configured: Boolean = false,
-    val browserUrl: String? = null
+    val browserUrl: String? = null,
+    val searchEngine: SearchEngine = SearchEngine.YANDEX
 )
 
 data class CropRequest(val gameId: String, val source: Uri)
@@ -139,7 +143,8 @@ data class F95ImportState(
     val loading: Boolean = false,
     val metadata: F95ZoneMetadata? = null,
     val error: String? = null,
-    val browserUrl: String? = null
+    val browserUrl: String? = null,
+    val searchEngine: SearchEngine = SearchEngine.YANDEX
 )
 
 sealed interface UiEvent {
@@ -352,24 +357,16 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                     documentId.startsWith("$treeId/") -> documentId.removePrefix("$treeId/")
                     else -> return@forEach
                 }
-                // The last segment is the game itself. The filter lists its real parent
-                // hierarchy, which keeps large libraries usable instead of showing one
-                // menu entry per game.
+                // Keep only the first folder below the selected system source.
+                // Deeper folders remain included in that parent and are not listed separately.
                 val parentPath = relative.substringBeforeLast('/', missingDelimiterValue = "")
-                val paths = buildList {
-                    add("")
-                    var current = ""
-                    parentPath.split('/').filter(String::isNotBlank).forEach { segment ->
-                        current = listOf(current, segment).filter(String::isNotBlank).joinToString("/")
-                        add(current)
-                    }
-                }
-                paths.forEach { path ->
-                    val key = "${source.id}|$path"
-                    val decoded = path.split('/').filter(String::isNotBlank).joinToString(" / ") { Uri.decode(it) }
-                    val label = if (decoded.isBlank()) source.displayName else "${source.displayName} / $decoded"
-                    folders.getOrPut(key) { MutableFolder(source.id, label, path.count { it == '/' } + if (path.isBlank()) 0 else 1) }.games += game.id
-                }
+                val parentFolder = parentPath.substringBefore('/', missingDelimiterValue = parentPath)
+                val key = "${source.id}|$parentFolder"
+                val decoded = Uri.decode(parentFolder)
+                val label = if (decoded.isBlank()) source.displayName else "${source.displayName} / $decoded"
+                folders.getOrPut(key) {
+                    MutableFolder(source.id, label, if (parentFolder.isBlank()) 0 else 1)
+                }.games += game.id
             }
         }
         return folders.map { (id, folder) ->
@@ -572,11 +569,13 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     fun searchCovers(gameId: String) = viewModelScope.launch {
         val game = repository.getGame(gameId) ?: return@launch
+        val searchEngine = settingsRepository.settings.first().searchEngine
         mutableCoverSearch.value = CoverSearchState(
             gameId = gameId, loading = true, configured = app.container.covers.configured,
-            browserUrl = app.container.covers.searchUrl(game)
+            browserUrl = app.container.covers.searchUrl(game, searchEngine),
+            searchEngine = searchEngine
         )
-        runCatching { app.container.covers.search(game) }
+        runCatching { app.container.covers.search(game, searchEngine) }
             .onSuccess { results ->
                 mutableCoverSearch.value = mutableCoverSearch.value.copy(
                     loading = false,
@@ -586,18 +585,35 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             }
             .onFailure { error ->
                 mutableCoverSearch.value = mutableCoverSearch.value.copy(
-                    loading = false, error = error.message ?: "La recherche Google a échoué."
+                    loading = false, error = error.message ?: "La recherche d’images a échoué."
                 )
             }
     }
 
     fun prepareCoverPicker(gameId: String) = viewModelScope.launch {
         val game = repository.getGame(gameId) ?: return@launch
+        val searchEngine = settingsRepository.settings.first().searchEngine
         mutableCoverSearch.value = CoverSearchState(
             gameId = gameId,
+            loading = true,
             configured = app.container.covers.configured,
-            browserUrl = app.container.covers.searchUrl(game)
+            browserUrl = app.container.covers.searchUrl(game, searchEngine),
+            searchEngine = searchEngine
         )
+        runCatching { app.container.covers.search(game, searchEngine) }
+            .onSuccess { results ->
+                mutableCoverSearch.value = mutableCoverSearch.value.copy(
+                    loading = false,
+                    results = results,
+                    error = if (results.isEmpty()) "Aucune image trouvée automatiquement." else null
+                )
+            }
+            .onFailure { error ->
+                mutableCoverSearch.value = mutableCoverSearch.value.copy(
+                    loading = false,
+                    error = error.message ?: "La recherche d’images a échoué."
+                )
+            }
     }
 
     fun chooseRemoteCover(gameId: String, candidate: CoverCandidate) = viewModelScope.launch {
@@ -627,10 +643,12 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             mutableF95Import.value = mutableF95Import.value.copy(loading = false, error = error.message ?: "Import F95Zone impossible.")
         }
     }
-    fun prepareF95Search(gameId: String, title: String) {
+    fun prepareF95Search(gameId: String, title: String) = viewModelScope.launch {
+        val searchEngine = settingsRepository.settings.first().searchEngine
         mutableF95Import.value = mutableF95Import.value.copy(
             gameId = gameId,
-            browserUrl = app.container.f95Zone.bingSearchUrl(title)
+            browserUrl = app.container.f95Zone.searchUrl(title, searchEngine),
+            searchEngine = searchEngine
         )
     }
     fun applyF95Tags(gameId: String, selectedTags: Set<String>) = viewModelScope.launch {
@@ -678,9 +696,10 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     private suspend fun enrichGame(gameId: String) {
         val game = repository.getGame(gameId) ?: return
+        val searchEngine = settingsRepository.settings.first().searchEngine
         val vndb = runCatching { app.container.vndb.search(game.title) }.getOrNull()
         val f95Url = game.f95Url ?: vndb?.f95Url ?: runCatching {
-            app.container.f95Zone.findThread(game.title)
+            app.container.f95Zone.findThread(game.title, searchEngine)
         }.getOrNull()
         repository.applyAutomaticMetadata(
             gameId = game.id,
@@ -703,12 +722,18 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun completeOnboarding() = viewModelScope.launch { settingsRepository.completeOnboarding() }
+    fun setLanguage(language: AppLanguage) = viewModelScope.launch { settingsRepository.setLanguage(language) }
     fun setTheme(mode: ThemeMode) = viewModelScope.launch { settingsRepository.setTheme(mode) }
     fun setDynamicColor(value: Boolean) = viewModelScope.launch { settingsRepository.setDynamicColor(value) }
     fun setScanOnLaunch(value: Boolean) = viewModelScope.launch { settingsRepository.setScanOnLaunch(value) }
     fun setViewMode(mode: LibraryViewMode) = viewModelScope.launch { settingsRepository.setViewMode(mode) }
     fun setCoverSize(size: CoverSize) = viewModelScope.launch { settingsRepository.setCoverSize(size) }
     fun setGridColumns(columns: Int) = viewModelScope.launch { settingsRepository.setGridColumns(columns) }
+    fun setSearchEngine(engine: SearchEngine) = viewModelScope.launch { settingsRepository.setSearchEngine(engine) }
+    fun setCoverBlurMode(mode: CoverBlurMode) = viewModelScope.launch { settingsRepository.setCoverBlurMode(mode) }
+    fun setOpenSearchInExternalBrowser(value: Boolean) = viewModelScope.launch {
+        settingsRepository.setOpenSearchInExternalBrowser(value)
+    }
     fun requestNotificationPermission() { notificationPermissionRequests.tryEmit(Unit) }
     fun configureBackupFolder(uri: Uri) = viewModelScope.launch {
         runCatching {

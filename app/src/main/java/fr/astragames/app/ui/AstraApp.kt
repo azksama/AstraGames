@@ -4,8 +4,12 @@ import android.annotation.SuppressLint
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -80,6 +84,9 @@ import fr.astragames.app.data.repository.DuplicateMergePreview
 import fr.astragames.app.data.repository.SaveConflictStrategy
 import fr.astragames.app.core.search.DuplicateDetector.DuplicateGroup
 import fr.astragames.app.launcher.JoiPlayRuntimeInfo
+import fr.astragames.app.settings.AppLanguage
+import fr.astragames.app.settings.CoverBlurMode
+import fr.astragames.app.settings.SearchEngine
 import kotlinx.coroutines.flow.collectLatest
 import java.text.DateFormat
 import java.text.Normalizer
@@ -95,6 +102,7 @@ private val menuDestinations = Destination.entries.filter { it.visibleInMenu }
 private val topLevelRoutes = Destination.entries.map { it.route }.toSet()
 private val PageBottomPadding = 32.dp
 private const val PageTransitionDurationMillis = 150
+private const val SEARCH_WEBVIEW_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/127.0 Mobile Safari/537.36"
 
 @Composable
 fun AstraApp(
@@ -109,55 +117,90 @@ fun AstraApp(
 ) {
     val snackbar = remember { SnackbarHostState() }
     val scanReports by viewModel.scanReports.collectAsStateWithLifecycle()
+    AppLocalizer.language = state.settings.language
     LaunchedEffect(viewModel) {
-        viewModel.events.collectLatest { if (it is UiEvent.Message) snackbar.showSnackbar(it.text) }
+        viewModel.events.collectLatest { if (it is UiEvent.Message) snackbar.showSnackbar(AppLocalizer.text(it.text)) }
     }
     if (!state.settingsLoaded) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         return
     }
-    if (!state.settings.onboardingCompleted) {
-        OnboardingScreen(state.sources.isNotEmpty(), onPickSource, viewModel::completeOnboarding)
-        return
-    }
-
     val navController = rememberNavController()
-    val entry by navController.currentBackStackEntryAsState()
-    val route = entry?.destination?.route.orEmpty()
-    val topLevel = route.isBlank() || route in topLevelRoutes
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val wide = maxWidth >= 840.dp
-        Scaffold(
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            snackbarHost = { SnackbarHost(snackbar) }
-        ) { padding ->
-            if (topLevel && wide) {
-                Row(Modifier.padding(padding).fillMaxSize()) {
-                    CompactNavigationRail(route, navController)
-                    Box(Modifier.weight(1f).topLevelSwipe(route, navController)) { AppNavHost(navController, state, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
+    var coverBlurred by remember(state.settings.coverBlurMode) {
+        mutableStateOf(state.settings.coverBlurMode == CoverBlurMode.STARTUP)
+    }
+    val coverBlurState = CoverBlurState(
+        blurred = coverBlurred,
+        enabled = state.settings.coverBlurMode != CoverBlurMode.OFF,
+        toggle = { coverBlurred = !coverBlurred }
+    )
+    CompositionLocalProvider(
+        LocalAppLanguage provides state.settings.language,
+        LocalCoverBlurState provides coverBlurState
+    ) {
+        if (!state.settings.onboardingCompleted) {
+            LanguageTransition(state.settings.language) { visibleLanguage ->
+                CompositionLocalProvider(LocalAppLanguage provides visibleLanguage) {
+                    val visibleState = state.copy(settings = state.settings.copy(language = visibleLanguage))
+                    OnboardingScreen(visibleState, onPickSource, onPickTags, viewModel::setLanguage, viewModel::completeOnboarding)
                 }
-            } else Box(Modifier.padding(padding).fillMaxSize()) {
-                Box(
-                    Modifier.fillMaxSize()
-                        .padding(bottom = if (topLevel) 74.dp else 0.dp)
-                        .then(if (topLevel) Modifier.topLevelSwipe(route, navController) else Modifier)
-                ) { AppNavHost(navController, state, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
-                if (topLevel) {
-                    CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter))
-                    if (route != Destination.SEARCH.route) FloatingActionButton(
-                        onClick = { navigate(navController, Destination.SEARCH.route) },
-                        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 72.dp),
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ) { Icon(Icons.Default.Search, "Rechercher") }
+            }
+        } else {
+            LanguageTransition(state.settings.language) { visibleLanguage ->
+                CompositionLocalProvider(LocalAppLanguage provides visibleLanguage) {
+                    val visibleState = state.copy(settings = state.settings.copy(language = visibleLanguage))
+                    val entry by navController.currentBackStackEntryAsState()
+                    val route = entry?.destination?.route.orEmpty()
+                    val topLevel = route.isBlank() || route in topLevelRoutes
+                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val wide = maxWidth >= 840.dp
+                        Scaffold(
+                            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                            snackbarHost = { SnackbarHost(snackbar) }
+                        ) { padding ->
+                            if (topLevel && wide) {
+                                Row(Modifier.padding(padding).fillMaxSize()) {
+                                    CompactNavigationRail(route, navController)
+                                    Box(Modifier.weight(1f).topLevelSwipe(route, navController)) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
+                                }
+                            } else Box(Modifier.padding(padding).fillMaxSize()) {
+                                Box(
+                                    Modifier.fillMaxSize()
+                                        .padding(bottom = if (topLevel) 74.dp else 0.dp)
+                                        .then(if (topLevel) Modifier.topLevelSwipe(route, navController) else Modifier)
+                                ) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
+                                if (topLevel) {
+                                    CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter))
+                                    if (route != Destination.SEARCH.route) FloatingActionButton(
+                                        onClick = { navigate(navController, Destination.SEARCH.route) },
+                                        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 72.dp),
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                                    ) { Icon(Icons.Default.Search, AppLocalizer.text("Rechercher", visibleLanguage)) }
+                                }
+                            }
+                        }
+                    }
+                    if (visibleState.scanProgress.active) ScanProgressOverlay(visibleState.scanProgress)
+                    if (scanReports.isNotEmpty()) ScanReportDialog(scanReports, viewModel::dismissScanReports)
+                    if (visibleState.setupQueue.isNotEmpty() && scanReports.isEmpty()) {
+                        NewGamesSetupWizard(visibleState, viewModel, onPickCover)
+                    }
                 }
             }
         }
     }
-    if (state.scanProgress.active) ScanProgressOverlay(state.scanProgress)
-    if (scanReports.isNotEmpty()) ScanReportDialog(scanReports, viewModel::dismissScanReports)
-    if (state.setupQueue.isNotEmpty() && scanReports.isEmpty()) {
-        NewGamesSetupWizard(state, viewModel, onPickCover)
-    }
+}
+
+@Composable
+private fun LanguageTransition(language: AppLanguage, content: @Composable (AppLanguage) -> Unit) {
+    AnimatedContent(
+        targetState = language,
+        transitionSpec = {
+            fadeIn(tween(140, delayMillis = PageTransitionDurationMillis)) togetherWith
+                fadeOut(tween(PageTransitionDurationMillis))
+        },
+        label = "language transition"
+    ) { visibleLanguage -> content(visibleLanguage) }
 }
 
 @Composable
@@ -222,7 +265,7 @@ private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> 
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                destination.icon(), destination.description,
+                destination.icon(), AppLocalizer.text(destination.description),
                 tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -288,7 +331,7 @@ private fun CompactHeader(
         Modifier.fillMaxWidth().statusBarsPadding().height(52.dp).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") }
+        if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, AppLocalizer.text("Retour")) }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -298,19 +341,204 @@ private fun CompactHeader(
 }
 
 @Composable
-private fun OnboardingScreen(hasSource: Boolean, onPickSource: () -> Unit, onFinish: () -> Unit) {
+private fun OnboardingScreen(
+    state: AstraUiState,
+    onPickSource: () -> Unit,
+    onPickTags: () -> Unit,
+    onSetLanguage: (AppLanguage) -> Unit,
+    onFinish: () -> Unit
+) {
+    var step by rememberSaveable { mutableIntStateOf(0) }
+    val hasSource = state.sources.isNotEmpty()
+    val hasTags = state.tags.isNotEmpty()
+    val uriHandler = LocalUriHandler.current
     Box(
-        Modifier.fillMaxSize().background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.primaryContainer.copy(.55f)))).padding(32.dp)
+        Modifier.fillMaxSize()
+            .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.primaryContainer.copy(.55f))))
+            .padding(horizontal = 24.dp, vertical = 28.dp)
     ) {
-        Column(Modifier.align(Alignment.Center).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(88.dp).clip(RoundedCornerShape(26.dp)).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.AutoAwesome, null, Modifier.size(46.dp), tint = MaterialTheme.colorScheme.onPrimary)
+        Column(
+            Modifier.align(Alignment.Center).fillMaxWidth().widthIn(max = 560.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(Modifier.size(76.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.AutoAwesome, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onPrimary)
             }
-            Spacer(Modifier.height(24.dp)); Text("Toute votre bibliothèque. Un seul ciel.", style = MaterialTheme.typography.headlineLarge)
-            Spacer(Modifier.height(10.dp)); Text("Astra détecte, classe et lance vos jeux JoiPlay sans modifier leurs fichiers.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(28.dp)); Button(onClick = onPickSource) { Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(8.dp)); Text("Ajouter une source") }
-            Spacer(Modifier.height(10.dp)); OutlinedButton(onClick = onFinish, enabled = hasSource) { Text("Scanner ma bibliothèque") }
-            if (!hasSource) TextButton(onClick = onFinish) { Text("Configurer plus tard") }
+            Spacer(Modifier.height(18.dp))
+            Text("Toute votre bibliothèque. Un seul ciel.", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(8.dp))
+            Text("Astra détecte, classe et lance vos jeux JoiPlay sans modifier leurs fichiers.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                repeat(4) { index ->
+                    Box(
+                        Modifier.width(if (index == step) 34.dp else 10.dp).height(7.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(if (index == step) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                    )
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    when (step) {
+                        0 -> {
+                            Text("Choisissez la langue d’Astra", style = MaterialTheme.typography.titleLarge)
+                            LanguageSelector(state.settings.language, onSetLanguage)
+                            Text("La langue est modifiable à tout moment dans Paramètres.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        1 -> {
+                            Text("Choisissez votre dossier de jeux", style = MaterialTheme.typography.titleLarge)
+                            Text("Astra parcourra récursivement tous les niveaux du dossier.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Button(onClick = onPickSource, Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(8.dp)); Text("Ajouter une source")
+                            }
+                            if (hasSource) {
+                                state.sources.take(2).forEach { source ->
+                                    ListItem(
+                                        headlineContent = { Text(source.displayName) },
+                                        supportingContent = { Text("Dossier sélectionné") },
+                                        leadingContent = { Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary) },
+                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                    )
+                                }
+                            } else Text("Aucun dossier sélectionné", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        2 -> {
+                            Text("Importer des tags", style = MaterialTheme.typography.titleLarge)
+                            Text("Importez un fichier texte, CSV ou JSON, ou passez cette étape.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedButton(onClick = onPickTags, Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Importer des tags")
+                            }
+                            Text(
+                                if (hasTags) "${state.tags.size} tags importés" else "Aucun tag importé",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        else -> {
+                            Text("Vérifier les runtimes", style = MaterialTheme.typography.titleLarge)
+                            Text("Astra vérifie les composants JoiPlay présents sur le téléphone.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (state.runtimes.isEmpty()) Text("Aucun runtime détecté", color = MaterialTheme.colorScheme.error)
+                            else state.runtimes.take(5).forEach { runtime ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (runtime.installed) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                        null,
+                                        tint = if (runtime.installed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(runtime.name)
+                                        Text(
+                                            when {
+                                                runtime.installed -> "Installé${runtime.versionName?.let { " • $it" }.orEmpty()}"
+                                                runtime.required -> "Requis par votre bibliothèque • non installé"
+                                                else -> "Non installé"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (!runtime.installed) TextButton(onClick = { uriHandler.openUri(runtime.downloadUrl) }) { Text("Télécharger") }
+                                }
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (step > 0) TextButton(onClick = { step-- }, Modifier.weight(1f)) { Text("Retour") }
+                        else Spacer(Modifier.weight(1f))
+                        if (step < 3) {
+                            Button(onClick = { step++ }, Modifier.weight(1f)) { Text("Continuer") }
+                        } else {
+                            Button(onClick = onFinish, Modifier.weight(1f)) { Text("Terminer") }
+                        }
+                    }
+                    if (step == 1 && !hasSource || step == 2 && !hasTags) {
+                        TextButton(onClick = { step++ }, Modifier.fillMaxWidth()) { Text("Configurer plus tard") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageSelector(
+    selected: AppLanguage,
+    onSelect: (AppLanguage) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Langue", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
+                Text("${selected.flag}  ${selected.nativeName}", Modifier.weight(1f), maxLines = 1)
+                Icon(Icons.Default.ArrowDropDown, null)
+            }
+            DropdownMenu(expanded, { expanded = false }, Modifier.widthIn(min = 200.dp, max = 320.dp)) {
+                AppLanguage.entries.forEach { language ->
+                    DropdownMenuItem(
+                        text = { Text("${language.flag}  ${language.nativeName}") },
+                        leadingIcon = { if (language == selected) Icon(Icons.Default.Check, null) },
+                        onClick = { onSelect(language); expanded = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchEngineSelector(
+    selected: SearchEngine,
+    onSelect: (SearchEngine) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Moteur de recherche", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
+                Text(selected.displayName, Modifier.weight(1f), maxLines = 1)
+                Icon(Icons.Default.ArrowDropDown, null)
+            }
+            DropdownMenu(expanded, { expanded = false }, Modifier.widthIn(min = 200.dp, max = 320.dp)) {
+                SearchEngine.entries.forEach { engine ->
+                    DropdownMenuItem(
+                        text = { Text(engine.displayName) },
+                        leadingIcon = { if (engine == selected) Icon(Icons.Default.Check, null) },
+                        onClick = { onSelect(engine); expanded = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CoverBlurSelector(
+    selected: CoverBlurMode,
+    onSelect: (CoverBlurMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Flou des jaquettes", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
+                Text(selected.label(), Modifier.weight(1f), maxLines = 1)
+                Icon(Icons.Default.ArrowDropDown, null)
+            }
+            DropdownMenu(expanded, { expanded = false }, Modifier.widthIn(min = 220.dp, max = 320.dp)) {
+                CoverBlurMode.entries.forEach { mode ->
+                    DropdownMenuItem(
+                        text = { Text(mode.label()) },
+                        leadingIcon = { if (mode == selected) Icon(Icons.Default.Check, null) },
+                        onClick = { onSelect(mode); expanded = false }
+                    )
+                }
+            }
         }
     }
 }
@@ -323,6 +551,7 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
     var bulkFolder by remember { mutableStateOf(false) }
     var bulkTags by remember { mutableStateOf(false) }
     var bulkDelete by remember { mutableStateOf(false) }
+    val coverBlur = LocalCoverBlurState.current
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -351,6 +580,12 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
                 }
                 IconButton(onClick = { vm.scanAll() }) {
                     if (state.scanning) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, "Scanner")
+                }
+                if (coverBlur.enabled) IconButton(onClick = coverBlur.toggle) {
+                    Icon(
+                        if (coverBlur.blurred) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        AppLocalizer.text(if (coverBlur.blurred) "Afficher les jaquettes" else "Flouter les jaquettes")
+                    )
                 }
                 }
             }
@@ -473,6 +708,16 @@ private fun topLevelSlideDirection(
     val from = menuDestinations.indexOfFirst { it.route == fromRoute }
     val to = menuDestinations.indexOfFirst { it.route == toRoute }
     if (from < 0 || to < 0 || from == to) return fallback
+    if ((fromRoute == Destination.LIBRARY.route && toRoute == Destination.SETTINGS.route) ||
+        (fromRoute == Destination.SETTINGS.route && toRoute == Destination.LIBRARY.route)
+    ) {
+        // Home and Settings are opposite anchors: keep both directions visually consistent.
+        return if (fromRoute == Destination.LIBRARY.route) {
+            AnimatedContentTransitionScope.SlideDirection.Right
+        } else {
+            AnimatedContentTransitionScope.SlideDirection.Left
+        }
+    }
     return if (to > from) AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right
 }
 
@@ -595,7 +840,7 @@ private fun CoverActionButton(
     description: String,
     icon: @Composable () -> Unit
 ) {
-    Box(modifier.size(40.dp).semantics { contentDescription = description }.clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+    Box(modifier.size(40.dp).semantics { contentDescription = AppLocalizer.text(description) }.clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Surface(
             Modifier.size(28.dp), shape = RoundedCornerShape(50),
             color = MaterialTheme.colorScheme.surface.copy(alpha = .9f), tonalElevation = 2.dp
@@ -605,8 +850,14 @@ private fun CoverActionButton(
 
 @Composable
 private fun GameCover(game: GameEntity, modifier: Modifier = Modifier) {
+    val coverBlur = LocalCoverBlurState.current
     Surface(modifier, RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-        if (game.coverUri != null) AsyncImage(game.coverUri, game.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (game.coverUri != null) AsyncImage(
+            game.coverUri,
+            game.title,
+            Modifier.fillMaxSize().then(if (coverBlur.blurred) Modifier.blur(24.dp) else Modifier),
+            contentScale = ContentScale.Crop
+        )
         else Box(
             Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant))),
             contentAlignment = Alignment.Center
@@ -1021,16 +1272,45 @@ private fun SettingsScreen(
                 headlineContent = { Text("Actualiser les métadonnées manquantes") },
                 supportingContent = {
                     val refresh = state.metadataRefresh
-                    Text(if (refresh.running) "${refresh.completed}/${refresh.total} jeu(x) • VNDB et Bing" else "Jaquettes, descriptions et développeurs • VNDB, sans tags")
+                    Text(if (refresh.running) "${refresh.completed}/${refresh.total} jeu(x) • VNDB et ${state.settings.searchEngine.displayName}" else "Jaquettes, descriptions et développeurs • VNDB, sans tags")
                 },
                 leadingContent = {
                     if (state.metadataRefresh.running) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Default.AutoAwesome, null)
                 }
             ) }
-            item { SectionTitle("Apparence") }; item { SettingsSwitch("Couleurs dynamiques", state.settings.dynamicColor, vm::setDynamicColor) }
+            item {
+                SearchEngineSelector(
+                    state.settings.searchEngine,
+                    vm::setSearchEngine,
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+            item { SectionTitle("Apparence") }
+            item {
+                LanguageSelector(
+                    state.settings.language,
+                    vm::setLanguage,
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+            item {
+                CoverBlurSelector(
+                    state.settings.coverBlurMode,
+                    vm::setCoverBlurMode,
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+            item { SettingsSwitch("Couleurs dynamiques", state.settings.dynamicColor, vm::setDynamicColor) }
+            item {
+                RoundedListItem(
+                    headlineContent = { Text("Rechercher dans le navigateur") },
+                    supportingContent = { Text("Les recherches du moteur sélectionné s’ouvrent directement dans le navigateur du téléphone.") },
+                    trailingContent = { Switch(state.settings.openSearchInExternalBrowser, vm::setOpenSearchInExternalBrowser) }
+                )
+            }
             item { LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(ThemeMode.entries) { mode -> FilterChip(state.settings.themeMode == mode, { vm.setTheme(mode) }, { Text(mode.name.lowercase().replaceFirstChar(Char::uppercase)) }) }
+                items(ThemeMode.entries) { mode -> FilterChip(state.settings.themeMode == mode, { vm.setTheme(mode) }, { Text(mode.label()) }) }
             } }
             item { SectionTitle("JoiPlay") }
             item { RoundedListItem(
@@ -1175,9 +1455,9 @@ private fun GameDetailScreen(
                                     clipboard.setText(AnnotatedString(item.title))
                                     android.widget.Toast.makeText(context, "Nom du jeu copié", android.widget.Toast.LENGTH_SHORT).show()
                                 },
-                                style = MaterialTheme.typography.headlineSmall
+                                style = MaterialTheme.typography.titleLarge
                             )
-                            Spacer(Modifier.height(6.dp)); AssistChip(onClick = {}, label = { Text(item.engine.readableEngine()) })
+                            Spacer(Modifier.height(6.dp))
                             item.developer?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             item.version?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
@@ -1238,6 +1518,7 @@ private fun GameDetailScreen(
             }
             item {
                 ExpandableDetailSection("Informations", informationExpanded, { informationExpanded = !informationExpanded }) {
+                    InfoLine("Moteur", item.engine.readableEngine())
                     InfoLine("Lancements", item.playCount.toString())
                     InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
                     InfoLine("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration())
@@ -1269,10 +1550,10 @@ private fun GameDetailScreen(
     if (item != null && pickTags) GameTagPickerSheet(state.tags, state.tagCategories, assignedTags.map { it.id }.toSet(), {
         vm.setGameTags(item.id, it); pickTags = false
     }, { pickTags = false })
-    if (item != null && pickCover) CoverPickerSheet(item, coverState, { vm.chooseRemoteCover(item.id, it) }, {
+    if (item != null && pickCover) CoverPickerSheet(item, coverState, state.settings.openSearchInExternalBrowser, { vm.chooseRemoteCover(item.id, it) }, {
         onPickCover(item.id); pickCover = false
     }, { vm.removeCover(item.id); pickCover = false }, { pickCover = false; vm.clearCoverSearch() })
-    if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, { vm.fetchF95Metadata(item.id, it) }, {
+    if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, state.settings.openSearchInExternalBrowser, { vm.fetchF95Metadata(item.id, it) }, {
         vm.prepareF95Search(item.id, item.title)
     }, { tags, image ->
         vm.applyF95Tags(item.id, tags)
@@ -1730,10 +2011,10 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
         }
     }
     if (showTags) GameTagPickerSheet(state.tags, state.tagCategories, selectedTags, { selectedTags = it; showTags = false }, { showTags = false })
-    if (showCover) CoverPickerSheet(game, coverState, { vm.chooseRemoteCover(game.id, it) }, {
+    if (showCover) CoverPickerSheet(game, coverState, state.settings.openSearchInExternalBrowser, { vm.chooseRemoteCover(game.id, it) }, {
         onPickCover(game.id); showCover = false
     }, { vm.removeCover(game.id); showCover = false }, { showCover = false; vm.clearCoverSearch() })
-    if (showF95) F95ImportSheet(game, state.tags, f95State, { vm.fetchF95Metadata(game.id, it) }, {
+    if (showF95) F95ImportSheet(game, state.tags, f95State, state.settings.openSearchInExternalBrowser, { vm.fetchF95Metadata(game.id, it) }, {
         vm.prepareF95Search(game.id, game.title)
     }, { tags, image ->
         importedF95TagNames = tags.map { it.trim().lowercase() }.toSet()
@@ -1770,7 +2051,7 @@ private fun EditGameDialog(
                     if (game.coverUri != null) OutlinedButton(
                         onClick = onRemoveCover,
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) { Icon(Icons.Default.DeleteOutline, null); Spacer(Modifier.width(6.dp)); Text("Supprimer") }
+                    ) { Icon(Icons.Default.DeleteOutline, "Supprimer la jaquette") }
                 }
             }
             item { HorizontalDivider(); Text("Métadonnées", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium) }
@@ -1859,6 +2140,7 @@ private fun F95ImportSheet(
     game: GameEntity,
     existingTags: List<TagEntity>,
     state: F95ImportState,
+    openInExternalBrowser: Boolean,
     onFetch: (String) -> Unit,
     onPrepareSearch: () -> Unit,
     onComplete: (Set<String>, CoverCandidate?) -> Unit,
@@ -1869,7 +2151,8 @@ private fun F95ImportSheet(
     var step by remember(game.id) { mutableIntStateOf(0) }
     var selectedTags by remember(metadata?.sourceUrl) { mutableStateOf(metadata?.tags?.toSet().orEmpty()) }
     var selectedImage by remember(metadata?.sourceUrl) { mutableStateOf<CoverCandidate?>(null) }
-    var showBingSearch by remember(game.id) { mutableStateOf(false) }
+    var showSearch by remember(game.id) { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
     val existingNames = remember(existingTags) { existingTags.map { it.normalizedName }.toSet() }
     LaunchedEffect(metadata?.sourceUrl) {
         if (metadata != null) step = 1
@@ -1911,14 +2194,31 @@ private fun F95ImportSheet(
                         onClick = { onFetch(url) }, enabled = url.isNotBlank() && !state.loading,
                         modifier = Modifier.fillMaxWidth()
                     ) { Icon(Icons.Default.Search, null); Spacer(Modifier.width(6.dp)); Text("Analyser le lien") }
-                    OutlinedButton(
-                        onClick = { showBingSearch = true },
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                    Button(
+                        onClick = {
+                            state.browserUrl?.let { url ->
+                                if (openInExternalBrowser) uriHandler.openUri(url) else showSearch = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
                         enabled = state.browserUrl != null && !state.loading
                     ) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
                         Spacer(Modifier.width(7.dp))
-                        Text("Rechercher le thread sur Bing")
+                        Text(if (openInExternalBrowser) "Ouvrir dans le navigateur" else "Rechercher automatiquement")
+                    }
+                    OutlinedButton(
+                        onClick = {
+                            state.browserUrl?.let { url ->
+                                if (openInExternalBrowser) showSearch = true else uriHandler.openUri(url)
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
+                        enabled = state.browserUrl != null && !state.loading
+                    ) {
+                        Icon(if (openInExternalBrowser) Icons.Default.Search else Icons.AutoMirrored.Filled.OpenInNew, null)
+                        Spacer(Modifier.width(7.dp))
+                        Text(if (openInExternalBrowser) "Afficher dans Astra" else "Ouvrir dans le navigateur")
                     }
                 }
                 1 -> Column(Modifier.fillMaxWidth()) {
@@ -1976,20 +2276,26 @@ private fun F95ImportSheet(
             }
         }
     }
-    if (showBingSearch && state.browserUrl != null) BingF95PickerDialog(
+    if (showSearch && state.browserUrl != null) SearchF95PickerDialog(
         searchUrl = state.browserUrl,
+        searchEngine = state.searchEngine,
         onThreadSelected = { selectedUrl ->
-            showBingSearch = false
+            showSearch = false
             url = selectedUrl
             onFetch(selectedUrl)
         },
-        onDismiss = { showBingSearch = false }
+        onDismiss = { showSearch = false }
     )
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun BingF95PickerDialog(searchUrl: String, onThreadSelected: (String) -> Unit, onDismiss: () -> Unit) {
+private fun SearchF95PickerDialog(
+    searchUrl: String,
+    searchEngine: SearchEngine,
+    onThreadSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var selectionError by remember { mutableStateOf<String?>(null) }
     val latestSelection by rememberUpdatedState(onThreadSelected)
@@ -1998,7 +2304,7 @@ private fun BingF95PickerDialog(searchUrl: String, onThreadSelected: (String) ->
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 CompactHeader(
-                    "Rechercher sur Bing",
+                    "Rechercher sur ${searchEngine.displayName}",
                     "Appui long sur le bon résultat F95Zone",
                     onBack = onDismiss
                 )
@@ -2008,10 +2314,11 @@ private fun BingF95PickerDialog(searchUrl: String, onThreadSelected: (String) ->
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.loadsImagesAutomatically = true
+                            settings.userAgentString = SEARCH_WEBVIEW_USER_AGENT
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                    val host = request.url.host.orEmpty().lowercase()
-                                    return host != "bing.com" && !host.endsWith(".bing.com")
+                                    // Let the selected engine follow its own result redirects.
+                                    return false
                                 }
                             }
                             setOnLongClickListener {
@@ -2051,10 +2358,11 @@ private fun BingF95PickerDialog(searchUrl: String, onThreadSelected: (String) ->
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CoverPickerSheet(
-    game: GameEntity, state: CoverSearchState, onCandidate: (CoverCandidate) -> Unit,
+    game: GameEntity, state: CoverSearchState, openInExternalBrowser: Boolean, onCandidate: (CoverCandidate) -> Unit,
     onLocal: () -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit
 ) {
-    var showGoogleBrowser by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
             Text("Jaquette de ${game.title}", style = MaterialTheme.typography.titleLarge)
@@ -2063,31 +2371,65 @@ private fun CoverPickerSheet(
                 if (game.coverUri != null) TextButton(onClick = onRemove) { Text("Supprimer") }
             }
             Button(
-                onClick = { showGoogleBrowser = true },
+                onClick = {
+                    state.browserUrl?.let { url ->
+                        if (openInExternalBrowser) uriHandler.openUri(url) else showSearch = true
+                    }
+                },
                 enabled = state.browserUrl != null && !state.downloading,
                 modifier = Modifier.fillMaxWidth()
-            ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text("Google Images") }
+            ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text(if (openInExternalBrowser) "Ouvrir dans le navigateur" else "Rechercher automatiquement") }
+            OutlinedButton(
+                onClick = {
+                    state.browserUrl?.let { url ->
+                        if (openInExternalBrowser) showSearch = true else uriHandler.openUri(url)
+                    }
+                },
+                enabled = state.browserUrl != null && !state.downloading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(if (openInExternalBrowser) Icons.Default.ImageSearch else Icons.AutoMirrored.Filled.OpenInNew, null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (openInExternalBrowser) "Afficher dans Astra" else "Ouvrir dans le navigateur")
+            }
             when {
+                state.loading -> CenterMessage("Recherche d’images…", Modifier.height(180.dp), true)
                 state.downloading -> CenterMessage("Préparation du recadrage…", Modifier.height(220.dp), true)
                 state.error != null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(state.error, color = MaterialTheme.colorScheme.error)
                     }
                 }
+                state.results.isNotEmpty() -> LazyVerticalGrid(
+                    GridCells.Adaptive(150.dp),
+                    Modifier.fillMaxWidth().heightIn(max = 360.dp).padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(state.results, key = { it.imageUrl }) { candidate ->
+                        CoverCandidateCard(candidate, onClick = { onCandidate(candidate) })
+                    }
+                }
                 else -> Spacer(Modifier.navigationBarsPadding().height(18.dp))
             }
         }
     }
-    if (showGoogleBrowser && state.browserUrl != null) GoogleImagePickerDialog(
+    if (showSearch && state.browserUrl != null) SearchImagePickerDialog(
         searchUrl = state.browserUrl,
-        onCandidate = { showGoogleBrowser = false; onCandidate(it) },
-        onDismiss = { showGoogleBrowser = false }
+        searchEngine = state.searchEngine,
+        onCandidate = { showSearch = false; onCandidate(it) },
+        onDismiss = { showSearch = false }
     )
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandidate) -> Unit, onDismiss: () -> Unit) {
+private fun SearchImagePickerDialog(
+    searchUrl: String,
+    searchEngine: SearchEngine,
+    onCandidate: (CoverCandidate) -> Unit,
+    onDismiss: () -> Unit
+) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var contextImageUrl by remember { mutableStateOf<String?>(null) }
     var selectionError by remember { mutableStateOf<String?>(null) }
@@ -2112,7 +2454,7 @@ private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
     fun useDisplayedImage() {
         val target = webView ?: return
         selectionError = null
-        target.evaluateJavascript(GOOGLE_IMAGE_SELECTION_SCRIPT) { rawResult ->
+        target.evaluateJavascript(IMAGE_SELECTION_SCRIPT) { rawResult ->
             val payload = runCatching {
                 val jsonText = org.json.JSONTokener(rawResult).nextValue() as? String
                 jsonText?.takeIf(String::isNotBlank)?.let { org.json.JSONObject(it) }
@@ -2125,17 +2467,23 @@ private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                CompactHeader("Google Images", "Touchez une image pour afficher son aperçu", onBack = onDismiss)
+                CompactHeader("${searchEngine.displayName} Images", "Touchez une image pour afficher son aperçu", onBack = onDismiss)
                 AndroidView(
                     factory = { context ->
                         WebView(context).apply {
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.loadsImagesAutomatically = true
+                            settings.userAgentString = SEARCH_WEBVIEW_USER_AGENT
                             webViewClient = object : WebViewClient() {
+                                override fun onPageFinished(view: WebView, url: String) {
+                                    super.onPageFinished(view, url)
+                                    view.evaluateJavascript(IMAGE_SELECTION_BOOTSTRAP_SCRIPT, null)
+                                }
+
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                    val host = request.url.host.orEmpty().lowercase()
-                                    return host != "google.com" && !host.endsWith(".google.com")
+                                    // Keep navigation unrestricted so the user can use the selected engine normally.
+                                    return false
                                 }
                             }
                             setOnLongClickListener {
@@ -2183,18 +2531,44 @@ private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
     DisposableEffect(Unit) { onDispose { webView?.destroy() } }
 }
 
-private val GOOGLE_IMAGE_SELECTION_SCRIPT = """
+private val IMAGE_SELECTION_BOOTSTRAP_SCRIPT = """
     (function() {
+      function imageUrls(img) {
+        const raw = [img.getAttribute('data-iurl'), img.getAttribute('data-original'), img.getAttribute('data-src'), img.getAttribute('data-mediaurl'), img.getAttribute('data-murl'), img.getAttribute('data-full-url'), img.getAttribute('data-image-url'), img.getAttribute('data-bem'), img.getAttribute('data-state')].filter(Boolean).join(' ');
+        const normalized = raw.replace(/\\\//g, '/').replace(/\\u003A/gi, ':').replace(/\\u002F/gi, '/').replace(/\\u003F/gi, '?').replace(/\\u003D/gi, '=').replace(/\\u0026/gi, '&');
+        return (normalized.match(/https?:\/\/[^\s"'<>]+/g) || []).map(function(url) {
+          return url;
+        });
+      }
+      document.addEventListener('click', function(event) {
+        const img = event.target && event.target.closest ? event.target.closest('img') : null;
+        if (!img) return;
+        const urls = imageUrls(img);
+        window.__astraSelectedImage = {url: urls[0] || img.currentSrc || img.src || '', title: img.alt || ''};
+      }, true);
+    })();
+""".trimIndent()
+
+private val IMAGE_SELECTION_SCRIPT = """
+    (function() {
+      if (window.__astraSelectedImage && window.__astraSelectedImage.url) {
+        return JSON.stringify(window.__astraSelectedImage);
+      }
       const candidates = [];
-      document.querySelectorAll('[aria-selected="true"] [data-iurl], [data-iurl][aria-selected="true"]').forEach(function(node) {
-        candidates.push({url: node.getAttribute('data-iurl'), title: node.getAttribute('aria-label') || '', score: 2000000000000});
+      document.querySelectorAll('[data-iurl], [data-original], [data-src], [data-mediaurl], [data-murl], [data-full-url], [data-image-url], [data-bem], [data-state]').forEach(function(node) {
+        const raw = [node.getAttribute('data-iurl'), node.getAttribute('data-original'), node.getAttribute('data-src'), node.getAttribute('data-mediaurl'), node.getAttribute('data-murl'), node.getAttribute('data-full-url'), node.getAttribute('data-image-url'), node.getAttribute('data-bem'), node.getAttribute('data-state')].filter(Boolean).join(' ');
+        const normalized = raw.replace(/\\\//g, '/').replace(/\\u003A/gi, ':').replace(/\\u002F/gi, '/').replace(/\\u003F/gi, '?').replace(/\\u003D/gi, '=').replace(/\\u0026/gi, '&');
+        const urls = normalized.match(/https?:\/\/[^\s"'<>]+/g) || [];
+        urls.forEach(function(url) {
+          candidates.push({url: url, title: node.getAttribute('aria-label') || node.getAttribute('alt') || '', score: 2000000000000});
+        });
       });
       document.images.forEach(function(img) {
         const rect = img.getBoundingClientRect();
         const visible = rect.width > 80 && rect.height > 80 && rect.bottom > 0 && rect.top < window.innerHeight;
-        const preview = img.matches('.iPVvYb, .sFlh5c, .n3VNCb') || img.closest('[aria-selected="true"]');
+        const preview = img.closest('[aria-selected="true"], [aria-current="true"], [role="dialog"], [role="main"]') || visible;
         const score = (preview ? 1000000000000 : 0) + (visible ? 10000000000 : 0) + (img.naturalWidth || 0) * (img.naturalHeight || 0);
-        [img.currentSrc, img.src, img.getAttribute('data-src')].forEach(function(url) {
+        [img.currentSrc, img.src, img.getAttribute('data-src'), img.getAttribute('data-original'), img.getAttribute('data-iurl')].forEach(function(url) {
           if (url) candidates.push({url: url, title: img.alt || '', score: score});
         });
       });
@@ -2202,7 +2576,7 @@ private val GOOGLE_IMAGE_SELECTION_SCRIPT = """
       const ranked = valid.sort(function(a, b) { return b.score - a.score; });
       const top = ranked[0];
       const bestOriginal = top && ranked.find(function(item) {
-        return item.score >= top.score * 0.9 && item.url.indexOf('google.') < 0 && item.url.indexOf('gstatic.') < 0;
+        return item.score >= top.score * 0.9 && !/https:\/\/(?:[^/]+\.)?(?:yandex|yastatic|google|gstatic|bing|qwant|duckduckgo|ecosia)\./i.test(item.url);
       });
       const best = bestOriginal || top;
       return best ? JSON.stringify({url: best.url, title: best.title || ''}) : '';
@@ -2246,6 +2620,7 @@ private fun CoverCandidateCard(candidate: CoverCandidate, selected: Boolean = fa
 
 @Composable
 private fun CoverFullscreenDialog(uri: String, title: String, onDismiss: () -> Unit) {
+    val coverBlur = LocalCoverBlurState.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BoxWithConstraints(
             Modifier.fillMaxSize().background(Color.Black.copy(alpha = .94f)).clickable(onClick = onDismiss),
@@ -2255,7 +2630,10 @@ private fun CoverFullscreenDialog(uri: String, title: String, onDismiss: () -> U
             Surface(imageModifier, color = Color.Black) {
                 Box {
                     AsyncImage(
-                        uri, title, Modifier.fillMaxSize(), contentScale = ContentScale.Fit
+                        uri,
+                        title,
+                        Modifier.fillMaxSize().then(if (coverBlur.blurred) Modifier.blur(24.dp) else Modifier),
+                        contentScale = ContentScale.Fit
                     )
                     IconButton(
                         onClick = onDismiss,
@@ -2840,7 +3218,7 @@ private fun CompactActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String
 ) = IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
-    Icon(icon, description, Modifier.size(18.dp))
+    Icon(icon, AppLocalizer.text(description), Modifier.size(18.dp))
 }
 
 @Composable
@@ -2874,6 +3252,18 @@ private fun LibrarySort.label() = when (this) {
     LibrarySort.RECENTLY_ADDED -> "Ajouts récents"
     LibrarySort.LAST_PLAYED -> "Dernier lancement"
     LibrarySort.MOST_PLAYED -> "Plus joués"
+}
+
+private fun ThemeMode.label() = when (this) {
+    ThemeMode.SYSTEM -> "Système"
+    ThemeMode.LIGHT -> "Clair"
+    ThemeMode.DARK -> "Sombre"
+}
+
+private fun CoverBlurMode.label() = when (this) {
+    CoverBlurMode.OFF -> "Désactivé"
+    CoverBlurMode.STARTUP -> "Automatique au démarrage"
+    CoverBlurMode.MANUAL -> "Manuel"
 }
 
 @Composable

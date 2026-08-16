@@ -2,7 +2,7 @@ package fr.astragames.app
 
 import android.app.Application
 import fr.astragames.app.core.filesystem.FileAccessResolver
-import fr.astragames.app.core.metadata.GoogleCoverProvider
+import fr.astragames.app.core.metadata.SearchCoverProvider
 import fr.astragames.app.core.metadata.F95ZoneProvider
 import fr.astragames.app.core.metadata.VndbProvider
 import fr.astragames.app.data.local.AstraDatabase
@@ -27,7 +27,7 @@ class AstraApplication : Application() {
             repository = GameRepository(this, database.dao(), scanner, BackupManager(this, database)),
             settings = SettingsRepository(this),
             launcher = JoiPlayLauncher(),
-            covers = GoogleCoverProvider(this),
+            covers = SearchCoverProvider(this),
             f95Zone = F95ZoneProvider(),
             vndb = VndbProvider(),
             joiPlayCatalog = JoiPlayCatalogProvider()
@@ -40,7 +40,7 @@ data class AppContainer(
     val repository: GameRepository,
     val settings: SettingsRepository,
     val launcher: JoiPlayLauncher,
-    val covers: GoogleCoverProvider,
+    val covers: SearchCoverProvider,
     val f95Zone: F95ZoneProvider,
     val vndb: VndbProvider,
     val joiPlayCatalog: JoiPlayCatalogProvider

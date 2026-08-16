@@ -5,9 +5,9 @@ import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import fr.astragames.app.settings.SearchEngine
 import java.net.URI
 import java.net.URLDecoder
-import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
@@ -18,17 +18,18 @@ data class F95ZoneMetadata(
 )
 
 class F95ZoneProvider {
-    fun bingSearchUrl(gameTitle: String): String {
+    fun searchUrl(gameTitle: String, searchEngine: SearchEngine = SearchEngine.YANDEX): String {
         require(gameTitle.isNotBlank()) { "Le nom du jeu est vide." }
-        val query = URLEncoder.encode("${gameTitle.trim()} site:f95zone.to", StandardCharsets.UTF_8.name())
-        return "https://www.bing.com/search?setlang=fr-FR&adlt=off&q=$query"
+        return searchEngine.webSearchUrl("${gameTitle.trim()} f95zone.to")
     }
 
-    suspend fun findThread(gameTitle: String): String? = withContext(Dispatchers.IO) {
-        val endpoint = bingSearchUrl(gameTitle)
+    fun yandexSearchUrl(gameTitle: String): String = searchUrl(gameTitle, SearchEngine.YANDEX)
+
+    suspend fun findThread(gameTitle: String, searchEngine: SearchEngine = SearchEngine.YANDEX): String? = withContext(Dispatchers.IO) {
+        val endpoint = searchUrl(gameTitle, searchEngine)
         val response = Jsoup.connect(endpoint)
             .userAgent(BROWSER_USER_AGENT)
-            .header("Accept-Language", "fr-FR,fr;q=0.9,en;q=0.7")
+            .header("Accept-Language", "en-US,en;q=0.9")
             .timeout(20_000)
             .maxBodySize(4 * 1024 * 1024)
             .followRedirects(true)
@@ -83,9 +84,11 @@ class F95ZoneProvider {
         )
     }
 
-    internal fun parseSearchHtml(html: String, baseUrl: String = "https://www.bing.com/search"): String? =
-        Jsoup.parse(html, baseUrl).select("li.b_algo h2 a[href], a[href]")
+    internal fun parseSearchHtml(html: String, baseUrl: String = "https://yandex.com/search/"): String? =
+        Jsoup.parse(html, baseUrl).select("a[href]")
             .firstNotNullOfOrNull { extractF95ThreadUrl(it.absUrl("href").ifBlank { it.attr("href") }) }
+            ?: Regex("https?://(?:www\\.)?f95zone\\.to/threads/[^\\s\"'<>]+", RegexOption.IGNORE_CASE)
+                .find(html)?.value?.let(::extractF95ThreadUrl)
 
     /**
      * XenForo wraps the displayed preview in a link to the original attachment.
@@ -161,7 +164,7 @@ class F95ZoneProvider {
 
 internal fun canonicalF95ThreadUrl(rawValue: String): String? {
     var candidate = rawValue.trim()
-    if (candidate.startsWith('/')) candidate = "https://www.bing.com$candidate"
+    if (candidate.startsWith('/')) candidate = "https://yandex.com$candidate"
 
     repeat(4) {
         val uri = runCatching { URI(candidate) }.getOrNull() ?: return null

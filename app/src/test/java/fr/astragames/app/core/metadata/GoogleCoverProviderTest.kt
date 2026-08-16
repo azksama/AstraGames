@@ -3,9 +3,9 @@ package fr.astragames.app.core.metadata
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
-class GoogleCoverProviderTest {
-    @Test fun extractsOriginalImageFromGoogleImageRedirect() {
-        val results = GoogleCoverProvider().parseHtml(
+class YandexCoverProviderTest {
+    @Test fun extractsOriginalImageFromYandexImageRedirect() {
+        val results = YandexCoverProvider().parseHtml(
             """
             <a href="/imgres?imgurl=https%3A%2F%2Fcdn.example.com%2Fcovers%2Fgame.jpg&amp;imgrefurl=https%3A%2F%2Fexample.com%2Fgame">
               <img src="https://encrypted-tbn0.gstatic.com/images?q=tbn:preview" alt="Game cover">
@@ -18,8 +18,8 @@ class GoogleCoverProviderTest {
         assertEquals("https://example.com/game", results.single().contextUrl)
     }
 
-    @Test fun extractsEscapedOriginalUrlsFromEmbeddedGoogleData() {
-        val results = GoogleCoverProvider().parseHtml(
+    @Test fun extractsEscapedOriginalUrlsFromEmbeddedYandexData() {
+        val results = YandexCoverProvider().parseHtml(
             """<script>window.data=[\"https:\/\/images.example.org\/cover.webp\",1200,1800]</script>"""
         )
 
