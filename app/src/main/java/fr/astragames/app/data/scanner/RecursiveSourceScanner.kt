@@ -18,9 +18,11 @@ import fr.astragames.app.data.local.ScanHistoryEntity
 import fr.astragames.app.data.local.ScanReportItemEntity
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
+import java.util.Locale
 import kotlinx.coroutines.withContext
 import java.util.UUID
 import kotlin.coroutines.coroutineContext
+import kotlin.coroutines.cancellation.CancellationException
 
 data class ScanProgressUpdate(
     val sourceId: String,
@@ -69,7 +71,7 @@ class RecursiveSourceScanner(
         val foundIds = mutableSetOf<String>()
         val knownGamesByUri = dao.getGamesForSource(sourceId).associateBy { it.documentUri }
         val exclusions = (dao.getExclusions(sourceId).mapNotNull { it.folderNamePattern } + DEFAULT_EXCLUSIONS)
-            .map { it.lowercase() }.toSet()
+            .map { it.lowercase(Locale.ROOT) }.toSet()
         val root = DocumentFile.fromTreeUri(context, source.treeUri.toUri())
         if (root == null || !root.exists() || !root.canRead()) {
             val message = "Permission de stockage absente ou expirée"
@@ -141,7 +143,7 @@ class RecursiveSourceScanner(
                     if (remainingDepth <= 0 || decisiveSignatureFound || size >= MAX_SIGNATURE_ENTRIES) return
                     runCatching {
                         folder.listFiles().sortedBy { nested ->
-                            if (nested.name.orEmpty().lowercase() in SIGNATURE_PRIORITY_NAMES) 0 else 1
+                            if (nested.name.orEmpty().lowercase(Locale.ROOT) in SIGNATURE_PRIORITY_NAMES) 0 else 1
                         }.forEach { nested ->
                             if (decisiveSignatureFound || size >= MAX_SIGNATURE_ENTRIES) return@forEach
                             val nestedPath = "$prefix/${nested.name.orEmpty()}"
@@ -154,7 +156,7 @@ class RecursiveSourceScanner(
                 children.forEach { child ->
                     val name = child.name.orEmpty()
                     add(name)
-                    if (child.isDirectory && name.lowercase() in setOf("www", "js", "game", "renpy", "tyrano", "data")) {
+                    if (source.recursive && child.isDirectory && name.lowercase(Locale.ROOT) in setOf("www", "js", "game", "renpy", "tyrano", "data")) {
                         addDescendants(child, name, if (name.equals("game", true)) 4 else 3)
                     }
                 }
@@ -162,7 +164,7 @@ class RecursiveSourceScanner(
             val executable = children.asSequence()
                 .filter { !it.isDirectory && it.name.orEmpty().endsWith(".exe", ignoreCase = true) }
                 .sortedBy { executableFile ->
-                    val name = executableFile.name.orEmpty().lowercase()
+                    val name = executableFile.name.orEmpty().lowercase(Locale.ROOT)
                     when {
                         name == "game.exe" -> 0
                         IGNORED_EXECUTABLE_MARKERS.any(name::contains) -> 2
@@ -192,7 +194,7 @@ class RecursiveSourceScanner(
                     ?: dao.findGameByFingerprint(fingerprint)
                 val now = System.currentTimeMillis()
                 val cover = children.firstOrNull {
-                    !it.isDirectory && it.name.orEmpty().lowercase() in COVER_NAMES
+                    !it.isDirectory && it.name.orEmpty().lowercase(Locale.ROOT) in COVER_NAMES
                 }?.uri?.toString()
                 val physicalPath = fileAccessResolver.physicalPath(source.treeUri.toUri(), relativePath)
                 val itemStatus = when {
@@ -248,22 +250,30 @@ class RecursiveSourceScanner(
                 return
             }
 
-            children.asSequence()
-                .filter { it.isDirectory }
-                .filter { source.includeHiddenFolders || !it.name.orEmpty().startsWith('.') }
-                .forEach { child ->
-                    val childRelative = listOf(relativePath, child.name.orEmpty()).filter { it.isNotBlank() }.joinToString("/")
-                    if (child.name.orEmpty().lowercase() in exclusions) {
-                        ignored++
-                        reportItems += ScanReportItem(
-                            childRelative, null, ScanReportItemStatus.IGNORED,
-                            "Dossier technique exclu du scan"
-                        )
-                    } else walk(child, childRelative, depth + 1)
-                }
+            if (source.recursive) {
+                children.asSequence()
+                    .filter { it.isDirectory }
+                    .filter { source.includeHiddenFolders || !it.name.orEmpty().startsWith('.') }
+                    .forEach { child ->
+                        val childRelative = listOf(relativePath, child.name.orEmpty()).filter { it.isNotBlank() }.joinToString("/")
+                        if (child.name.orEmpty().lowercase(Locale.ROOT) in exclusions) {
+                            ignored++
+                            reportItems += ScanReportItem(
+                                childRelative, null, ScanReportItemStatus.IGNORED,
+                                "Dossier technique exclu du scan"
+                            )
+                        } else walk(child, childRelative, depth + 1)
+                    }
+            }
         }
 
-        runCatching { walk(root, "", 0) }.onFailure { errors += (it.message ?: "Erreur de scan") }
+        try {
+            walk(root, "", 0)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            errors += (error.message ?: "Erreur de scan")
+        }
         val finishedAt = System.currentTimeMillis()
         val status = if (errors.isEmpty()) ScanStatus.SUCCESS else if (found > 0) ScanStatus.PARTIAL else ScanStatus.FAILED
         if (status == ScanStatus.SUCCESS) {
@@ -317,7 +327,7 @@ class RecursiveSourceScanner(
         private val SIGNATURE_PRIORITY_NAMES = setOf("js", "data", "game", "renpy", "tyrano")
 
         private fun String.isDecisiveSignature(): Boolean {
-            val path = lowercase()
+            val path = lowercase(Locale.ROOT)
             return path.endsWith("rmmz_core.js") || path.endsWith("rpg_core.js") ||
                 (path.startsWith("game/") && (path.endsWith(".rpy") || path.endsWith(".rpyc"))) ||
                 path.endsWith(".rvdata2") || path.endsWith(".rvdata") || path.endsWith(".rxdata") ||

@@ -162,14 +162,46 @@ interface AstraDao {
     @Query("DELETE FROM game_search WHERE gameId IN (:gameIds)")
     suspend fun deleteSearchForGames(gameIds: List<String>)
 
+    @Query("DELETE FROM play_sessions WHERE gameId IN (:gameIds)")
+    suspend fun deletePlaySessionsForGames(gameIds: List<String>)
+
+    @Query("DELETE FROM metadata WHERE gameId IN (:gameIds)")
+    suspend fun deleteMetadataForGames(gameIds: List<String>)
+
+    @Query("DELETE FROM cover_candidates WHERE gameId IN (:gameIds)")
+    suspend fun deleteCoverCandidatesForGames(gameIds: List<String>)
+
+    @Query("DELETE FROM launch_profiles WHERE gameId IN (:gameIds)")
+    suspend fun deleteLaunchProfilesForGames(gameIds: List<String>)
+
+    @Query("DELETE FROM scan_report_items WHERE sourceId = :sourceId")
+    suspend fun deleteScanReportItemsForSource(sourceId: String)
+
+    @Query("DELETE FROM scan_history WHERE sourceId = :sourceId")
+    suspend fun deleteScanHistoryForSource(sourceId: String)
+
+    @Query("DELETE FROM deleted_games WHERE sourceId = :sourceId")
+    suspend fun deleteDeletedGamesForSource(sourceId: String)
+
+    @Query("DELETE FROM source_exclusions WHERE sourceId = :sourceId")
+    suspend fun deleteSourceExclusions(sourceId: String)
+
     @Transaction
     suspend fun deleteSourceAndGames(sourceId: String) {
         val gameIds = getGameIdsForSource(sourceId)
         if (gameIds.isNotEmpty()) {
             deleteGameTagRefsForGames(gameIds)
             deleteSearchForGames(gameIds)
+            deletePlaySessionsForGames(gameIds)
+            deleteMetadataForGames(gameIds)
+            deleteCoverCandidatesForGames(gameIds)
+            deleteLaunchProfilesForGames(gameIds)
             deleteGamesForSource(sourceId)
         }
+        deleteScanReportItemsForSource(sourceId)
+        deleteScanHistoryForSource(sourceId)
+        deleteDeletedGamesForSource(sourceId)
+        deleteSourceExclusions(sourceId)
         deleteSource(sourceId)
     }
 

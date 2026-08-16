@@ -92,6 +92,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onResume() {
         super.onResume()
+        viewModel.refreshRuntimes()
         viewModel.finishActivePlaySession()
     }
 

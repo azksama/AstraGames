@@ -2,11 +2,12 @@ package fr.astragames.app.data.scanner
 
 import fr.astragames.app.core.model.DetectionResult
 import fr.astragames.app.core.model.GameEngine
+import java.util.Locale
 
 object EngineSignatureDetector {
     fun detect(relativeNames: Set<String>): DetectionResult? {
-        val names = relativeNames.map { it.replace('\\', '/').lowercase() }.toSet()
-        fun has(path: String) = path.lowercase() in names
+        val names = relativeNames.map { it.replace('\\', '/').lowercase(Locale.ROOT) }.toSet()
+        fun has(path: String) = path.lowercase(Locale.ROOT) in names
         fun firstExe() = names.firstOrNull { it.endsWith(".exe") }?.substringAfterLast('/')
 
         return when {

@@ -2,7 +2,7 @@ package fr.astragames.app.core.search
 
 object SearchParser {
     fun terms(query: String): List<String> = query
-        .lowercase()
+        .lowercase(java.util.Locale.ROOT)
         .split(Regex("[^\\p{L}\\p{N}_-]+"))
         .map(String::trim)
         .filter(String::isNotBlank)

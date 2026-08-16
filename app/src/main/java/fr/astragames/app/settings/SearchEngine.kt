@@ -18,24 +18,24 @@ enum class SearchEngine(
     fun webSearchUrl(query: String): String {
         val encoded = encode(query)
         return when (this) {
-            YANDEX -> "https://yandex.com/search/?text=$encoded"
-            GOOGLE -> "https://www.google.com/search?q=$encoded"
-            QWANT -> "https://www.qwant.com/?q=$encoded&t=web"
-            BING -> "https://www.bing.com/search?q=$encoded"
-            DUCKDUCKGO -> "https://duckduckgo.com/?q=$encoded"
-            ECOSIA -> "https://www.ecosia.org/search?q=$encoded"
+            YANDEX -> "https://yandex.com/search/?text=$encoded&filter=0"
+            GOOGLE -> "https://www.google.com/search?q=$encoded&safe=off&pws=0"
+            QWANT -> "https://www.qwant.com/?q=$encoded&t=web&safesearch=off"
+            BING -> "https://www.bing.com/search?q=$encoded&adlt_set=off&safeSearch=off"
+            DUCKDUCKGO -> "https://duckduckgo.com/?q=$encoded&kp=-2"
+            ECOSIA -> "https://www.ecosia.org/search?q=$encoded&safesearch=off"
         }
     }
 
     fun imageSearchUrl(query: String): String {
         val encoded = encode(query)
         return when (this) {
-            YANDEX -> "https://yandex.com/images/search?text=$encoded"
-            GOOGLE -> "https://www.google.com/search?tbm=isch&q=$encoded"
-            QWANT -> "https://www.qwant.com/?q=$encoded&t=images"
-            BING -> "https://www.bing.com/images/search?q=$encoded"
-            DUCKDUCKGO -> "https://duckduckgo.com/?q=$encoded&iax=images&ia=images"
-            ECOSIA -> "https://www.ecosia.org/images?q=$encoded"
+            YANDEX -> "https://yandex.com/images/search?text=$encoded&family_mode=0"
+            GOOGLE -> "https://www.google.com/search?tbm=isch&safe=off&q=$encoded"
+            QWANT -> "https://www.qwant.com/?q=$encoded&t=images&safesearch=off"
+            BING -> "https://www.bing.com/images/search?q=$encoded&safeSearch=off&adlt_set=off"
+            DUCKDUCKGO -> "https://duckduckgo.com/?q=$encoded&iax=images&ia=images&kp=-2"
+            ECOSIA -> "https://www.ecosia.org/images?q=$encoded&safesearch=off"
         }
     }
 
