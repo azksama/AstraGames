@@ -23,6 +23,7 @@ import fr.astragames.app.core.search.TagMatcher
 import fr.astragames.app.core.search.DuplicateDetector
 import fr.astragames.app.core.search.DuplicateDetector.DuplicateGroup
 import fr.astragames.app.core.collections.SmartCollectionEvaluator
+import fr.astragames.app.data.local.AuditEventEntity
 import fr.astragames.app.data.local.DeletedGameEntity
 import fr.astragames.app.data.local.CollectionEntity
 import fr.astragames.app.data.local.CollectionRuleEntity
@@ -46,6 +47,7 @@ import fr.astragames.app.settings.AstraSettings
 import fr.astragames.app.settings.AppLanguage
 import fr.astragames.app.settings.CoverBlurMode
 import fr.astragames.app.settings.SearchEngine
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -160,6 +162,12 @@ data class GameUpdateInfo(
     val latestVersion: String
 )
 
+data class TagMergeSuggestion(
+    val first: TagEntity,
+    val second: TagEntity,
+    val similarity: Float
+)
+
 sealed interface UiEvent {
     data class Message(val text: String) : UiEvent
 }
@@ -200,6 +208,11 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val gameUpdates: StateFlow<List<GameUpdateInfo>> = mutableGameUpdates
     private val mutableUpdatesChecking = MutableStateFlow(false)
     val updatesChecking: StateFlow<Boolean> = mutableUpdatesChecking
+    private val mutableLatestVersions = MutableStateFlow<Map<String, String>>(emptyMap())
+    val latestGameVersions: StateFlow<Map<String, String>> = mutableLatestVersions
+    private val mutableTagMerges = MutableStateFlow<List<TagMergeSuggestion>>(emptyList())
+    val tagMerges: StateFlow<List<TagMergeSuggestion>> = mutableTagMerges
+    private val ignoredTagMerges = MutableStateFlow<Set<String>>(emptySet())
 
     private data class CoreData(
         val games: List<GameEntity>,
@@ -357,6 +370,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         viewModelScope.launch {
             repository.recoverInterruptedScans()
             val settings = settingsRepository.settings.first()
+            mutableLatestVersions.value = parseLatestVersions(settings.f95LatestVersions)
             settings.f95SessionXfUser?.let { xfUser ->
                 settings.f95SessionXfSession?.let { xfSession ->
                     app.container.f95Zone.setSession(F95Session(settings.f95SessionUser, xfUser, xfSession))
@@ -764,6 +778,8 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun completeGameSetup(gameId: String) {
         setupQueueIds.value = setupQueueIds.value.filterNot { it == gameId }
     }
+    fun auditEvents(): Flow<List<AuditEventEntity>> = repository.auditEvents
+
     fun dismissGameSetup() {
         setupQueueIds.value = emptyList()
     }
@@ -892,6 +908,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         mutableUpdatesChecking.value = true
         mutableGameUpdates.value = emptyList()
         val updates = mutableListOf<GameUpdateInfo>()
+        val latestVersionByGame = mutableMapOf<String, String>()
         candidates.forEachIndexed { index, game ->
             val url = game.f95Url ?: return@forEachIndexed
             val latest = try {
@@ -902,12 +919,17 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                 Log.w("AstraMetadata", "Version introuvable pour « ${game.title} »", error)
                 null
             }
-            if (latest != null && latest != game.version) {
+            if (latest != null) latestVersionByGame[game.id] = latest
+            if (latest != null && game.version != null && latest != game.version) {
                 updates += GameUpdateInfo(game, game.version, latest)
             }
             mutableGameUpdates.value = updates.toList()
             if (index < candidates.lastIndex) delay(VNDB_REQUEST_INTERVAL_MS)
         }
+        mutableLatestVersions.value = latestVersionByGame
+        settingsRepository.setF95LatestVersions(
+            latestVersionByGame.entries.joinToString("|") { "${it.key}:${it.value}" }
+        )
         mutableUpdatesChecking.value = false
         events.emit(
             UiEvent.Message(
@@ -915,6 +937,96 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                 else "${updates.size} mise(s) à jour trouvée(s)"
             )
         )
+    }
+
+    fun refreshTagMerges() = viewModelScope.launch {
+        var tags = repository.tags.first()
+        var merged = true
+        while (merged) {
+            val match = withContext(Dispatchers.Default) { findPerfectTagMatch(tags) }
+            if (match == null) {
+                merged = false
+            } else {
+                repository.mergeTags(match.first.id, match.second.id)
+                tags = repository.tags.first()
+            }
+        }
+        val ignored = ignoredTagMerges.value
+        mutableTagMerges.value = withContext(Dispatchers.Default) { findTagMergeSuggestions(tags) }
+            .filterNot { mergeKey(it.first.id, it.second.id) in ignored }
+    }
+
+    fun ignoreTagMerge(first: TagEntity, second: TagEntity) = viewModelScope.launch {
+        ignoredTagMerges.value = ignoredTagMerges.value + mergeKey(first.id, second.id)
+        mutableTagMerges.value = mutableTagMerges.value.filterNot { mergeKey(it.first.id, it.second.id) == mergeKey(first.id, second.id) }
+    }
+
+    private fun mergeKey(firstId: String, secondId: String): String =
+        listOf(firstId, secondId).sorted().joinToString("|")
+
+    private fun parseLatestVersions(raw: String): Map<String, String> =
+        raw.split("|").filter(String::isNotBlank).mapNotNull { entry ->
+            val key = entry.substringBefore(":", "")
+            val value = entry.substringAfter(":", "")
+            if (key.isBlank() || value.isBlank()) null else key to value
+        }.toMap()
+
+    private fun findPerfectTagMatch(tags: List<TagEntity>): Pair<TagEntity, TagEntity>? {
+        for (i in tags.indices) {
+            for (j in i + 1 until tags.size) {
+                if (tagSimilarity(tags[i].name, tags[j].name) >= 1f) return tags[i] to tags[j]
+            }
+        }
+        return null
+    }
+
+    private fun findTagMergeSuggestions(tags: List<TagEntity>): List<TagMergeSuggestion> {
+        val suggestions = mutableListOf<TagMergeSuggestion>()
+        for (i in tags.indices) {
+            for (j in i + 1 until tags.size) {
+                val left = tags[i].name.trim().lowercase(java.util.Locale.ROOT)
+                val right = tags[j].name.trim().lowercase(java.util.Locale.ROOT)
+                if (left.isEmpty() || right.isEmpty()) continue
+                val maxLength = maxOf(left.length, right.length)
+                val lengthDiff = if (left.length > right.length) left.length - right.length else right.length - left.length
+                if (lengthDiff.toFloat() / maxLength > .4f) continue
+                val similarity = 1f - levenshtein(left, right).toFloat() / maxLength
+                if (similarity >= .6f && similarity < 1f) {
+                    suggestions += TagMergeSuggestion(tags[i], tags[j], similarity)
+                }
+            }
+        }
+        return suggestions
+    }
+
+    fun mergeTagPair(keep: TagEntity, removed: TagEntity) = viewModelScope.launch {
+        repository.mergeTags(keep.id, removed.id)
+        refreshTagMerges()
+    }
+
+    private fun tagSimilarity(first: String, second: String): Float {
+        val left = first.trim().lowercase(java.util.Locale.ROOT)
+        val right = second.trim().lowercase(java.util.Locale.ROOT)
+        if (left == right) return 1f
+        val distance = levenshtein(left, right)
+        return 1f - distance.toFloat() / maxOf(left.length, right.length, 1)
+    }
+
+    private fun levenshtein(left: String, right: String): Int {
+        var previous = IntArray(right.length + 1) { it }
+        left.forEachIndexed { leftIndex, leftChar ->
+            val current = IntArray(right.length + 1)
+            current[0] = leftIndex + 1
+            right.forEachIndexed { rightIndex, rightChar ->
+                current[rightIndex + 1] = minOf(
+                    current[rightIndex] + 1,
+                    previous[rightIndex + 1] + 1,
+                    previous[rightIndex] + if (leftChar == rightChar) 0 else 1
+                )
+            }
+            previous = current
+        }
+        return previous.last()
     }
     fun requestNotificationPermission() { notificationPermissionRequests.tryEmit(Unit) }
     fun configureBackupFolder(uri: Uri) = viewModelScope.launch {

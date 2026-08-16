@@ -24,6 +24,8 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -208,19 +210,14 @@ private fun LanguageTransition(language: AppLanguage, content: @Composable (AppL
 
 @Composable
 private fun CompactBottomNavigation(route: String, nav: NavHostController, modifier: Modifier = Modifier) {
-    Box(
-        modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 12.dp, vertical = 6.dp),
-        contentAlignment = Alignment.Center
+    Surface(
+        modifier.fillMaxWidth().navigationBarsPadding(),
+        color = MaterialTheme.colorScheme.background
     ) {
-        Surface(
-            Modifier.fillMaxWidth().height(58.dp), RoundedCornerShape(50),
-            color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 4.dp, shadowElevation = 4.dp
-        ) {
-            Row(
-                Modifier.fillMaxSize().padding(horizontal = 6.dp),
-                horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically
-            ) { menuDestinations.forEach { NavIcon(it, route == it.route || (route.isBlank() && it == Destination.LIBRARY)) { navigate(nav, it.route) } } }
-        }
+        Row(
+            Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 6.dp),
+            horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically
+        ) { menuDestinations.forEach { NavIcon(it, route == it.route || (route.isBlank() && it == Destination.LIBRARY)) { navigate(nav, it.route) } } }
     }
 }
 
@@ -273,7 +270,7 @@ private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> 
 }
 
 private fun navigate(nav: NavHostController, route: String) = nav.navigate(route) {
-    popUpTo(Destination.LIBRARY.route) { saveState = true }; launchSingleTop = true; restoreState = true
+    popUpTo(Destination.LIBRARY.route) { saveState = false }; launchSingleTop = true; restoreState = false
 }
 
 private fun Destination.icon() = when (this) {
@@ -294,18 +291,10 @@ private fun AppNavHost(
     NavHost(
         navController = nav,
         startDestination = Destination.LIBRARY.route,
-        enterTransition = {
-            slideIntoContainer(topLevelSlideDirection(initialState.destination.route, targetState.destination.route, AnimatedContentTransitionScope.SlideDirection.Left), tween(PageTransitionDurationMillis))
-        },
-        exitTransition = {
-            slideOutOfContainer(topLevelSlideDirection(initialState.destination.route, targetState.destination.route, AnimatedContentTransitionScope.SlideDirection.Left), tween(PageTransitionDurationMillis))
-        },
-        popEnterTransition = {
-            slideIntoContainer(topLevelSlideDirection(initialState.destination.route, targetState.destination.route, AnimatedContentTransitionScope.SlideDirection.Right), tween(PageTransitionDurationMillis))
-        },
-        popExitTransition = {
-            slideOutOfContainer(topLevelSlideDirection(initialState.destination.route, targetState.destination.route, AnimatedContentTransitionScope.SlideDirection.Right), tween(PageTransitionDurationMillis))
-        }
+        enterTransition = { fadeIn(tween(PageTransitionDurationMillis)) },
+        exitTransition = { fadeOut(tween(PageTransitionDurationMillis)) },
+        popEnterTransition = { fadeIn(tween(PageTransitionDurationMillis)) },
+        popExitTransition = { fadeOut(tween(PageTransitionDurationMillis)) }
     ) {
         composable(Destination.LIBRARY.route) { LibraryScreen(state, vm, { nav.navigate("game/$it") }, onPickSource) }
         composable(Destination.SEARCH.route) { SearchScreen(state, vm, { nav.navigate("game/$it") }) }
@@ -1189,6 +1178,8 @@ private data class SmartCollection(
 @Composable
 private fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () -> Unit, onBack: () -> Unit) {
     var categoriesMode by remember { mutableStateOf(false) }
+    var mergesMode by remember { mutableStateOf(false) }
+    var tagQuery by remember { mutableStateOf("") }
     var selected by remember { mutableStateOf(emptySet<String>()) }
     var editingTag by remember { mutableStateOf<TagEntity?>(null) }
     var tagDialog by remember { mutableStateOf(false) }
@@ -1200,8 +1191,8 @@ private fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () -
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            CompactHeader(if (categoriesMode) "Catégories de tags" else "Tags", "${state.tags.size} tags", onBack = onBack) {
-                IconButton(onClick = {
+            CompactHeader(if (mergesMode) "Fusions de tags" else if (categoriesMode) "Catégories de tags" else "Tags", "${state.tags.size} tags", onBack = onBack) {
+                if (!mergesMode) IconButton(onClick = {
                     if (categoriesMode) { editingCategory = null; categoryDialog = true } else { editingTag = null; tagDialog = true }
                 }) { Icon(Icons.Default.Add, "Ajouter") }
             }
@@ -1209,22 +1200,35 @@ private fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () -
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(!categoriesMode, { categoriesMode = false }, { Text("Tags") })
-                FilterChip(categoriesMode, { categoriesMode = true; selected = emptySet() }, { Text("Catégories") })
+                FilterChip(!categoriesMode && !mergesMode, { categoriesMode = false; mergesMode = false }, { Text("Tags") })
+                FilterChip(categoriesMode && !mergesMode, { categoriesMode = true; mergesMode = false; selected = emptySet() }, { Text("Catégories") })
+                FilterChip(mergesMode, { mergesMode = true; categoriesMode = false; selected = emptySet() }, { Text("Fusions") })
             }
-            if (!categoriesMode) FilledTonalButton(
+            if (!categoriesMode && !mergesMode) FilledTonalButton(
                 onClick = onPickTags,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
             ) { Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Importer des tags") }
-            if (selected.isNotEmpty() && !categoriesMode) Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
+            if (selected.isNotEmpty() && !categoriesMode && !mergesMode) Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
                 Row(Modifier.fillMaxWidth().height(52.dp).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${selected.size} sélectionné(s)", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                     TextButton(onClick = { moveDialog = true }) { Text("Classer") }
                     IconButton(onClick = { vm.deleteTags(selected); selected = emptySet() }) { Icon(Icons.Default.DeleteOutline, "Supprimer") }
                 }
             }
-            if (categoriesMode) CategoryManager(state, vm, { editingCategory = it; categoryDialog = true }, { deleteCategory = it })
-            else TagManager(state, selected, { selected = selected.toggle(it) }, { editingTag = it; tagDialog = true })
+            if (mergesMode) TagMergesManager(state, vm)
+            else if (categoriesMode) CategoryManager(state, vm, { editingCategory = it; categoryDialog = true }, { deleteCategory = it })
+            else {
+                OutlinedTextField(
+                    value = tagQuery,
+                    onValueChange = { tagQuery = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).height(44.dp),
+                    placeholder = { Text("Rechercher un tag") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    textStyle = MaterialTheme.typography.bodySmall,
+                    singleLine = true
+                )
+                TagManager(state, selected, tagQuery, { selected = selected.toggle(it) }, { editingTag = it; tagDialog = true })
+            }
         }
     }
     if (tagDialog) TagEditDialog(editingTag, state.tagCategories, {
@@ -1241,12 +1245,59 @@ private fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () -
     }
 }
 
+
 @Composable
-private fun TagManager(state: AstraUiState, selected: Set<String>, onToggle: (String) -> Unit, onEdit: (TagEntity) -> Unit) {
+private fun TagMergesManager(state: AstraUiState, vm: AstraViewModel) {
+    val merges by vm.tagMerges.collectAsStateWithLifecycle()
+    LaunchedEffect(Unit) { vm.refreshTagMerges() }
+    if (merges.isEmpty()) {
+        CenterMessage("Aucune fusion à vérifier", Modifier.fillMaxSize())
+    } else {
+        LazyColumn(
+            Modifier.fillMaxSize(),
+            contentPadding = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = PageBottomPadding),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            items(merges, key = { "${it.first.id}|${it.second.id}" }) { suggestion ->
+                MergeSuggestionCard(suggestion, onMerge = { keep, removed -> vm.mergeTagPair(keep, removed) }, onIgnore = { vm.ignoreTagMerge(suggestion.first, suggestion.second) })
+            }
+        }
+    }
+}
+
+@Composable
+private fun MergeSuggestionCard(suggestion: TagMergeSuggestion, onMerge: (TagEntity, TagEntity) -> Unit, onIgnore: () -> Unit) {
+    var keepFirst by remember(suggestion.first.id, suggestion.second.id) { mutableStateOf(true) }
+    Card(Modifier.fillMaxWidth()) {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Ressemblance : ${(suggestion.similarity * 100).toInt()} %", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+                TextButton(onClick = onIgnore) { Text("Ignorer") }
+                TextButton(onClick = { onMerge(if (keepFirst) suggestion.first else suggestion.second, if (keepFirst) suggestion.second else suggestion.first) }) { Text("Fusionner") }
+            }
+            listOf(suggestion.first to true, suggestion.second to false).forEach { (tag, isFirst) ->
+                Row(
+                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
+                        .clickable { keepFirst = isFirst }
+                        .background(if (keepFirst == isFirst) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
+                        .padding(horizontal = 8.dp, vertical = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    RadioButton(keepFirst == isFirst, { keepFirst = isFirst })
+                    Spacer(Modifier.width(6.dp))
+                    Text(tag.name, Modifier.weight(1f), fontWeight = if (keepFirst == isFirst) FontWeight.SemiBold else FontWeight.Normal)
+                }
+            }
+        }
+    }
+}
+@Composable
+private fun TagManager(state: AstraUiState, selected: Set<String>, query: String, onToggle: (String) -> Unit, onEdit: (TagEntity) -> Unit) {
+    val filteredTags = state.tags.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
     val ordered = state.tagCategories.map { it.name }
-    val other = state.tags.mapNotNull { it.groupName }.filterNot(ordered.toSet()::contains).distinct().sorted()
-    val groups = (ordered + other).map { it to state.tags.filter { tag -> tag.groupName == it } } +
-        ("Sans catégorie" to state.tags.filter { it.groupName == null })
+    val other = filteredTags.mapNotNull { it.groupName }.filterNot(ordered.toSet()::contains).distinct().sorted()
+    val groups = (ordered + other).map { it to filteredTags.filter { tag -> tag.groupName == it } } +
+        ("Sans catégorie" to filteredTags.filter { it.groupName == null })
     if (state.tags.isEmpty()) CenterMessage("Aucun tag. Utilisez + pour en créer un directement.", Modifier.fillMaxSize())
     else LazyColumn(contentPadding = PaddingValues(bottom = PageBottomPadding)) {
         groups.filter { it.second.isNotEmpty() }.forEach { (category, tags) ->
@@ -1282,6 +1333,28 @@ private fun CategoryManager(state: AstraUiState, vm: AstraViewModel, onEdit: (Ta
     }
 }
 
+
+@Composable
+private fun AuditDialog(vm: AstraViewModel, onDismiss: () -> Unit) {
+    val events by vm.auditEvents().collectAsStateWithLifecycle(initialValue = emptyList())
+    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
+            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
+                CompactHeader("Historique des modifications", onBack = onDismiss)
+                if (events.isEmpty()) CenterMessage("Aucun événement enregistré", Modifier.fillMaxSize())
+                else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = PageBottomPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    items(events, key = { it.id }) { event ->
+                        RoundedListItem(
+                            headlineContent = { Text(event.detail) },
+                            supportingContent = { Text(event.timestamp.asDateTime()) },
+                            leadingContent = { Icon(Icons.Default.History, null) }
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
 @Composable
 private fun SettingsScreen(
     state: AstraUiState,
@@ -1295,6 +1368,7 @@ private fun SettingsScreen(
     var sourceToDelete by remember { mutableStateOf<GameSourceEntity?>(null) }
     var showDuplicates by remember { mutableStateOf(false) }
     var showDeleted by remember { mutableStateOf(false) }
+    var showAudit by remember { mutableStateOf(false) }
     var showRuntimes by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
     Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Paramètres") }) { padding ->
@@ -1386,6 +1460,11 @@ private fun SettingsScreen(
                 supportingContent = { Text("${state.deletedGames.size} jeu(x) ignoré(s) pendant les scans") },
                 leadingContent = { Icon(Icons.Default.DeleteSweep, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
             ) }
+            item { RoundedListItem(
+                modifier = Modifier.clickable { showAudit = true }, headlineContent = { Text("Historique des modifications") },
+                supportingContent = { Text("Fusions de tags, suppressions et modifications") },
+                leadingContent = { Icon(Icons.Default.History, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
+            ) }
             item { SectionTitle("Sauvegarde et restauration") }
             item { RoundedListItem(
                 modifier = Modifier.clickable(onClick = onPickBackupFolder),
@@ -1426,6 +1505,7 @@ private fun SettingsScreen(
     ) }
     if (showDuplicates) DuplicatesDialog(state, vm) { showDuplicates = false }
     if (showDeleted) DeletedGamesDialog(state.deletedGames, vm::restoreDeletedGame) { showDeleted = false }
+    if (showAudit) AuditDialog(vm) { showAudit = false }
     if (showRuntimes) RuntimeManagerDialog(state.runtimes) { showRuntimes = false }
     if (confirmRestore) ConfirmDialog(
         "Restaurer une sauvegarde ?",
@@ -1447,13 +1527,14 @@ private fun GameDetailScreen(
     val compatibilityByGame by vm.compatibility.collectAsStateWithLifecycle()
     val coverState by vm.coverSearch.collectAsStateWithLifecycle()
     val f95State by vm.f95Import.collectAsStateWithLifecycle()
+    val latestVersions by vm.latestGameVersions.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
     var edit by remember { mutableStateOf(false) }
     var pickTags by remember { mutableStateOf(false) }
     var pickCover by remember { mutableStateOf(false) }
-    var importF95 by remember { mutableStateOf(false) }
+    var importF95 by rememberSaveable(id) { mutableStateOf(false) }
     var previewCover by remember { mutableStateOf(false) }
     var confirmCoverRemoval by remember { mutableStateOf(false) }
     var showDiagnostic by remember { mutableStateOf(false) }
@@ -1475,14 +1556,14 @@ private fun GameDetailScreen(
                 model = item.coverUri,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize().blur(30.dp)
+                modifier = Modifier.fillMaxWidth().fillMaxHeight(.5f).blur(30.dp)
             )
             Box(
-                Modifier.fillMaxSize().background(
+                Modifier.fillMaxWidth().fillMaxHeight(.5f).background(
                     Brush.verticalGradient(
                         0f to Color.Transparent,
-                        0.45f to Color.Transparent,
-                        0.75f to MaterialTheme.colorScheme.background.copy(alpha = .28f),
+                        0.5f to Color.Transparent,
+                        0.8f to MaterialTheme.colorScheme.background.copy(alpha = .35f),
                         1f to MaterialTheme.colorScheme.background
                     )
                 )
@@ -1496,7 +1577,8 @@ private fun GameDetailScreen(
         ) { padding ->
         if (item == null) CenterMessage("Chargement…", Modifier.padding(padding).fillMaxSize(), loading = true)
         else LazyColumn(
-            Modifier.padding(padding), contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
+            Modifier.padding(padding).fillMaxWidth().fillMaxHeight(.55f).align(Alignment.BottomCenter).background(MaterialTheme.colorScheme.background),
+            contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -1523,6 +1605,11 @@ private fun GameDetailScreen(
                             Spacer(Modifier.height(6.dp))
                             item.developer?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             item.version?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            val latest = latestVersions[id]
+                            if (latest != null && latest != item.version) {
+                                Spacer(Modifier.height(4.dp))
+                                Text("Nouvelle version disponible : ${latest}", color = MaterialTheme.colorScheme.tertiary, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                            }
                         }
                     }
                 }
@@ -2016,6 +2103,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     val assigned by remember(game.id) { vm.gameTags(game.id) }.collectAsStateWithLifecycle(emptyList())
     val coverState by vm.coverSearch.collectAsStateWithLifecycle()
     val f95State by vm.f95Import.collectAsStateWithLifecycle()
+    val latestVersions by vm.latestGameVersions.collectAsStateWithLifecycle()
     var title by remember(game.id) { mutableStateOf(game.title) }
     var description by remember(game.id) { mutableStateOf(game.description.orEmpty()) }
     var developer by remember(game.id) { mutableStateOf(game.developer.orEmpty()) }
@@ -2024,7 +2112,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     var selectedTags by remember(game.id, assigned) { mutableStateOf(assigned.map { it.id }.toSet()) }
     var showTags by remember { mutableStateOf(false) }
     var showCover by remember { mutableStateOf(false) }
-    var showF95 by remember { mutableStateOf(false) }
+    var showF95 by rememberSaveable(game.id) { mutableStateOf(false) }
     var importedF95TagNames by remember(game.id) { mutableStateOf(emptySet<String>()) }
     LaunchedEffect(state.tags, importedF95TagNames) {
         if (importedF95TagNames.isNotEmpty()) {
@@ -2226,7 +2314,7 @@ private fun F95ImportSheet(
     }
     LaunchedEffect(game.id) { onPrepareSearch() }
     Dialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (step > 0) step-- else onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -2235,7 +2323,7 @@ private fun F95ImportSheet(
                     Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = onDismiss) { Icon(Icons.Default.Close, "Fermer l'import F95Zone") }
+                    IconButton(onClick = { if (step > 0) step-- else onDismiss() }) { Icon(Icons.Default.Close, "Fermer l'import F95Zone") }
                     Column(Modifier.weight(1f)) {
                         Text("Importer depuis F95Zone", style = MaterialTheme.typography.titleLarge)
                         Text("Étape ${step + 1} sur 3 · ${game.title}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
@@ -2269,7 +2357,7 @@ private fun F95ImportSheet(
                     Column(contentModifier.imePadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
                         LinearProgressIndicator(progress = { (step + 1) / 3f }, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp))
             when (step) {
-                0 -> Column(Modifier.fillMaxWidth().heightIn(min = 300.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                0 -> Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         url, { url = it }, Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true,
                         label = { Text("Lien du thread") }, placeholder = { Text("https://f95zone.to/threads/…") },
@@ -2308,7 +2396,7 @@ private fun F95ImportSheet(
                         Text(if (openInExternalBrowser) "Afficher dans Astra" else "Ouvrir dans le navigateur")
                     }
                 }
-                1 -> Column(Modifier.fillMaxWidth()) {
+                1 -> Column(Modifier.fillMaxWidth().weight(1f)) {
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
                             Text("Sélectionner les tags", style = MaterialTheme.typography.titleMedium)
@@ -2318,8 +2406,8 @@ private fun F95ImportSheet(
                         TextButton(onClick = { selectedTags = emptyList() }) { Text("Aucun") }
                     }
                     val detectedTags = metadata?.tags.orEmpty()
-                    if (detectedTags.isEmpty()) CenterMessage("Aucun tag détecté sur ce thread.", Modifier.height(300.dp))
-                    else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
+                    if (detectedTags.isEmpty()) CenterMessage("Aucun tag détecté sur ce thread.", Modifier.fillMaxWidth().weight(1f))
+                    else LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                         items(detectedTags, key = { it.lowercase(java.util.Locale.ROOT) }) { tag ->
                             val normalized = tag.normalizeTagName()
                             ListItem(
@@ -2331,18 +2419,19 @@ private fun F95ImportSheet(
                         }
                     }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { step = 0 }) { Text("Retour") }
-                        Button(onClick = { step = 2 }, Modifier.weight(1f)) { Text("Continuer vers les images") }
+                        TextButton(onClick = { step = 0 }, Modifier.weight(1f)) { Text("Retour") }
+                        TextButton(onClick = { selectedTags = emptyList(); step = 2 }, Modifier.weight(1f)) { Text("Ignorer") }
+                        Button(onClick = { step = 2 }, Modifier.weight(1f)) { Text("Continuer") }
                     }
                 }
-                else -> Column(Modifier.fillMaxWidth()) {
+                else -> Column(Modifier.fillMaxWidth().weight(1f)) {
                     Text("Choisir une image", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
                     Text("L’image choisie pourra être recadrée avant enregistrement.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     val images = metadata?.images.orEmpty()
                     val selectedImage = images.firstOrNull { it.imageUrl == selectedImageUrl }
-                    if (images.isEmpty()) CenterMessage("Aucune image détectée sur ce thread.", Modifier.height(300.dp))
+                    if (images.isEmpty()) CenterMessage("Aucune image détectée sur ce thread.", Modifier.fillMaxWidth().weight(1f))
                     else LazyVerticalGrid(
-                        GridCells.Adaptive(150.dp), Modifier.fillMaxWidth().heightIn(max = 440.dp).padding(top = 10.dp),
+                        GridCells.Adaptive(150.dp), Modifier.fillMaxWidth().weight(1f).padding(top = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
                         items(images, key = { it.imageUrl }) { image ->
@@ -2351,11 +2440,11 @@ private fun F95ImportSheet(
                     }
                     Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         TextButton(onClick = { step = 1 }, Modifier.weight(1f)) { Text("Retour") }
-                        if (selectedImageUrl == null) TextButton(onClick = { onComplete(selectedTags.toSet(), null) }, Modifier.weight(1f)) { Text("Sans image") }
+                        TextButton(onClick = { onComplete(selectedTags.toSet(), null) }, Modifier.weight(1f)) { Text("Ignorer") }
                         Button(
                             onClick = { selectedImage?.let { onComplete(selectedTags.toSet(), it) } },
-                            enabled = selectedImageUrl != null, modifier = Modifier.weight(1f)
-                        ) { Icon(Icons.Default.Check, null); Spacer(Modifier.width(6.dp)); Text("Importer") }
+                            enabled = selectedImage != null, modifier = Modifier.weight(1f)
+                        ) { Text("Importer") }
                     }
                 }
             }
@@ -2683,9 +2772,7 @@ private fun SearchImagePickerDialog(
                     it, color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
                 ) }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
-                    Button(onClick = ::useDisplayedImage) { Text("Utiliser le lien") }
-                }
+
             }
         }
     }

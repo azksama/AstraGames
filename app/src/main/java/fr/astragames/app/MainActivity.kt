@@ -103,7 +103,9 @@ class MainActivity : ComponentActivity() {
                 uri = source,
                 cropImageOptions = CropImageOptions(
                     guidelines = CropImageView.Guidelines.ON,
-                    fixAspectRatio = false,
+                    fixAspectRatio = true,
+                    aspectRatioX = 18,
+                    aspectRatioY = 25,
                     imageSourceIncludeCamera = false,
                     imageSourceIncludeGallery = source == null,
                     outputCompressQuality = 100

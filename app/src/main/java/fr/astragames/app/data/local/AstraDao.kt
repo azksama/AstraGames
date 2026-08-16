@@ -226,6 +226,9 @@ interface AstraDao {
     @Query("DELETE FROM tags WHERE id IN (:tagIds)")
     suspend fun deleteTagsRaw(tagIds: List<String>)
 
+    @Query("UPDATE game_tags SET tagId = :keepId WHERE tagId = :removedId")
+    suspend fun replaceTagReferences(keepId: String, removedId: String)
+
     @Transaction
     suspend fun deleteTags(tagIds: List<String>) {
         if (tagIds.isEmpty()) return
@@ -409,4 +412,8 @@ interface AstraDao {
 
     @Query("DELETE FROM ignored_duplicate_groups WHERE groupKey = :groupKey")
     suspend fun unignoreDuplicateGroup(groupKey: String)
+    @Insert
+    suspend fun insertAudit(event: AuditEventEntity)
+    @Query("SELECT * FROM audit_events ORDER BY timestamp DESC")
+    fun observeAuditEvents(): Flow<List<AuditEventEntity>>
 }

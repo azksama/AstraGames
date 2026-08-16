@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
 import androidx.documentfile.provider.DocumentFile
+import fr.astragames.app.core.security.KeystoreCrypto
 import fr.astragames.app.data.local.AstraDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
@@ -18,11 +19,14 @@ import java.util.zip.ZipInputStream
 import java.util.zip.ZipOutputStream
 
 /** Sauvegarde portable du catalogue Room et des jaquettes gérées par Astra. */
+private val BACKUP_MAGIC = byteArrayOf('A'.code.toByte(), 'S'.code.toByte(), 'T'.code.toByte(), '1'.code.toByte())
+
 class BackupManager(
     private val context: Context,
     private val database: AstraDatabase
 ) {
     private val lock = Mutex()
+
 
     suspend fun create(treeUri: Uri): String = withContext(Dispatchers.IO) {
         lock.withLock {
@@ -31,18 +35,26 @@ class BackupManager(
                 ?: error("Le dossier de sauvegarde n’est plus accessible.")
             database.openHelper.writableDatabase.query("PRAGMA wal_checkpoint(FULL)").use { it.moveToFirst() }
             val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(Date())
-            val displayName = "astra-games_$stamp.zip"
-            val target = tree.createFile("application/zip", displayName)
+            val displayName = "astra-games_$stamp.astra"
+            val target = tree.createFile("application/octet-stream", displayName)
                 ?: error("Impossible de créer la sauvegarde.")
-            context.contentResolver.openOutputStream(target.uri, "w")?.use { output ->
-                ZipOutputStream(output.buffered()).use { zip ->
-                    addFile(zip, context.getDatabasePath(DATABASE_NAME), DATABASE_ENTRY)
-                    val covers = File(context.filesDir, COVERS_DIRECTORY)
-                    covers.listFiles()?.filter(File::isFile)?.forEach { cover ->
-                        addFile(zip, cover, "$COVERS_DIRECTORY/${cover.name}")
+            val work = File(context.cacheDir, "backup-${System.currentTimeMillis()}.zip")
+            try {
+                work.outputStream().buffered().use { output ->
+                    ZipOutputStream(output).use { zip ->
+                        addFile(zip, context.getDatabasePath(DATABASE_NAME), DATABASE_ENTRY)
+                        val covers = File(context.filesDir, COVERS_DIRECTORY)
+                        covers.listFiles()?.filter(File::isFile)?.forEach { cover ->
+                            addFile(zip, cover, "$COVERS_DIRECTORY/${cover.name}")
+                        }
                     }
                 }
-            } ?: error("Impossible d’écrire dans le dossier choisi.")
+                val encrypted = BACKUP_MAGIC + KeystoreCrypto.encrypt(work.readBytes())
+                context.contentResolver.openOutputStream(target.uri, "w")?.use { it.write(encrypted) }
+                    ?: error("Impossible d’écrire dans le dossier choisi.")
+            } finally {
+                work.delete()
+            }
             target.name ?: displayName
         }
     }
@@ -51,7 +63,15 @@ class BackupManager(
         lock.withLock {
             val work = File(context.cacheDir, "restore-${System.currentTimeMillis()}").apply { mkdirs() }
             try {
-                extractArchive(archiveUri, work)
+                val raw = context.contentResolver.openInputStream(archiveUri)?.use { it.readBytes() }
+                    ?: error("Impossible de lire la sauvegarde sélectionnée.")
+                val archiveFile = File(work, "archive.zip")
+                if (raw.size > BACKUP_MAGIC.size && raw.copyOfRange(0, BACKUP_MAGIC.size).contentEquals(BACKUP_MAGIC)) {
+                    archiveFile.writeBytes(KeystoreCrypto.decrypt(raw.copyOfRange(BACKUP_MAGIC.size, raw.size)))
+                } else {
+                    archiveFile.writeBytes(raw)
+                }
+                extractArchive(Uri.fromFile(archiveFile), work)
                 val importedDatabase = File(work, DATABASE_ENTRY)
                 require(importedDatabase.isFile) { "Cette archive ne contient pas de catalogue Astra." }
                 val db = database.openHelper.writableDatabase
