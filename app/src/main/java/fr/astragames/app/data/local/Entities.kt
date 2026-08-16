@@ -242,3 +242,11 @@ fun GameEntity.toSearchEntity() = GameSearchEntity(
     keywords = keywords,
     description = description.orEmpty()
 )
+
+@Entity(tableName = "audit_events", indices = [Index("timestamp")])
+data class AuditEventEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val type: String,
+    val detail: String,
+    val timestamp: Long
+)

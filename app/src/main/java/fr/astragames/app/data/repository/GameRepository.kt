@@ -9,6 +9,7 @@ import androidx.documentfile.provider.DocumentFile
 import fr.astragames.app.data.local.AstraDao
 import fr.astragames.app.data.backup.BackupManager
 import fr.astragames.app.data.local.DeletedGameEntity
+import fr.astragames.app.data.local.AuditEventEntity
 import fr.astragames.app.data.local.CollectionEntity
 import fr.astragames.app.data.local.CollectionRuleEntity
 import fr.astragames.app.data.local.IgnoredDuplicateGroupEntity
@@ -55,6 +56,7 @@ class GameRepository(
     val collectionRules: Flow<List<CollectionRuleEntity>> = dao.observeCollectionRules()
     val playStats = dao.observePlayStats()
     val ignoredDuplicateGroups = dao.observeIgnoredDuplicateGroups()
+    val auditEvents: Flow<List<AuditEventEntity>> = dao.observeAuditEvents()
     fun gameTagRefs() = dao.observeGameTagRefs()
     fun search(query: String) = dao.searchGames(fr.astragames.app.core.search.SearchParser.toFtsQuery(query))
 
@@ -284,6 +286,7 @@ class GameRepository(
         }
         removeManagedCover(game.coverUri)
         dao.deleteGameCompletely(id)
+        recordAudit("GAME_DELETED", "Jeu supprimé : ${game.title}${if (deleteAssociatedFiles) " (fichiers inclus)" else ""}")
     }
 
     suspend fun restoreDeletedGame(id: String) = dao.restoreDeletedGame(id)
@@ -399,7 +402,27 @@ class GameRepository(
         if (clean.isNotBlank()) dao.upsertTag(tag.copy(name = clean, normalizedName = normalize(clean), groupName = categoryName))
     }
 
-    suspend fun deleteTags(tagIds: Set<String>) = dao.deleteTags(tagIds.toList())
+    suspend fun deleteTags(tagIds: Set<String>) {
+        if (tagIds.isEmpty()) return
+        val names = dao.getTags().filter { it.id in tagIds }.joinToString(", ") { it.name }
+        dao.deleteTags(tagIds.toList())
+        recordAudit("TAG_DELETED", "Tag(s) supprimé(s) : $names")
+    }
+
+    private suspend fun recordAudit(type: String, detail: String) {
+        dao.insertAudit(AuditEventEntity(UUID.randomUUID().toString(), type, detail, System.currentTimeMillis()))
+    }
+
+    /** Fusionne deux tags : les jeux liés au tag supprimé pointent vers le tag conservé. */
+    suspend fun mergeTags(keepTagId: String, removedTagId: String) {
+        if (keepTagId == removedTagId) return
+        val tags = dao.getTags()
+        val keepName = tags.firstOrNull { it.id == keepTagId }?.name ?: "?"
+        val removedName = tags.firstOrNull { it.id == removedTagId }?.name ?: "?"
+        dao.replaceTagReferences(keepTagId, removedTagId)
+        dao.deleteTagsRaw(listOf(removedTagId))
+        recordAudit("TAG_MERGE", "Fusion de tags : « $removedName » → « $keepName »")
+    }
 
     suspend fun moveTagsToCategory(tagIds: Set<String>, categoryName: String?) =
         dao.moveTagsToCategory(tagIds.toList(), categoryName)
@@ -421,6 +444,7 @@ class GameRepository(
     suspend fun deleteTagCategory(category: TagCategoryEntity) {
         dao.clearTagCategoryReferences(category.name)
         dao.deleteTagCategoryRaw(category.id)
+        recordAudit("CATEGORY_DELETED", "Catégorie supprimée : ${category.name}")
     }
 
     suspend fun moveTagCategory(categoryId: String, direction: Int) {

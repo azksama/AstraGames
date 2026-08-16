@@ -14,9 +14,9 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LibraryFolderEntity::class, PlaySessionEntity::class, MetadataEntity::class,
         CoverCandidateEntity::class, CollectionEntity::class, CollectionRuleEntity::class,
         ScanHistoryEntity::class, ScanReportItemEntity::class, LaunchProfileEntity::class,
-        DeletedGameEntity::class, IgnoredDuplicateGroupEntity::class
+        DeletedGameEntity::class, IgnoredDuplicateGroupEntity::class, AuditEventEntity::class
     ],
-    version = 6,
+    version = 7,
     exportSchema = true
 )
 abstract class AstraDatabase : RoomDatabase() {
@@ -27,7 +27,7 @@ abstract class AstraDatabase : RoomDatabase() {
             context.applicationContext,
             AstraDatabase::class.java,
             "astra_games.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6).fallbackToDestructiveMigration(false).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).fallbackToDestructiveMigration(false).build()
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -81,6 +81,15 @@ abstract class AstraDatabase : RoomDatabase() {
         private val MIGRATION_5_6 = object : Migration(5, 6) {
             override fun migrate(db: SupportSQLiteDatabase) {
                 db.execSQL("ALTER TABLE games ADD COLUMN f95Url TEXT")
+            }
+        }
+
+        private val MIGRATION_6_7 = object : Migration(6, 7) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS audit_events (id TEXT NOT NULL, type TEXT NOT NULL, detail TEXT NOT NULL, timestamp INTEGER NOT NULL, PRIMARY KEY(id))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_audit_events_timestamp ON audit_events (timestamp)")
             }
         }
     }

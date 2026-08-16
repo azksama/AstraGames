@@ -9,6 +9,8 @@ import androidx.datastore.preferences.preferencesDataStore
 import fr.astragames.app.core.model.CoverSize
 import fr.astragames.app.core.model.LibraryViewMode
 import fr.astragames.app.core.model.ThemeMode
+import fr.astragames.app.core.security.KeystoreCrypto
+import java.util.Base64
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -32,7 +34,9 @@ data class AstraSettings(
     val joiPlayNotifiedVersions: String = "",
     val f95SessionUser: String? = null,
     val f95SessionXfUser: String? = null,
-    val f95SessionXfSession: String? = null
+    val f95SessionXfSession: String? = null,
+    val f95NotifiedUpdates: String = "",
+    val f95LatestVersions: String = ""
 )
 
 class SettingsRepository(private val context: Context) {
@@ -54,8 +58,14 @@ class SettingsRepository(private val context: Context) {
             joiPlayCatalogFetchedAt = values[JOIPLAY_CATALOG_FETCHED_AT] ?: 0L,
             joiPlayNotifiedVersions = values[JOIPLAY_NOTIFIED_VERSIONS].orEmpty(),
             f95SessionUser = values[F95_SESSION_USER],
-            f95SessionXfUser = values[F95_SESSION_XF_USER],
-            f95SessionXfSession = values[F95_SESSION_XF_SESSION]
+            f95NotifiedUpdates = values[F95_NOTIFIED_UPDATES].orEmpty(),
+            f95LatestVersions = values[F95_LATEST_VERSIONS].orEmpty(),
+            f95SessionXfUser = values[F95_SESSION_XF_USER]?.let { encoded ->
+                runCatching { String(KeystoreCrypto.decrypt(Base64.getDecoder().decode(encoded))) }.getOrNull()
+            },
+            f95SessionXfSession = values[F95_SESSION_XF_SESSION]?.let { encoded ->
+                runCatching { String(KeystoreCrypto.decrypt(Base64.getDecoder().decode(encoded))) }.getOrNull()
+            }
         )
     }
 
@@ -79,9 +89,13 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setF95Session(user: String?, xfUser: String, xfSession: String) = context.dataStore.edit {
         if (user != null) it[F95_SESSION_USER] = user else it.remove(F95_SESSION_USER)
-        it[F95_SESSION_XF_USER] = xfUser
-        it[F95_SESSION_XF_SESSION] = xfSession
+        it[F95_SESSION_XF_USER] = Base64.getEncoder().encodeToString(KeystoreCrypto.encrypt(xfUser.toByteArray()))
+        it[F95_SESSION_XF_SESSION] = Base64.getEncoder().encodeToString(KeystoreCrypto.encrypt(xfSession.toByteArray()))
     }
+
+    suspend fun setF95NotifiedUpdates(value: String) = context.dataStore.edit { it[F95_NOTIFIED_UPDATES] = value }
+
+    suspend fun setF95LatestVersions(value: String) = context.dataStore.edit { it[F95_LATEST_VERSIONS] = value }
 
     suspend fun clearF95Session() = context.dataStore.edit {
         it.remove(F95_SESSION_USER)
@@ -111,5 +125,7 @@ class SettingsRepository(private val context: Context) {
         private val F95_SESSION_USER = stringPreferencesKey("f95_session_user")
         private val F95_SESSION_XF_USER = stringPreferencesKey("f95_session_xf_user")
         private val F95_SESSION_XF_SESSION = stringPreferencesKey("f95_session_xf_session")
+        private val F95_NOTIFIED_UPDATES = stringPreferencesKey("f95_notified_updates")
+        private val F95_LATEST_VERSIONS = stringPreferencesKey("f95_latest_versions")
     }
 }

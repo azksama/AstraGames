@@ -12,6 +12,7 @@ import fr.astragames.app.data.scanner.RecursiveSourceScanner
 import fr.astragames.app.launcher.JoiPlayLauncher
 import fr.astragames.app.launcher.JoiPlayCatalogProvider
 import fr.astragames.app.settings.SettingsRepository
+import fr.astragames.app.worker.GameUpdatesWorker
 import fr.astragames.app.worker.JoiPlayUpdateWorker
 
 class AstraApplication : Application() {
@@ -33,6 +34,7 @@ class AstraApplication : Application() {
             joiPlayCatalog = JoiPlayCatalogProvider()
         )
         JoiPlayUpdateWorker.schedule(this)
+        GameUpdatesWorker.schedule(this)
     }
 }
 

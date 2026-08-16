@@ -432,7 +432,14 @@ object AppLocalizer {
         t("Version inconnue", "Unknown version", "Versión desconocida", "Неизвестная версия", "Unbekannte Version", "未知版本", "不明なバージョン"),
         t("Compte F95Zone (optionnel)", "F95Zone account (optional)", "Cuenta de F95Zone (opcional)", "Аккаунт F95Zone (необязательно)", "F95Zone-Konto (optional)", "F95Zone 账户（可选）", "F95Zone アカウント（任意）"),
         t("Connectez-vous pour accéder au contenu réservé aux membres et récupérer les versions des jeux.", "Log in to access member-only content and fetch game versions.", "Inicia sesión para acceder al contenido exclusivo para miembros y obtener las versiones de los juegos.", "Войдите, чтобы получить доступ к контенту для участников и версиям игр.", "Melde dich an, um Mitglieder-Inhalte zu sehen und Spielversionen abzurufen.", "登录以访问会员专属内容并获取游戏版本。", "ログインすると会員限定コンテンツとゲームのバージョンを取得できます。"),
-        t("Arrêter", "Stop", "Detener", "Остановить", "Stoppen", "停止", "停止")
+        t("Arrêter", "Stop", "Detener", "Остановить", "Stoppen", "停止", "停止"),
+        t("Ignorer", "Skip", "Omitir", "Пропустить", "Überspringen", "跳过", "スキップ"),
+        t("Fusions", "Merges", "Fusiones", "Слияния", "Zusammenführungen", "合并", "統合"),
+        t("Fusions de tags", "Tag merges", "Fusiones de etiquetas", "Слияния тегов", "Tag-Zusammenführungen", "标签合并", "タグの統合"),
+        t("Aucune fusion à vérifier", "No merges to review", "No hay fusiones que revisar", "Нет слияний для проверки", "Keine Zusammenführungen zu prüfen", "没有需要检查的合并", "確認する統合はありません"),
+        t("Historique des modifications", "Modification history", "Historial de cambios", "История изменений", "Änderungsverlauf", "修改历史", "変更履歴"),
+        t("Fusions de tags, suppressions et modifications", "Tag merges, deletions and changes", "Fusiones de etiquetas, eliminaciones y cambios", "Слияния тегов, удаления и изменения", "Tag-Zusammenführungen, Löschungen und Änderungen", "标签合并、删除和修改", "タグの統合、削除、変更"),
+        t("Aucun événement enregistré", "No events recorded", "No hay eventos registrados", "События не записаны", "Keine Ereignisse aufgezeichnet", "暂无记录事件", "記録されたイベントはありません")
     )
 
     private val translations = AppLanguage.entries.associateWith { language ->
@@ -593,6 +600,12 @@ object AppLocalizer {
         }
         count(Regex("(\\d+) mise\\(s\\) à jour trouvée\\(s\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number update(s) found"; AppLanguage.SPANISH -> "$number actualización(es) encontrada(s)"; AppLanguage.RUSSIAN -> "Найдено обновлений: $number"; AppLanguage.GERMAN -> "$number Update(s) gefunden"; AppLanguage.CHINESE -> "找到 $number 个更新"; AppLanguage.JAPANESE -> "$number 件の更新を検出"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("Nouvelle version disponible : (.+)")) { version -> when (language) {
+            AppLanguage.ENGLISH -> "New version available: $version"; AppLanguage.SPANISH -> "Nueva versión disponible: $version"; AppLanguage.RUSSIAN -> "Доступна новая версия: $version"; AppLanguage.GERMAN -> "Neue Version verfügbar: $version"; AppLanguage.CHINESE -> "新版本可用：$version"; AppLanguage.JAPANESE -> "新しいバージョンが利用可能：$version"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("Ressemblance : (\\d+) %")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "Similarity: $number%"; AppLanguage.SPANISH -> "Similitud: $number%"; AppLanguage.RUSSIAN -> "Сходство: $number%"; AppLanguage.GERMAN -> "Ähnlichkeit: $number%"; AppLanguage.CHINESE -> "相似度：$number%"; AppLanguage.JAPANESE -> "類似度：$number%"; AppLanguage.FRENCH -> source
         } }?.let { return it }
         Regex("^Connecté en tant que (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { user ->
             return when (language) {

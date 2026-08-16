@@ -172,7 +172,7 @@ class RecursiveSourceScanner(
                     }
                 }
                 .firstOrNull()
-            val detection = EngineSignatureDetector.detect(signatureNames) ?: executable?.let {
+            val detection = if (depth == 0) null else EngineSignatureDetector.detect(signatureNames) ?: executable?.let {
                 DetectionResult(GameEngine.UNKNOWN, .25f, listOf("Exécutable détecté"), it.name)
             }
             if (detection != null) {
