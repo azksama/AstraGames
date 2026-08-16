@@ -5,9 +5,9 @@ import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import org.jsoup.nodes.Document
 import org.jsoup.nodes.Element
+import fr.astragames.app.settings.SearchEngine
 import java.net.URI
 import java.net.URLDecoder
-import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 
@@ -18,14 +18,15 @@ data class F95ZoneMetadata(
 )
 
 class F95ZoneProvider {
-    fun yandexSearchUrl(gameTitle: String): String {
+    fun searchUrl(gameTitle: String, searchEngine: SearchEngine = SearchEngine.YANDEX): String {
         require(gameTitle.isNotBlank()) { "Le nom du jeu est vide." }
-        val query = URLEncoder.encode("${gameTitle.trim()} site:f95zone.to", StandardCharsets.UTF_8.name())
-        return "https://yandex.com/search/?text=$query"
+        return searchEngine.webSearchUrl(gameTitle)
     }
 
-    suspend fun findThread(gameTitle: String): String? = withContext(Dispatchers.IO) {
-        val endpoint = yandexSearchUrl(gameTitle)
+    fun yandexSearchUrl(gameTitle: String): String = searchUrl(gameTitle, SearchEngine.YANDEX)
+
+    suspend fun findThread(gameTitle: String, searchEngine: SearchEngine = SearchEngine.YANDEX): String? = withContext(Dispatchers.IO) {
+        val endpoint = searchUrl(gameTitle, searchEngine)
         val response = Jsoup.connect(endpoint)
             .userAgent(BROWSER_USER_AGENT)
             .header("Accept-Language", "en-US,en;q=0.9")

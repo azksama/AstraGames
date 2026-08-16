@@ -4,8 +4,12 @@ import android.annotation.SuppressLint
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedContentTransitionScope
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -81,6 +85,7 @@ import fr.astragames.app.data.repository.SaveConflictStrategy
 import fr.astragames.app.core.search.DuplicateDetector.DuplicateGroup
 import fr.astragames.app.launcher.JoiPlayRuntimeInfo
 import fr.astragames.app.settings.AppLanguage
+import fr.astragames.app.settings.SearchEngine
 import kotlinx.coroutines.flow.collectLatest
 import java.text.DateFormat
 import java.text.Normalizer
@@ -96,6 +101,7 @@ private val menuDestinations = Destination.entries.filter { it.visibleInMenu }
 private val topLevelRoutes = Destination.entries.map { it.route }.toSet()
 private val PageBottomPadding = 32.dp
 private const val PageTransitionDurationMillis = 150
+private const val SEARCH_WEBVIEW_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/127.0 Mobile Safari/537.36"
 
 @Composable
 fun AstraApp(
@@ -118,48 +124,71 @@ fun AstraApp(
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         return
     }
-    if (!state.settings.onboardingCompleted) {
-        OnboardingScreen(state, onPickSource, onPickTags, viewModel::setLanguage, viewModel::completeOnboarding)
-        return
-    }
-
     val navController = rememberNavController()
-    val entry by navController.currentBackStackEntryAsState()
-    val route = entry?.destination?.route.orEmpty()
-    val topLevel = route.isBlank() || route in topLevelRoutes
-    BoxWithConstraints(Modifier.fillMaxSize()) {
-        val wide = maxWidth >= 840.dp
-        Scaffold(
-            contentWindowInsets = WindowInsets(0, 0, 0, 0),
-            snackbarHost = { SnackbarHost(snackbar) }
-        ) { padding ->
-            if (topLevel && wide) {
-                Row(Modifier.padding(padding).fillMaxSize()) {
-                    CompactNavigationRail(route, navController)
-                    Box(Modifier.weight(1f).topLevelSwipe(route, navController)) { AppNavHost(navController, state, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
+    CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
+        if (!state.settings.onboardingCompleted) {
+            LanguageTransition(state.settings.language) { visibleLanguage ->
+                CompositionLocalProvider(LocalAppLanguage provides visibleLanguage) {
+                    val visibleState = state.copy(settings = state.settings.copy(language = visibleLanguage))
+                    OnboardingScreen(visibleState, onPickSource, onPickTags, viewModel::setLanguage, viewModel::completeOnboarding)
                 }
-            } else Box(Modifier.padding(padding).fillMaxSize()) {
-                Box(
-                    Modifier.fillMaxSize()
-                        .padding(bottom = if (topLevel) 74.dp else 0.dp)
-                        .then(if (topLevel) Modifier.topLevelSwipe(route, navController) else Modifier)
-                ) { AppNavHost(navController, state, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
-                if (topLevel) {
-                    CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter))
-                    if (route != Destination.SEARCH.route) FloatingActionButton(
-                        onClick = { navigate(navController, Destination.SEARCH.route) },
-                        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 72.dp),
-                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ) { Icon(Icons.Default.Search, AppLocalizer.text("Rechercher")) }
+            }
+        } else {
+            LanguageTransition(state.settings.language) { visibleLanguage ->
+                CompositionLocalProvider(LocalAppLanguage provides visibleLanguage) {
+                    val visibleState = state.copy(settings = state.settings.copy(language = visibleLanguage))
+                    val entry by navController.currentBackStackEntryAsState()
+                    val route = entry?.destination?.route.orEmpty()
+                    val topLevel = route.isBlank() || route in topLevelRoutes
+                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                        val wide = maxWidth >= 840.dp
+                        Scaffold(
+                            contentWindowInsets = WindowInsets(0, 0, 0, 0),
+                            snackbarHost = { SnackbarHost(snackbar) }
+                        ) { padding ->
+                            if (topLevel && wide) {
+                                Row(Modifier.padding(padding).fillMaxSize()) {
+                                    CompactNavigationRail(route, navController)
+                                    Box(Modifier.weight(1f).topLevelSwipe(route, navController)) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
+                                }
+                            } else Box(Modifier.padding(padding).fillMaxSize()) {
+                                Box(
+                                    Modifier.fillMaxSize()
+                                        .padding(bottom = if (topLevel) 74.dp else 0.dp)
+                                        .then(if (topLevel) Modifier.topLevelSwipe(route, navController) else Modifier)
+                                ) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
+                                if (topLevel) {
+                                    CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter))
+                                    if (route != Destination.SEARCH.route) FloatingActionButton(
+                                        onClick = { navigate(navController, Destination.SEARCH.route) },
+                                        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 72.dp),
+                                        containerColor = MaterialTheme.colorScheme.primaryContainer
+                                    ) { Icon(Icons.Default.Search, AppLocalizer.text("Rechercher", visibleLanguage)) }
+                                }
+                            }
+                        }
+                    }
+                    if (visibleState.scanProgress.active) ScanProgressOverlay(visibleState.scanProgress)
+                    if (scanReports.isNotEmpty()) ScanReportDialog(scanReports, viewModel::dismissScanReports)
+                    if (visibleState.setupQueue.isNotEmpty() && scanReports.isEmpty()) {
+                        NewGamesSetupWizard(visibleState, viewModel, onPickCover)
+                    }
                 }
             }
         }
     }
-    if (state.scanProgress.active) ScanProgressOverlay(state.scanProgress)
-    if (scanReports.isNotEmpty()) ScanReportDialog(scanReports, viewModel::dismissScanReports)
-    if (state.setupQueue.isNotEmpty() && scanReports.isEmpty()) {
-        NewGamesSetupWizard(state, viewModel, onPickCover)
-    }
+}
+
+@Composable
+private fun LanguageTransition(language: AppLanguage, content: @Composable (AppLanguage) -> Unit) {
+    AnimatedContent(
+        targetState = language,
+        transitionSpec = {
+            fadeIn(tween(140, delayMillis = PageTransitionDurationMillis)) togetherWith
+                fadeOut(tween(PageTransitionDurationMillis))
+        },
+        label = "language transition"
+    ) { visibleLanguage -> content(visibleLanguage) }
 }
 
 @Composable
@@ -422,21 +451,52 @@ private fun OnboardingScreen(
 }
 
 @Composable
-private fun LanguageSelector(selected: AppLanguage, onSelect: (AppLanguage) -> Unit) {
+private fun LanguageSelector(
+    selected: AppLanguage,
+    onSelect: (AppLanguage) -> Unit,
+    modifier: Modifier = Modifier
+) {
     var expanded by remember { mutableStateOf(false) }
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Langue", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Box {
+        Box(Modifier.fillMaxWidth()) {
             OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
                 Text("${selected.flag}  ${selected.nativeName}", Modifier.weight(1f), maxLines = 1)
                 Icon(Icons.Default.ArrowDropDown, null)
             }
-            DropdownMenu(expanded, { expanded = false }, Modifier.fillMaxWidth()) {
+            DropdownMenu(expanded, { expanded = false }, Modifier.widthIn(min = 200.dp, max = 320.dp)) {
                 AppLanguage.entries.forEach { language ->
                     DropdownMenuItem(
                         text = { Text("${language.flag}  ${language.nativeName}") },
                         leadingIcon = { if (language == selected) Icon(Icons.Default.Check, null) },
                         onClick = { onSelect(language); expanded = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun SearchEngineSelector(
+    selected: SearchEngine,
+    onSelect: (SearchEngine) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Moteur de recherche", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
+                Text(selected.displayName, Modifier.weight(1f), maxLines = 1)
+                Icon(Icons.Default.ArrowDropDown, null)
+            }
+            DropdownMenu(expanded, { expanded = false }, Modifier.widthIn(min = 200.dp, max = 320.dp)) {
+                SearchEngine.entries.forEach { engine ->
+                    DropdownMenuItem(
+                        text = { Text(engine.displayName) },
+                        leadingIcon = { if (engine == selected) Icon(Icons.Default.Check, null) },
+                        onClick = { onSelect(engine); expanded = false }
                     )
                 }
             }
@@ -1160,7 +1220,7 @@ private fun SettingsScreen(
                 headlineContent = { Text("Actualiser les métadonnées manquantes") },
                 supportingContent = {
                     val refresh = state.metadataRefresh
-                    Text(if (refresh.running) "${refresh.completed}/${refresh.total} jeu(x) • VNDB et Yandex" else "Jaquettes, descriptions et développeurs • VNDB, sans tags")
+                    Text(if (refresh.running) "${refresh.completed}/${refresh.total} jeu(x) • VNDB et ${state.settings.searchEngine.displayName}" else "Jaquettes, descriptions et développeurs • VNDB, sans tags")
                 },
                 leadingContent = {
                     if (state.metadataRefresh.running) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
@@ -1168,12 +1228,25 @@ private fun SettingsScreen(
                 }
             ) }
             item { SectionTitle("Apparence") }
-            item { LanguageSelector(state.settings.language, vm::setLanguage) }
+            item {
+                LanguageSelector(
+                    state.settings.language,
+                    vm::setLanguage,
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+                )
+            }
+            item {
+                SearchEngineSelector(
+                    state.settings.searchEngine,
+                    vm::setSearchEngine,
+                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+                )
+            }
             item { SettingsSwitch("Couleurs dynamiques", state.settings.dynamicColor, vm::setDynamicColor) }
             item {
                 RoundedListItem(
                     headlineContent = { Text("Rechercher dans le navigateur") },
-                    supportingContent = { Text("Les recherches Yandex s’ouvrent directement dans le navigateur du téléphone.") },
+                    supportingContent = { Text("Les recherches du moteur sélectionné s’ouvrent directement dans le navigateur du téléphone.") },
                     trailingContent = { Switch(state.settings.openSearchInExternalBrowser, vm::setOpenSearchInExternalBrowser) }
                 )
             }
@@ -2019,7 +2092,7 @@ private fun F95ImportSheet(
     var step by remember(game.id) { mutableIntStateOf(0) }
     var selectedTags by remember(metadata?.sourceUrl) { mutableStateOf(metadata?.tags?.toSet().orEmpty()) }
     var selectedImage by remember(metadata?.sourceUrl) { mutableStateOf<CoverCandidate?>(null) }
-    var showYandexSearch by remember(game.id) { mutableStateOf(false) }
+    var showSearch by remember(game.id) { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     val existingNames = remember(existingTags) { existingTags.map { it.normalizedName }.toSet() }
     LaunchedEffect(metadata?.sourceUrl) {
@@ -2062,18 +2135,31 @@ private fun F95ImportSheet(
                         onClick = { onFetch(url) }, enabled = url.isNotBlank() && !state.loading,
                         modifier = Modifier.fillMaxWidth()
                     ) { Icon(Icons.Default.Search, null); Spacer(Modifier.width(6.dp)); Text("Analyser le lien") }
+                    Button(
+                        onClick = {
+                            state.browserUrl?.let { url ->
+                                if (openInExternalBrowser) uriHandler.openUri(url) else showSearch = true
+                            }
+                        },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = state.browserUrl != null && !state.loading
+                    ) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
+                        Spacer(Modifier.width(7.dp))
+                        Text(if (openInExternalBrowser) "Ouvrir dans le navigateur" else "Rechercher automatiquement")
+                    }
                     OutlinedButton(
                         onClick = {
                             state.browserUrl?.let { url ->
-                                if (openInExternalBrowser) uriHandler.openUri(url) else showYandexSearch = true
+                                if (openInExternalBrowser) showSearch = true else uriHandler.openUri(url)
                             }
                         },
                         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
                         enabled = state.browserUrl != null && !state.loading
                     ) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
+                        Icon(if (openInExternalBrowser) Icons.Default.Search else Icons.AutoMirrored.Filled.OpenInNew, null)
                         Spacer(Modifier.width(7.dp))
-                        Text(if (openInExternalBrowser) "Ouvrir la recherche sur Yandex" else "Rechercher le thread sur Yandex")
+                        Text(if (openInExternalBrowser) "Afficher dans Astra" else "Ouvrir dans le navigateur")
                     }
                 }
                 1 -> Column(Modifier.fillMaxWidth()) {
@@ -2131,20 +2217,26 @@ private fun F95ImportSheet(
             }
         }
     }
-    if (showYandexSearch && state.browserUrl != null) YandexF95PickerDialog(
+    if (showSearch && state.browserUrl != null) SearchF95PickerDialog(
         searchUrl = state.browserUrl,
+        searchEngine = state.searchEngine,
         onThreadSelected = { selectedUrl ->
-            showYandexSearch = false
+            showSearch = false
             url = selectedUrl
             onFetch(selectedUrl)
         },
-        onDismiss = { showYandexSearch = false }
+        onDismiss = { showSearch = false }
     )
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun YandexF95PickerDialog(searchUrl: String, onThreadSelected: (String) -> Unit, onDismiss: () -> Unit) {
+private fun SearchF95PickerDialog(
+    searchUrl: String,
+    searchEngine: SearchEngine,
+    onThreadSelected: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var selectionError by remember { mutableStateOf<String?>(null) }
     val latestSelection by rememberUpdatedState(onThreadSelected)
@@ -2153,7 +2245,7 @@ private fun YandexF95PickerDialog(searchUrl: String, onThreadSelected: (String) 
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 CompactHeader(
-                    "Rechercher sur Yandex",
+                    "Rechercher sur ${searchEngine.displayName}",
                     "Appui long sur le bon résultat F95Zone",
                     onBack = onDismiss
                 )
@@ -2163,9 +2255,10 @@ private fun YandexF95PickerDialog(searchUrl: String, onThreadSelected: (String) 
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.loadsImagesAutomatically = true
+                            settings.userAgentString = SEARCH_WEBVIEW_USER_AGENT
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                    // Let Yandex follow its own result redirects and open the selected thread.
+                                    // Let the selected engine follow its own result redirects.
                                     return false
                                 }
                             }
@@ -2209,7 +2302,7 @@ private fun CoverPickerSheet(
     game: GameEntity, state: CoverSearchState, openInExternalBrowser: Boolean, onCandidate: (CoverCandidate) -> Unit,
     onLocal: () -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit
 ) {
-    var showYandexBrowser by remember { mutableStateOf(false) }
+    var showSearch by remember { mutableStateOf(false) }
     val uriHandler = LocalUriHandler.current
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
@@ -2221,33 +2314,63 @@ private fun CoverPickerSheet(
             Button(
                 onClick = {
                     state.browserUrl?.let { url ->
-                        if (openInExternalBrowser) uriHandler.openUri(url) else showYandexBrowser = true
+                        if (openInExternalBrowser) uriHandler.openUri(url) else showSearch = true
                     }
                 },
                 enabled = state.browserUrl != null && !state.downloading,
                 modifier = Modifier.fillMaxWidth()
-            ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text(if (openInExternalBrowser) "Ouvrir Yandex Images" else "Yandex Images") }
+            ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text(if (openInExternalBrowser) "Ouvrir dans le navigateur" else "Rechercher automatiquement") }
+            OutlinedButton(
+                onClick = {
+                    state.browserUrl?.let { url ->
+                        if (openInExternalBrowser) showSearch = true else uriHandler.openUri(url)
+                    }
+                },
+                enabled = state.browserUrl != null && !state.downloading,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Icon(if (openInExternalBrowser) Icons.Default.ImageSearch else Icons.AutoMirrored.Filled.OpenInNew, null)
+                Spacer(Modifier.width(8.dp))
+                Text(if (openInExternalBrowser) "Afficher dans Astra" else "Ouvrir dans le navigateur")
+            }
             when {
+                state.loading -> CenterMessage("Recherche d’images…", Modifier.height(180.dp), true)
                 state.downloading -> CenterMessage("Préparation du recadrage…", Modifier.height(220.dp), true)
                 state.error != null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(state.error, color = MaterialTheme.colorScheme.error)
                     }
                 }
+                state.results.isNotEmpty() -> LazyVerticalGrid(
+                    GridCells.Adaptive(150.dp),
+                    Modifier.fillMaxWidth().heightIn(max = 360.dp).padding(top = 10.dp),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    items(state.results, key = { it.imageUrl }) { candidate ->
+                        CoverCandidateCard(candidate, onClick = { onCandidate(candidate) })
+                    }
+                }
                 else -> Spacer(Modifier.navigationBarsPadding().height(18.dp))
             }
         }
     }
-    if (showYandexBrowser && state.browserUrl != null) YandexImagePickerDialog(
+    if (showSearch && state.browserUrl != null) SearchImagePickerDialog(
         searchUrl = state.browserUrl,
-        onCandidate = { showYandexBrowser = false; onCandidate(it) },
-        onDismiss = { showYandexBrowser = false }
+        searchEngine = state.searchEngine,
+        onCandidate = { showSearch = false; onCandidate(it) },
+        onDismiss = { showSearch = false }
     )
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun YandexImagePickerDialog(searchUrl: String, onCandidate: (CoverCandidate) -> Unit, onDismiss: () -> Unit) {
+private fun SearchImagePickerDialog(
+    searchUrl: String,
+    searchEngine: SearchEngine,
+    onCandidate: (CoverCandidate) -> Unit,
+    onDismiss: () -> Unit
+) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var contextImageUrl by remember { mutableStateOf<String?>(null) }
     var selectionError by remember { mutableStateOf<String?>(null) }
@@ -2272,7 +2395,7 @@ private fun YandexImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
     fun useDisplayedImage() {
         val target = webView ?: return
         selectionError = null
-        target.evaluateJavascript(YANDEX_IMAGE_SELECTION_SCRIPT) { rawResult ->
+        target.evaluateJavascript(IMAGE_SELECTION_SCRIPT) { rawResult ->
             val payload = runCatching {
                 val jsonText = org.json.JSONTokener(rawResult).nextValue() as? String
                 jsonText?.takeIf(String::isNotBlank)?.let { org.json.JSONObject(it) }
@@ -2285,16 +2408,22 @@ private fun YandexImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                CompactHeader("Yandex Images", "Touchez une image pour afficher son aperçu", onBack = onDismiss)
+                CompactHeader("${searchEngine.displayName} Images", "Touchez une image pour afficher son aperçu", onBack = onDismiss)
                 AndroidView(
                     factory = { context ->
                         WebView(context).apply {
                             settings.javaScriptEnabled = true
                             settings.domStorageEnabled = true
                             settings.loadsImagesAutomatically = true
+                            settings.userAgentString = SEARCH_WEBVIEW_USER_AGENT
                             webViewClient = object : WebViewClient() {
+                                override fun onPageFinished(view: WebView, url: String) {
+                                    super.onPageFinished(view, url)
+                                    view.evaluateJavascript(IMAGE_SELECTION_BOOTSTRAP_SCRIPT, null)
+                                }
+
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                    // Keep navigation unrestricted so the user can use Yandex normally.
+                                    // Keep navigation unrestricted so the user can use the selected engine normally.
                                     return false
                                 }
                             }
@@ -2343,22 +2472,44 @@ private fun YandexImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
     DisposableEffect(Unit) { onDispose { webView?.destroy() } }
 }
 
-private val YANDEX_IMAGE_SELECTION_SCRIPT = """
+private val IMAGE_SELECTION_BOOTSTRAP_SCRIPT = """
     (function() {
+      function imageUrls(img) {
+        const raw = [img.getAttribute('data-iurl'), img.getAttribute('data-original'), img.getAttribute('data-src'), img.getAttribute('data-mediaurl'), img.getAttribute('data-murl'), img.getAttribute('data-full-url'), img.getAttribute('data-image-url'), img.getAttribute('data-bem'), img.getAttribute('data-state')].filter(Boolean).join(' ');
+        const normalized = raw.replace(/\\\//g, '/').replace(/\\u003A/gi, ':').replace(/\\u002F/gi, '/').replace(/\\u003F/gi, '?').replace(/\\u003D/gi, '=').replace(/\\u0026/gi, '&');
+        return (normalized.match(/https?:\/\/[^\s"'<>]+/g) || []).map(function(url) {
+          return url;
+        });
+      }
+      document.addEventListener('click', function(event) {
+        const img = event.target && event.target.closest ? event.target.closest('img') : null;
+        if (!img) return;
+        const urls = imageUrls(img);
+        window.__astraSelectedImage = {url: urls[0] || img.currentSrc || img.src || '', title: img.alt || ''};
+      }, true);
+    })();
+""".trimIndent()
+
+private val IMAGE_SELECTION_SCRIPT = """
+    (function() {
+      if (window.__astraSelectedImage && window.__astraSelectedImage.url) {
+        return JSON.stringify(window.__astraSelectedImage);
+      }
       const candidates = [];
-      document.querySelectorAll('[data-iurl], [data-original], [data-src], [data-bem], [data-state]').forEach(function(node) {
-        const raw = [node.getAttribute('data-iurl'), node.getAttribute('data-original'), node.getAttribute('data-src'), node.getAttribute('data-bem'), node.getAttribute('data-state')].filter(Boolean).join(' ');
-        const urls = raw.match(/https?:\/\/[^\s"'<>]+/g) || [];
+      document.querySelectorAll('[data-iurl], [data-original], [data-src], [data-mediaurl], [data-murl], [data-full-url], [data-image-url], [data-bem], [data-state]').forEach(function(node) {
+        const raw = [node.getAttribute('data-iurl'), node.getAttribute('data-original'), node.getAttribute('data-src'), node.getAttribute('data-mediaurl'), node.getAttribute('data-murl'), node.getAttribute('data-full-url'), node.getAttribute('data-image-url'), node.getAttribute('data-bem'), node.getAttribute('data-state')].filter(Boolean).join(' ');
+        const normalized = raw.replace(/\\\//g, '/').replace(/\\u003A/gi, ':').replace(/\\u002F/gi, '/').replace(/\\u003F/gi, '?').replace(/\\u003D/gi, '=').replace(/\\u0026/gi, '&');
+        const urls = normalized.match(/https?:\/\/[^\s"'<>]+/g) || [];
         urls.forEach(function(url) {
-          candidates.push({url: url.replace(/\\u002F/g, '/').replace(/\\u003F/g, '?').replace(/\\u003D/g, '='), title: node.getAttribute('aria-label') || '', score: 2000000000000});
+          candidates.push({url: url, title: node.getAttribute('aria-label') || node.getAttribute('alt') || '', score: 2000000000000});
         });
       });
       document.images.forEach(function(img) {
         const rect = img.getBoundingClientRect();
         const visible = rect.width > 80 && rect.height > 80 && rect.bottom > 0 && rect.top < window.innerHeight;
-        const preview = img.closest('[aria-selected="true"], .serp-item_selected, .MMImageContainer') || visible;
+        const preview = img.closest('[aria-selected="true"], [aria-current="true"], [role="dialog"], [role="main"]') || visible;
         const score = (preview ? 1000000000000 : 0) + (visible ? 10000000000 : 0) + (img.naturalWidth || 0) * (img.naturalHeight || 0);
-        [img.currentSrc, img.src, img.getAttribute('data-src')].forEach(function(url) {
+        [img.currentSrc, img.src, img.getAttribute('data-src'), img.getAttribute('data-original'), img.getAttribute('data-iurl')].forEach(function(url) {
           if (url) candidates.push({url: url, title: img.alt || '', score: score});
         });
       });
@@ -2366,7 +2517,7 @@ private val YANDEX_IMAGE_SELECTION_SCRIPT = """
       const ranked = valid.sort(function(a, b) { return b.score - a.score; });
       const top = ranked[0];
       const bestOriginal = top && ranked.find(function(item) {
-        return item.score >= top.score * 0.9 && item.url.indexOf('yandex.') < 0 && item.url.indexOf('yastatic.') < 0;
+        return item.score >= top.score * 0.9 && !/https:\/\/(?:[^/]+\.)?(?:yandex|yastatic|google|gstatic|bing|qwant|duckduckgo|ecosia)\./i.test(item.url);
       });
       const best = bestOriginal || top;
       return best ? JSON.stringify({url: best.url, title: best.title || ''}) : '';

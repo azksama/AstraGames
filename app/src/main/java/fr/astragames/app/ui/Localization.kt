@@ -1,6 +1,7 @@
 package fr.astragames.app.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
@@ -9,6 +10,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text as MaterialText
 import fr.astragames.app.settings.AppLanguage
+
+val LocalAppLanguage = compositionLocalOf { AppLanguage.ENGLISH }
 
 /**
  * Small in-app catalogue so the language can change immediately without restarting the activity.
@@ -112,8 +115,17 @@ object AppLocalizer {
         t("Restaurer une sauvegarde", "Restore a backup", "Restaurar una copia", "Восстановить резервную копию", "Sicherung wiederherstellen", "恢复备份", "バックアップを復元"),
         t("Actualiser les métadonnées manquantes", "Refresh missing metadata", "Actualizar metadatos faltantes", "Обновить отсутствующие метаданные", "Fehlende Metadaten aktualisieren", "刷新缺失的元数据", "不足しているメタデータを更新"),
         t("Jaquettes, descriptions et développeurs • VNDB, sans tags", "Covers, descriptions and developers • VNDB, no tags", "Carátulas, descripciones y desarrolladores • VNDB, sin etiquetas", "Обложки, описания и разработчики • VNDB, без тегов", "Cover, Beschreibungen und Entwickler • VNDB, ohne Tags", "封面、简介和开发者 • VNDB，不导入标签", "カバー、説明、開発者 • VNDB、タグなし"),
+        t("Moteur de recherche", "Search engine", "Motor de búsqueda", "Поисковая система", "Suchmaschine", "搜索引擎", "検索エンジン"),
+        t("Choisir le moteur de recherche", "Choose a search engine", "Elegir un motor de búsqueda", "Выберите поисковую систему", "Suchmaschine auswählen", "选择搜索引擎", "検索エンジンを選択"),
+        t("Les recherches du moteur sélectionné s’ouvrent directement dans le navigateur du téléphone.", "Searches from the selected engine open directly in the phone browser.", "Las búsquedas del motor seleccionado se abren directamente en el navegador del teléfono.", "Поиск выбранной системы открывается прямо в браузере телефона.", "Suchen der ausgewählten Suchmaschine werden direkt im Handy-Browser geöffnet.", "所选搜索引擎的搜索会直接在手机浏览器中打开。", "選択した検索エンジンの検索をスマートフォンのブラウザで直接開きます。"),
+        t("Ouvrir dans le navigateur", "Open in browser", "Abrir en el navegador", "Открыть в браузере", "Im Browser öffnen", "在浏览器中打开", "ブラウザで開く"),
+        t("Afficher dans Astra", "Show in Astra", "Mostrar en Astra", "Показать в Astra", "In Astra anzeigen", "在 Astra 中显示", "Astra で表示"),
+        t("Rechercher automatiquement", "Search automatically", "Buscar automáticamente", "Искать автоматически", "Automatisch suchen", "自动搜索", "自動検索"),
+        t("Aucune image trouvée automatiquement.", "No image found automatically.", "No se encontró ninguna imagen automáticamente.", "Автоматически изображения не найдены.", "Automatisch wurden keine Bilder gefunden.", "未自动找到图片。", "自動検索で画像が見つかりません。"),
+        t("Utiliser l’image affichée", "Use displayed image", "Usar la imagen mostrada", "Использовать показанное изображение", "Angezeigtes Bild verwenden", "使用当前显示的图片", "表示中の画像を使う"),
+        t("Recherche d’images", "Image search", "Búsqueda de imágenes", "Поиск изображений", "Bildersuche", "图片搜索", "画像検索"),
+        t("Recherche d’images…", "Image search…", "Búsqueda de imágenes…", "Поиск изображений…", "Bildersuche…", "图片搜索…", "画像検索…"),
         t("Rechercher dans le navigateur", "Open searches in browser", "Abrir búsquedas en el navegador", "Открывать поиск в браузере", "Suchen im Browser öffnen", "在浏览器中打开搜索", "検索をブラウザで開く"),
-        t("Les recherches Yandex s’ouvrent directement dans le navigateur du téléphone.", "Yandex searches open directly in the phone browser.", "Las búsquedas de Yandex se abren directamente en el navegador del teléfono.", "Поиск Yandex открывается прямо в браузере телефона.", "Yandex-Suchen werden direkt im Handy-Browser geöffnet.", "Yandex 搜索会直接在手机浏览器中打开。", "Yandex の検索をスマートフォンのブラウザで直接開きます。"),
         t("Favoris", "Favorites", "Favoritos", "Избранное", "Favoriten", "收藏", "お気に入り"),
         t("Filtres", "Filters", "Filtros", "Фильтры", "Filter", "筛选", "フィルター"),
         t("Réinitialiser", "Reset", "Restablecer", "Сбросить", "Zurücksetzen", "重置", "リセット"),
@@ -366,8 +378,8 @@ object AppLocalizer {
         catalog.associate { it.source to it.value(language) }
     }
 
-    fun text(source: String): String {
-        val current = language
+    fun text(source: String, selectedLanguage: AppLanguage = language): String {
+        val current = selectedLanguage
         if (current == AppLanguage.FRENCH) return source
         translations[current]?.get(source)?.let { return it }
         translateDynamic(source, current)?.let { return it }
@@ -459,6 +471,11 @@ object AppLocalizer {
                 AppLanguage.ENGLISH -> "Automatic ($engine)"; AppLanguage.SPANISH -> "Automático ($engine)"; AppLanguage.RUSSIAN -> "Автоматически ($engine)"; AppLanguage.GERMAN -> "Automatisch ($engine)"; AppLanguage.CHINESE -> "自动（$engine）"; AppLanguage.JAPANESE -> "自動（$engine）"; AppLanguage.FRENCH -> source
             }
         }
+        Regex("^Rechercher sur (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { engine ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Search on $engine"; AppLanguage.SPANISH -> "Buscar en $engine"; AppLanguage.RUSSIAN -> "Поиск в $engine"; AppLanguage.GERMAN -> "Auf $engine suchen"; AppLanguage.CHINESE -> "在 $engine 中搜索"; AppLanguage.JAPANESE -> "$engine で検索"; AppLanguage.FRENCH -> source
+            }
+        }
         Regex("^Filtres \\((\\d+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Filters ($number)"; AppLanguage.SPANISH -> "Filtros ($number)"; AppLanguage.RUSSIAN -> "Фильтры ($number)"; AppLanguage.GERMAN -> "Filter ($number)"; AppLanguage.CHINESE -> "筛选（$number）"; AppLanguage.JAPANESE -> "フィルター（$number）"; AppLanguage.FRENCH -> source
@@ -504,8 +521,9 @@ internal fun Text(
     overflow: TextOverflow = TextOverflow.Clip,
     style: TextStyle = LocalTextStyle.current
 ) {
+    val language = LocalAppLanguage.current
     MaterialText(
-        text = AppLocalizer.text(text),
+        text = AppLocalizer.text(text, language),
         modifier = modifier,
         color = color,
         fontWeight = fontWeight,

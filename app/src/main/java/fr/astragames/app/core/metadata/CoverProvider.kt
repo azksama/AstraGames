@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import androidx.core.content.FileProvider
 import fr.astragames.app.data.local.GameEntity
+import fr.astragames.app.settings.SearchEngine
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
@@ -11,7 +12,6 @@ import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
 import java.net.URLDecoder
-import java.net.URLEncoder
 import java.nio.charset.StandardCharsets
 import java.util.UUID
 
@@ -35,19 +35,19 @@ class CompositeCoverProvider(private val providers: List<CoverProvider>) : Cover
         .sortedByDescending(CoverCandidate::confidence)
 }
 
-class YandexCoverProvider(
+class SearchCoverProvider(
     private val context: Context? = null
 ) : CoverProvider {
     val configured: Boolean = true
 
-    fun searchUrl(game: GameEntity): String {
-        val engine = game.engine.lowercase().replace('_', ' ')
-        val query = "${game.title} $engine game"
-        return "https://yandex.com/images/search?text=${encoded(query)}"
+    fun searchUrl(game: GameEntity, searchEngine: SearchEngine = SearchEngine.YANDEX): String {
+        return searchEngine.imageSearchUrl(game.title)
     }
 
-    override suspend fun search(game: GameEntity): List<CoverCandidate> = withContext(Dispatchers.IO) {
-        val endpoint = searchUrl(game)
+    override suspend fun search(game: GameEntity): List<CoverCandidate> = search(game, SearchEngine.YANDEX)
+
+    suspend fun search(game: GameEntity, searchEngine: SearchEngine): List<CoverCandidate> = withContext(Dispatchers.IO) {
+        val endpoint = searchUrl(game, searchEngine)
         val response = Jsoup.connect(endpoint)
             .userAgent(BROWSER_USER_AGENT)
             .header("Accept-Language", "en-US,en;q=0.9")
@@ -57,13 +57,13 @@ class YandexCoverProvider(
             .followRedirects(true)
             .ignoreHttpErrors(true)
             .execute()
-        check(response.statusCode() in 200..299) { "Yandex Images est inaccessible (${response.statusCode()})." }
+        check(response.statusCode() in 200..299) { "${searchEngine.displayName} Images est inaccessible (${response.statusCode()})." }
         val body = response.body()
         parseHtml(body, endpoint).ifEmpty {
             if (body.contains("/httpservice/retry/enablejs") || body.contains("enablejs")) {
-                error("Yandex demande un navigateur interactif pour afficher les images.")
+                error("${searchEngine.displayName} demande un navigateur interactif pour afficher les images.")
             }
-            error("Yandex n'a renvoyé aucune image exploitable.")
+            error("${searchEngine.displayName} n'a renvoyé aucune image exploitable.")
         }
     }
 
@@ -72,11 +72,11 @@ class YandexCoverProvider(
         val results = linkedMapOf<String, CoverCandidate>()
         document.select("a[href]").forEach { anchor ->
             val href = anchor.attr("href")
-            val original = sequenceOf("imgurl", "url", "img_url", "orig_url")
-                .firstNotNullOfOrNull { queryParameter(href, it) }
+            val original = sequenceOf("imgurl", "mediaurl", "murl", "original", "img_url", "orig_url", "url")
+                .firstNotNullOfOrNull { queryParameter(href, it, searchUrl) }
                 ?: return@forEach
             if (!isRemoteResult(original)) return@forEach
-            val context = queryParameter(href, "imgrefurl")
+            val context = queryParameter(href, "imgrefurl", searchUrl)
             val thumbnail = anchor.selectFirst("img")?.let { image ->
                 sequenceOf(image.attr("data-src"), image.attr("src"))
                     .firstOrNull { it.startsWith("https://") }
@@ -87,8 +87,8 @@ class YandexCoverProvider(
             )
         }
 
-        document.select("[data-bem], [data-state], [data-iurl], [data-original]").forEach { node ->
-            val raw = listOf("data-iurl", "data-original", "data-bem", "data-state")
+        document.select("[data-bem], [data-state], [data-iurl], [data-original], [data-mediaurl], [data-murl]").forEach { node ->
+            val raw = listOf("data-iurl", "data-original", "data-mediaurl", "data-murl", "data-bem", "data-state")
                 .map { node.attr(it) }
                 .filter(String::isNotBlank)
                 .joinToString(" ")
@@ -129,10 +129,10 @@ class YandexCoverProvider(
         confidence = 1f - (index.coerceAtMost(9) * .05f)
     )
 
-    private fun queryParameter(rawHref: String, name: String): String? {
+    private fun queryParameter(rawHref: String, name: String, baseUrl: String): String? {
         val href = org.jsoup.parser.Parser.unescapeEntities(rawHref, false)
         val rawQuery = runCatching {
-            URI(if (href.startsWith('/')) "https://yandex.com$href" else href).rawQuery
+            URI(if (href.startsWith('/')) URI(baseUrl).resolve(href).toString() else href).rawQuery
         }.getOrNull().orEmpty()
         return rawQuery.split('&').firstOrNull { it.substringBefore('=') == name }
             ?.substringAfter('=', "")?.takeIf(String::isNotBlank)
@@ -143,8 +143,7 @@ class YandexCoverProvider(
         val uri = runCatching { URI(value) }.getOrNull() ?: return false
         val host = uri.host?.lowercase().orEmpty()
         return uri.scheme == "https" && host.isNotBlank() &&
-            host != "yandex.com" && !host.endsWith(".yandex.com") &&
-            host != "yastatic.net" && !host.endsWith(".yastatic.net")
+            SEARCH_HOSTS.none { host == it || host.endsWith(".$it") }
     }
 
     private fun looksLikeImageUrl(value: String): Boolean {
@@ -193,7 +192,6 @@ class YandexCoverProvider(
         FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", output)
     }
 
-    private fun encoded(value: String): String = URLEncoder.encode(value, StandardCharsets.UTF_8.toString())
     private fun hostOf(value: String): String = runCatching { URI(value).host?.removePrefix("www.") }.getOrNull().orEmpty()
 
     private companion object {
@@ -201,5 +199,11 @@ class YandexCoverProvider(
         const val BROWSER_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/127.0 Mobile Safari/537.36"
         val URL_PATTERN = Regex("""https?://[^\s"'<>\\\[\]]+""", RegexOption.IGNORE_CASE)
         val IMAGE_EXTENSIONS = setOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
+        val SEARCH_HOSTS = setOf(
+            "yandex.com", "yastatic.net", "google.com", "googleusercontent.com", "gstatic.com",
+            "bing.com", "qwant.com", "duckduckgo.com", "ecosia.org"
+        )
     }
 }
+
+typealias YandexCoverProvider = SearchCoverProvider

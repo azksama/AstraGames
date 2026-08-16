@@ -19,15 +19,15 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - création, édition, suppression, tri et classement multiple des tags par catégories ;
 - sélection rapide et groupée des tags pour chaque jeu, sans affectation globale implicite ;
 - dossiers et sous-dossiers Astra virtuels navigables, renommables et supprimables sans supprimer les jeux ;
-- panneau de filtres compact par moteur, source, dossier Astra, dossier système réel, tags, état et tri, incluant automatiquement les sous-dossiers ;
+- panneau de filtres compact par moteur, source, dossier Astra, dossier parent système réel, tags, état et tri, sans exposer les sous-dossiers comme entrées séparées ;
 - collections intelligentes intégrées et personnalisables avec règles moteur, tag recherchable et trié alphabétiquement, dossier, favori, jaquette, dates et durée de jeu, combinables en ET/OU ;
 - résolution guidée des doublons : comparaison côte à côte, choix du principal, fusion des métadonnées et de l’historique, récupération des sauvegardes et stratégie de conflits ;
 - suivi du temps de jeu par sessions et affichage de la durée cumulée ;
 - gestionnaire de runtimes JoiPlay avec détection dynamique des variantes installées, catalogue officiel mis en cache sept jours et notification des mises à jour ;
 - suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
 - sauvegarde et restauration ZIP du catalogue, des profils et des jaquettes, avec raccourci vers le dossier choisi ;
-- choix manuel de jaquettes dans Yandex Images sans filtre de contenu imposé, sélection de l’image affichée, menu au long appui, choix local et recadrage libre ;
-- enrichissement silencieux des nouveaux jeux via VNDB (sans importer ses tags), puis recherche Yandex du thread F95Zone avec URL canonique conservée dans la fiche ;
+- choix automatique et manuel de jaquettes dans le moteur sélectionné (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), sans filtre de contenu ajouté par Astra, sélection de l’image affichée, ouverture navigateur, choix local et recadrage libre ;
+- enrichissement silencieux des nouveaux jeux via VNDB (sans importer ses tags), puis recherche du thread F95Zone avec le moteur sélectionné et URL canonique conservée dans la fiche ;
 - import F95Zone pendant l'ajout ou l'édition : lien conservé dans la fiche, sélection des tags puis choix d'une image recadrable ;
 - assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
@@ -43,7 +43,7 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 
 ## Jaquettes et F95Zone
 
-Yandex Images et la recherche Yandex F95Zone sont ouvertes avec la requête directe, sans paramètre de filtrage de contenu ajouté par Astra. L’utilisateur peut utiliser le navigateur intégré ou activer l’option « Rechercher dans le navigateur » dans les paramètres. Tout thread accepté est réduit à l’URL canonique HTTPS F95Zone, terminée juste après son identifiant. VNDB complète silencieusement jaquette, description et développeur lors de l’ajout, sans importer ses tags ; le bouton des paramètres relance cet enrichissement sur les fiches incomplètes.
+Les recherches d’images et F95Zone utilisent le moteur choisi dans les paramètres (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), avec la requête directe et sans paramètre de filtrage de contenu ajouté par Astra. Les résultats d’images sont recherchés automatiquement à l’ouverture, et un bouton ouvre la même recherche dans le navigateur système. L’utilisateur peut aussi afficher les résultats dans le WebView intégré. Tout thread accepté est réduit à l’URL canonique HTTPS F95Zone, terminée juste après son identifiant. VNDB complète silencieusement jaquette, description et développeur lors de l’ajout, sans importer ses tags ; le bouton des paramètres relance cet enrichissement sur les fiches incomplètes.
 
 ## Architecture
 
