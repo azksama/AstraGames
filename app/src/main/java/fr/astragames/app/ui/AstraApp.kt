@@ -270,7 +270,7 @@ private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> 
         )
         if (badge > 0) {
             Box(
-                Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = 0.dp)
+                Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = 10.dp)
                     .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
                     .padding(horizontal = 5.dp, vertical = 1.dp)
             ) { Text(badge.toString(), color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall) }
@@ -662,7 +662,7 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
 private fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
     var showFilters by remember { mutableStateOf(false) }
     val activeCount = with(state.filters) {
-        listOfNotNull(sourceId, folderId, collectionId, systemFolderId, engine, tagIds.takeIf { it.isNotEmpty() }, missingOnly.takeIf { it }, sort.takeIf { it != LibrarySort.TITLE }).size
+        listOfNotNull(sourceId, folderId, collectionId, engine, (tagIds + excludedTagIds).takeIf { it.isNotEmpty() }, missingOnly.takeIf { it }, sort.takeIf { it != LibrarySort.TITLE }).size
     }
     val hasActiveFilters = activeCount > 0 || state.filters.favoritesOnly
     LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -686,7 +686,6 @@ private fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
 
 @Composable
 private fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDismiss: () -> Unit) {
-    var pickTags by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
@@ -699,36 +698,29 @@ private fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDism
                         contentPadding = PaddingValues(start = 16.dp, top = 8.dp, end = 16.dp, bottom = 24.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
+                        item { TagStateFilterSection(state, vm) }
                         item { FilterSwitch("Favoris uniquement", state.filters.favoritesOnly, vm::toggleFavoriteFilter) }
                         item { FilterSwitch("Jeux introuvables", state.filters.missingOnly, vm::toggleMissingFilter) }
-                        item { FilterChoiceSection("Moteur", listOf(null to "Tous") + GameEngine.entries.map { it to it.name.readableEngine() }, state.filters.engine, vm::filterEngine) }
-                        item { FilterChoiceSection("Source", listOf(null to "Toutes") + state.sources.map { it.id to it.displayName }, state.filters.sourceId, vm::filterSource) }
-                        item { AstraCollectionsFilterSection(state, vm) }
-                        item { FilterChoiceSection("Dossier système", listOf(null to "Tous") + state.systemFolders.map { it.id to it.label }, state.filters.systemFolderId, vm::filterSystemFolder) }
-                        item { FilterChoiceSection("Tri", LibrarySort.entries.map { it to it.label() }, state.filters.sort, vm::setSort) }
+                        item { FilterDropdown("Moteur", listOf(null to "Tous") + GameEngine.entries.map { it to it.name.readableEngine() }, state.filters.engine, vm::filterEngine) }
+                        item { FilterDropdown("Source", listOf(null to "Toutes") + state.sources.map { it.id to it.displayName }, state.filters.sourceId, vm::filterSource) }
                         item {
-                            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                                Text("Tags", style = MaterialTheme.typography.titleMedium)
-                                OutlinedButton(onClick = { pickTags = true }, Modifier.fillMaxWidth()) {
-                                    Icon(Icons.Default.Style, null); Spacer(Modifier.width(8.dp)); Text("${state.filters.tagIds.size} tag(s) sélectionné(s)")
-                                }
-                                if (state.filters.tagIds.isNotEmpty()) FilterChoiceSection(
-                                    "Correspondance",
-                                    listOf(TagMatchMode.ALL to "Tous", TagMatchMode.ANY to "Au moins un", TagMatchMode.EXCLUDE to "Exclure"),
-                                    state.filters.tagMode,
-                                    vm::setTagMode
-                                )
-                            }
+                            val choices = listOf(null to "Toutes") +
+                                state.folders.map { it.id to it.name } +
+                                state.collections.map { it.id to it.name }
+                            FilterDropdown(
+                                "Collections",
+                                choices,
+                                state.filters.collectionId ?: state.filters.folderId,
+                                { id -> if (id == null) vm.filterFolder(null) else if (state.folders.any { it.id == id }) vm.filterFolder(id) else vm.filterCollection(id) }
+                            )
                         }
+                        item { FilterDropdown("Tri", LibrarySort.entries.map { it to it.label() }, state.filters.sort, vm::setSort) }
                     }
                     Button(onClick = onDismiss, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) { Text("Afficher les jeux") }
                 }
             }
         }
     }
-    if (pickTags) GameTagPickerSheet(state.tags, state.tagCategories, state.filters.tagIds, {
-        vm.setTagFilters(it); pickTags = false
-    }, { pickTags = false })
 }
 
 private fun topLevelSlideDirection(
@@ -753,38 +745,6 @@ private fun topLevelSlideDirection(
 }
 
 @Composable
-private fun AstraCollectionsFilterSection(state: AstraUiState, vm: AstraViewModel) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Collections Astra", style = MaterialTheme.typography.titleMedium)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            item {
-                FilterChip(
-                    selected = state.filters.folderId == null && state.filters.collectionId == null,
-                    onClick = { vm.filterFolder(null) },
-                    label = { Text("Toutes") }
-                )
-            }
-            items(state.folders, key = { "folder-${it.id}" }) { folder ->
-                FilterChip(
-                    selected = state.filters.folderId == folder.id,
-                    onClick = { vm.filterFolder(folder.id) },
-                    label = { Text(folder.name, maxLines = 1) },
-                    leadingIcon = { Icon(Icons.Default.Folder, null, Modifier.size(17.dp)) }
-                )
-            }
-            items(state.collections, key = { "smart-${it.id}" }) { collection ->
-                FilterChip(
-                    selected = state.filters.collectionId == collection.id,
-                    onClick = { vm.filterCollection(collection.id) },
-                    label = { Text(collection.name, maxLines = 1) },
-                    leadingIcon = { Icon(Icons.Default.AutoAwesome, "Collection intelligente personnelle", Modifier.size(17.dp)) }
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun FilterSwitch(label: String, checked: Boolean, onToggle: () -> Unit) = ListItem(
     headlineContent = { Text(label) },
     trailingContent = { Switch(checked, { onToggle() }) },
@@ -793,15 +753,78 @@ private fun FilterSwitch(label: String, checked: Boolean, onToggle: () -> Unit) 
 )
 
 @Composable
-private fun <T> FilterChoiceSection(title: String, choices: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
-    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text(title, style = MaterialTheme.typography.titleMedium)
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            items(choices) { choice -> FilterChip(choice.first == selected, { onSelect(choice.first) }, { Text(choice.second, maxLines = 1) }) }
+@OptIn(ExperimentalLayoutApi::class)
+private fun TagStateFilterSection(state: AstraUiState, vm: AstraViewModel) {
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Text("Tags", style = MaterialTheme.typography.titleMedium)
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.tags.forEach { tag ->
+                val included = tag.id in state.filters.tagIds
+                val excluded = tag.id in state.filters.excludedTagIds
+                FilterChip(
+                    selected = included || excluded,
+                    onClick = { vm.cycleTagFilter(tag.id) },
+                    label = { Text(tag.name) },
+                    leadingIcon = when {
+                        included -> { { Icon(Icons.Default.Check, null, Modifier.size(16.dp)) } }
+                        excluded -> { { Icon(Icons.Default.Block, null, Modifier.size(16.dp)) } }
+                        else -> null
+                    },
+                   colors = when {
+                       excluded -> FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.errorContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onErrorContainer,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.onErrorContainer
+                       )
+                       included -> FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+                            selectedLabelColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                            selectedLeadingIconColor = MaterialTheme.colorScheme.onPrimaryContainer
+                       )
+                       else -> FilterChipDefaults.filterChipColors()
+                   }
+                )
+            }
         }
+        if (state.filters.tagIds.isNotEmpty()) FilterDropdown(
+            "Correspondance",
+            listOf(TagMatchMode.ALL to "Tous", TagMatchMode.ANY to "Au moins un"),
+            state.filters.tagMode,
+            vm::setTagMode
+        )
     }
 }
 
+@Composable
+private fun <T> FilterDropdown(title: String, choices: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text(title, style = MaterialTheme.typography.titleMedium)
+        Box {
+            ListItem(
+                headlineContent = {
+                    Text(
+                        choices.firstOrNull { it.first == selected }?.second ?: "",
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                },
+                trailingContent = { Icon(Icons.Default.ArrowDropDown, null) },
+                modifier = Modifier.fillMaxWidth().clip(RoundedCornerShape(16.dp)).clickable { expanded = true },
+                colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+            )
+            DropdownMenu(expanded, { expanded = false }, Modifier.width(320.dp).heightIn(max = 480.dp)) {
+                choices.forEach { choice ->
+                    DropdownMenuItem(
+                        text = { Text(choice.second, Modifier.fillMaxWidth(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        leadingIcon = { if (choice.first == selected) Icon(Icons.Default.Check, null) },
+                        onClick = { onSelect(choice.first); expanded = false }
+                    )
+                }
+            }
+        }
+    }
+}
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun GameCollection(
@@ -1622,9 +1645,13 @@ private fun GameDetailScreen(
             Modifier.padding(padding),
             contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
-            if (item.coverUri != null) {
-                item {
-                    Box(Modifier.fillMaxWidth().height((LocalConfiguration.current.screenHeightDp * .5f).dp)) {
+            item {
+                Box(
+                    Modifier.fillMaxWidth().then(
+                        if (item.coverUri != null) Modifier.height((LocalConfiguration.current.screenHeightDp * .5f).dp) else Modifier
+                    )
+                ) {
+                    if (item.coverUri != null) {
                         AsyncImage(
                             model = item.coverUri,
                             contentDescription = null,
@@ -1642,33 +1669,34 @@ private fun GameDetailScreen(
                             )
                         )
                     }
-                }
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    GameCover(
-                        item,
-                        Modifier.width(128.dp).aspectRatio(.72f).then(
-                            if (item.coverUri != null) Modifier.clickable { previewCover = true } else Modifier
-                        )
-                    )
-                    Surface(
-                        modifier = Modifier.weight(1f),
-                        shape = RoundedCornerShape(18.dp),
-                        color = MaterialTheme.colorScheme.surface.copy(alpha = .78f)
+                    Row(
+                        Modifier.align(Alignment.BottomCenter).fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(16.dp)
                     ) {
-                        Column(Modifier.padding(12.dp)) {
-                            Text(
-                                item.title,
-                                Modifier.clickable {
-                                    clipboard.setText(AnnotatedString(item.title))
-                                    android.widget.Toast.makeText(context, "Nom du jeu copié", android.widget.Toast.LENGTH_SHORT).show()
-                                },
-                                style = MaterialTheme.typography.titleLarge
+                        GameCover(
+                            item,
+                            Modifier.width(128.dp).aspectRatio(.72f).then(
+                                if (item.coverUri != null) Modifier.clickable { previewCover = true } else Modifier
                             )
-                            Spacer(Modifier.height(6.dp))
-                            item.developer?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                            item.version?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        )
+                        Surface(
+                            modifier = Modifier.weight(1f),
+                            shape = RoundedCornerShape(18.dp),
+                            color = MaterialTheme.colorScheme.surface.copy(alpha = .78f)
+                        ) {
+                            Column(Modifier.padding(12.dp)) {
+                                Text(
+                                    item.title,
+                                    Modifier.clickable {
+                                        clipboard.setText(AnnotatedString(item.title))
+                                        android.widget.Toast.makeText(context, "Nom du jeu copié", android.widget.Toast.LENGTH_SHORT).show()
+                                    },
+                                    style = MaterialTheme.typography.titleLarge
+                                )
+                                Spacer(Modifier.height(6.dp))
+                                item.developer?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                                item.version?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                            }
                         }
                     }
                 }
