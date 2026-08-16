@@ -1,6 +1,8 @@
 package fr.astragames.app.core.metadata
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -27,19 +29,34 @@ class VndbProvider {
             .put("fields", "title,alttitle,aliases,description,image{url,thumbnail},developers{name},extlinks{url,label,name}")
             .put("sort", "searchrank")
             .put("results", 5)
-        val connection = (URI("https://api.vndb.org/kana/vn").toURL().openConnection() as HttpURLConnection).apply {
-            requestMethod = "POST"
-            connectTimeout = 12_000
-            readTimeout = 20_000
-            doOutput = true
-            setRequestProperty("Content-Type", "application/json")
-            setRequestProperty("Accept", "application/json")
-            setRequestProperty("User-Agent", "AstraGames/1.0 (Android; metadata enrichment)")
+        var body: String? = null
+        var attempts = 0
+        while (body == null && attempts < 2) {
+            attempts++
+            val connection = (URI("https://api.vndb.org/kana/vn").toURL().openConnection() as HttpURLConnection).apply {
+                requestMethod = "POST"
+                connectTimeout = 12_000
+                readTimeout = 20_000
+                doOutput = true
+                setRequestProperty("Content-Type", "application/json")
+                setRequestProperty("Accept", "application/json")
+                setRequestProperty("User-Agent", "AstraGames/1.0 (Android; metadata enrichment)")
+            }
+            try {
+                connection.outputStream.use { it.write(request.toString().toByteArray(Charsets.UTF_8)) }
+                val status = connection.responseCode
+                when {
+                    status in 200..299 -> body = connection.inputStream.bufferedReader().use { it.readText() }
+                    status == 429 -> if (attempts < 2) delay(2_000) else Log.w("AstraMetadata", "VNDB limite de requêtes atteinte pour « $gameTitle »")
+                    else -> Log.w("AstraMetadata", "VNDB HTTP $status pour « $gameTitle »")
+                }
+            } catch (error: Exception) {
+                Log.w("AstraMetadata", "VNDB inaccessible pour « $gameTitle »", error)
+            } finally {
+                connection.disconnect()
+            }
         }
-        connection.outputStream.use { it.write(request.toString().toByteArray(Charsets.UTF_8)) }
-        if (connection.responseCode !in 200..299) return@withContext null
-        val body = connection.inputStream.bufferedReader().use { it.readText() }
-        parseResponse(body, gameTitle)
+        body?.let { parseResponse(it, gameTitle) }
     }
 
     internal fun parseResponse(json: String, requestedTitle: String): VndbMetadata? {
@@ -51,7 +68,7 @@ class VndbProvider {
         val image = selected.optJSONObject("image")
         val developers = selected.optJSONArray("developers").objects()
             .mapNotNull { it.optString("name").trim().ifBlank { null } }
-            .distinctBy { it.lowercase() }
+            .distinctBy { it.lowercase(java.util.Locale.ROOT) }
         val f95 = selected.optJSONArray("extlinks").objects()
             .asSequence().map { it.optString("url") }
             .plus(sequenceOf(selected.optString("description")))
@@ -92,7 +109,7 @@ class VndbProvider {
 
     private fun normalize(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)
         .replace(Regex("\\p{Mn}+"), "")
-        .lowercase()
+        .lowercase(java.util.Locale.ROOT)
         .replace(Regex("\\[[^\\]]+\\]"), " ")
         .replace(Regex("\\b(v(?:er(?:sion)?)?\\s*)?\\d+(?:[._-]\\d+)+\\b"), " ")
         // Keep every Unicode letter/number so Cyrillic, kana and Han titles remain searchable.

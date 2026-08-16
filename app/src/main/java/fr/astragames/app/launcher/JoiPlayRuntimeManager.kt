@@ -1,6 +1,7 @@
 package fr.astragames.app.launcher
 
 import android.content.Context
+import java.util.Locale
 import android.content.Intent
 import android.content.pm.PackageManager
 import fr.astragames.app.core.model.GameEngine
@@ -56,7 +57,7 @@ class JoiPlayRuntimeManager {
         packageManager.queryIntentActivities(launcherIntent, PackageManager.MATCH_DEFAULT_ONLY).forEach { resolved ->
             val packageName = resolved.activityInfo.packageName
             val label = resolved.loadLabel(packageManager).toString()
-            if (packageName.startsWith("cyou.joiplay", ignoreCase = true) || "joiplay" in label.lowercase()) {
+            if (packageName.startsWith("cyou.joiplay", ignoreCase = true) || "joiplay" in label.lowercase(Locale.ROOT)) {
                 addPackage(packageName)
             }
         }
@@ -117,7 +118,7 @@ class JoiPlayRuntimeManager {
     }
 
     private fun familyOf(value: String): String {
-        val normalized = value.lowercase().replace("’", "'")
+        val normalized = value.lowercase(Locale.ROOT).replace("’", "'")
         return when {
             "ren'py" in normalized || "renpy" in normalized -> "renpy"
             "rpg" in normalized -> "rpgmaker"

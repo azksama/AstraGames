@@ -74,4 +74,4 @@ class CompatibilityDiagnostic(private val launcher: JoiPlayLauncher) {
     private fun error(label: String, detail: String) = CompatibilityCheck(label, detail, CompatibilitySeverity.ERROR)
 }
 
-private fun String.readable() = lowercase().replace('_', ' ').replaceFirstChar(Char::uppercase)
+private fun String.readable() = lowercase(java.util.Locale.ROOT).replace('_', ' ').replaceFirstChar(Char::uppercase)

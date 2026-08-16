@@ -62,7 +62,7 @@ class F95ZoneProvider {
         val tags = document.select("span.js-tagList a.tagItem")
             .map { it.text().trim() }
             .filter { it.isNotBlank() }
-            .distinctBy { it.lowercase() }
+            .distinctBy { it.lowercase(java.util.Locale.ROOT) }
         val images = document.select("img.bbImage")
             .mapNotNull { image ->
                 val absolute = originalImageUrl(image, url) ?: return@mapNotNull null
@@ -125,7 +125,7 @@ class F95ZoneProvider {
     }
 
     private fun looksLikeImage(value: String): Boolean {
-        val path = value.substringBefore('?').lowercase()
+        val path = value.substringBefore('?').lowercase(java.util.Locale.ROOT)
         return "/attachments/" in path || path.endsWith(".jpg") || path.endsWith(".jpeg") ||
             path.endsWith(".png") || path.endsWith(".webp") || path.endsWith(".gif")
     }
@@ -150,7 +150,7 @@ class F95ZoneProvider {
     }
 
     private fun validate(uri: URI): URI {
-        val host = uri.host?.lowercase().orEmpty()
+        val host = uri.host?.lowercase(java.util.Locale.ROOT).orEmpty()
         require(uri.scheme == "https" && (host == "f95zone.to" || host.endsWith(".f95zone.to")) && uri.path.startsWith("/threads/")) {
             "Utilisez un lien HTTPS F95Zone commençant par https://f95zone.to/threads/."
         }
@@ -168,7 +168,7 @@ internal fun canonicalF95ThreadUrl(rawValue: String): String? {
 
     repeat(4) {
         val uri = runCatching { URI(candidate) }.getOrNull() ?: return null
-        val host = uri.host?.lowercase().orEmpty()
+        val host = uri.host?.lowercase(java.util.Locale.ROOT).orEmpty()
         if (
             uri.scheme.equals("https", ignoreCase = true) &&
             (host == "f95zone.to" || host.endsWith(".f95zone.to")) &&

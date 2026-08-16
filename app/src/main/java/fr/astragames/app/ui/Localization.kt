@@ -377,7 +377,41 @@ object AppLocalizer {
         t("Remplace le catalogue par le contenu de l’archive", "Replaces the catalog with the archive contents", "Sustituye el catálogo por el contenido del archivo", "Заменяет каталог содержимым архива", "Ersetzt den Katalog durch den Inhalt des Archivs", "用归档内容替换目录", "アーカイブの内容でカタログを置き換えます"),
         t("Système", "System", "Sistema", "Система", "System", "系统", "システム"),
         t("Clair", "Light", "Claro", "Светлая", "Hell", "浅色", "ライト"),
-        t("Sombre", "Dark", "Oscuro", "Тёмная", "Dunkel", "深色", "ダーク")
+        t("Sombre", "Dark", "Oscuro", "Тёмная", "Dunkel", "深色", "ダーク"),
+        t("Configurer", "Configure", "Configurar", "Настроить", "Konfigurieren", "配置", "設定"),
+        t("Favori", "Favorite", "Favorito", "Избранное", "Favorit", "收藏", "お気に入り"),
+        t("Rescanner", "Rescan", "Volver a escanear", "Пересканировать", "Erneut scannen", "重新扫描", "再スキャン"),
+        t("Image", "Image", "Imagen", "Изображение", "Bild", "图片", "画像"),
+        t("JoiPlay", "JoiPlay", "JoiPlay", "JoiPlay", "JoiPlay", "JoiPlay", "JoiPlay"),
+        t("Actions rapides", "Quick actions", "Acciones rápidas", "Быстрые действия", "Schnellaktionen", "快捷操作", "クイックアクション"),
+        t("Changer de vue", "Change view", "Cambiar vista", "Сменить вид", "Ansicht wechseln", "切换视图", "表示を切り替え"),
+        t("Chargement…", "Loading…", "Cargando…", "Загрузка…", "Laden…", "加载中…", "読み込み中…"),
+        t("Nombre de colonnes", "Number of columns", "Número de columnas", "Количество столбцов", "Anzahl der Spalten", "列数", "列数"),
+        t("Quitter la sélection", "Exit selection", "Salir de la selección", "Выйти из выбора", "Auswahl beenden", "退出选择", "選択を終了"),
+        t("Réinitialiser les filtres", "Reset filters", "Restablecer filtros", "Сбросить фильтры", "Filter zurücksetzen", "重置筛选", "フィルターをリセット"),
+        t("Au moins un", "At least one", "Al menos uno", "Хотя бы один", "Mindestens eines", "至少一条", "1つ以上"),
+        t("Catégories de tags", "Tag categories", "Categorías de etiquetas", "Категории тегов", "Tag-Kategorien", "标签分类", "タグのカテゴリ"),
+        t("Jeux manquants", "Missing games", "Juegos faltantes", "Пропавшие игры", "Fehlende Spiele", "缺失的游戏", "見つからないゲーム"),
+        t("Dossier supprimé", "Folder deleted", "Carpeta eliminada", "Папка удалена", "Ordner gelöscht", "文件夹已删除", "フォルダを削除しました"),
+        t("Sans jaquette", "No cover", "Sin carátula", "Без обложки", "Kein Cover", "无封面", "カバーなし"),
+        t("Tag supprimé", "Tag deleted", "Etiqueta eliminada", "Тег удалён", "Tag gelöscht", "标签已删除", "タグを削除しました"),
+        t("Vérifier à nouveau", "Check again", "Comprobar de nuevo", "Проверить снова", "Erneut prüfen", "重新检查", "もう一度確認"),
+        t("Aucun tag. Utilisez + pour en créer un directement.", "No tags yet. Use + to create one directly.", "Sin etiquetas. Usa + para crear una directamente.", "Тегов нет. Нажмите +, чтобы создать тег.", "Keine Tags. Mit + direkt einen erstellen.", "暂无标签，可使用 + 直接创建。", "タグがありません。+ で直接作成できます。"),
+        t("Ces réglages remplacent uniquement la détection automatique pour ce jeu.", "These settings only override automatic detection for this game.", "Estos ajustes solo sustituyen la detección automática para este juego.", "Эти настройки заменяют только автоматическое определение для этой игры.", "Diese Einstellungen überschreiben nur die automatische Erkennung für dieses Spiel.", "这些设置仅覆盖此游戏的自动检测。", "これらの設定は、このゲームの自動検出のみを上書きします。"),
+        t("Créez des catégories puis classez plusieurs tags en une fois.", "Create categories, then organize several tags at once.", "Crea categorías y luego organiza varias etiquetas a la vez.", "Создавайте категории и распределяйте сразу несколько тегов.", "Erstelle Kategorien und ordne mehrere Tags auf einmal zu.", "创建分类，然后一次整理多个标签。", "カテゴリを作成し、複数のタグをまとめて整理します。"),
+        t("Créez une collection avec des règles ET/OU.", "Create a collection with AND/OR rules.", "Crea una colección con reglas Y/O.", "Создайте коллекцию с правилами И/ИЛИ.", "Erstelle eine Sammlung mit UND/ODER-Regeln.", "创建带有与/或规则的收藏。", "AND/OR ルールでコレクションを作成します。"),
+        t("Fermer l'import F95Zone", "Close F95Zone import", "Cerrar la importación de F95Zone", "Закрыть импорт F95Zone", "F95Zone-Import schließen", "关闭 F95Zone 导入", "F95Zone の読み込みを閉じる"),
+        t("Fermer la jaquette", "Close cover", "Cerrar carátula", "Закрыть обложку", "Cover schließen", "关闭封面", "カバーを閉じる"),
+        t("Le dossier complet du jeu sera supprimé définitivement du téléphone.", "The game's full folder will be permanently deleted from the phone.", "La carpeta completa del juego se eliminará definitivamente del teléfono.", "Вся папка игры будет безвозвратно удалена с телефона.", "Der gesamte Spielordner wird dauerhaft vom Telefon gelöscht.", "游戏所在文件夹将被永久删除。", "ゲームのフォルダ全体がスマートフォンから完全に削除されます。"),
+        t("Le jeu sera retiré et ignoré lors des prochains scans. Vous pourrez le réautoriser dans Paramètres > Jeux supprimés.", "The game will be removed and ignored during future scans. You can restore it in Settings > Deleted games.", "El juego se retirará y se ignorará en los próximos escaneos. Puedes restaurarlo en Ajustes > Juegos eliminados.", "Игра будет удалена и проигнорирована при следующих сканированиях. Вы сможете разрешить её снова в Настройках > Удалённые игры.", "Das Spiel wird entfernt und bei künftigen Scans ignoriert. Du kannst es unter Einstellungen > Gelöschte Spiele wieder zulassen.", "游戏将被移除并在下次扫描时忽略，可在设置 > 已删除游戏中恢复。", "ゲームは削除され、次回以降のスキャンで無視されます。設定 > 削除したゲーム から再許可できます。"),
+        t("Les jeux et leurs fichiers seront conservés.", "Games and their files will be kept.", "Los juegos y sus archivos se conservarán.", "Игры и их файлы будут сохранены.", "Spiele und ihre Dateien bleiben erhalten.", "游戏及其文件会保留。", "ゲームとファイルは保持されます。"),
+        t("Les tags seront conservés sans catégorie.", "Tags will be kept without a category.", "Las etiquetas se conservarán sin categoría.", "Теги будут сохранены без категории.", "Tags bleiben ohne Kategorie erhalten.", "标签将保留但不设分类。", "タグはカテゴリなしで保持されます。"),
+        t("Préparation du recadrage…", "Preparing crop…", "Preparando el recorte…", "Подготовка обрезки…", "Zuschneiden wird vorbereitet…", "正在准备裁剪…", "トリミングを準備中…"),
+        t("Supprimer la jaquette", "Delete cover", "Eliminar carátula", "Удалить обложку", "Cover löschen", "删除封面", "カバーを削除"),
+        t("Plus de", "More than", "Más de", "Более", "Mehr als", "超过", "以上"),
+        t("Utiliser le lien", "Use link", "Usar enlace", "Использовать ссылку", "Link verwenden", "使用链接", "リンクを使用"),
+        t("Toutes les métadonnées sont déjà présentes", "All metadata is already up to date", "Todos los metadatos ya están actualizados", "Все метаданные уже актуальны", "Alle Metadaten sind bereits aktuell", "所有元数据都已是最新", "すべてのメタデータは最新です"),
+        t("Aucune métadonnée trouvée — vérifiez votre connexion", "No metadata found — check your connection", "No se encontraron metadatos — comprueba tu conexión", "Метаданные не найдены — проверьте подключение", "Keine Metadaten gefunden — Verbindung prüfen", "未找到元数据 — 请检查网络连接", "メタデータが見つかりません — 接続を確認してください")
     )
 
     private val translations = AppLanguage.entries.associateWith { language ->
@@ -486,6 +520,34 @@ object AppLocalizer {
             return when (language) {
                 AppLanguage.ENGLISH -> "Filters ($number)"; AppLanguage.SPANISH -> "Filtros ($number)"; AppLanguage.RUSSIAN -> "Фильтры ($number)"; AppLanguage.GERMAN -> "Filter ($number)"; AppLanguage.CHINESE -> "筛选（$number）"; AppLanguage.JAPANESE -> "フィルター（$number）"; AppLanguage.FRENCH -> source
             }
+        Regex("^Tout \\((\\d+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "All ($number)"; AppLanguage.SPANISH -> "Todo ($number)"; AppLanguage.RUSSIAN -> "Все ($number)"; AppLanguage.GERMAN -> "Alle ($number)"; AppLanguage.CHINESE -> "全部（$number）"; AppLanguage.JAPANESE -> "すべて（$number）"; AppLanguage.FRENCH -> source
+            }
+        }
+        Regex("^Tags \\((\\d+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Tags ($number)"; AppLanguage.SPANISH -> "Etiquetas ($number)"; AppLanguage.RUSSIAN -> "Теги ($number)"; AppLanguage.GERMAN -> "Tags ($number)"; AppLanguage.CHINESE -> "标签（$number）"; AppLanguage.JAPANESE -> "タグ（$number）"; AppLanguage.FRENCH -> source
+            }
+        }
+        count(Regex("(\\d+) jeu\\(x\\) restant\\(s\\)")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number game(s) remaining"; AppLanguage.SPANISH -> "$number juego(s) restante(s)"; AppLanguage.RUSSIAN -> "Осталось игр: $number"; AppLanguage.GERMAN -> "$number Spiel(e) übrig"; AppLanguage.CHINESE -> "剩余 $number 个游戏"; AppLanguage.JAPANESE -> "残り $number 本のゲーム"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) nouveau\\(x\\) jeu\\(x\\)")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number new game(s)"; AppLanguage.SPANISH -> "$number juego(s) nuevo(s)"; AppLanguage.RUSSIAN -> "Новых игр: $number"; AppLanguage.GERMAN -> "$number neues Spiel / neue Spiele"; AppLanguage.CHINESE -> "$number 个新游戏"; AppLanguage.JAPANESE -> "$number 本の新しいゲーム"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) tag\\(s\\) sélectionné\\(s\\)")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number tag(s) selected"; AppLanguage.SPANISH -> "$number etiqueta(s) seleccionada(s)"; AppLanguage.RUSSIAN -> "Выбрано тегов: $number"; AppLanguage.GERMAN -> "$number Tag(s) ausgewählt"; AppLanguage.CHINESE -> "已选择 $number 个标签"; AppLanguage.JAPANESE -> "$number 個のタグを選択"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) jeu\\(x\\) ignoré\\(s\\) pendant les scans")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number game(s) ignored during scans"; AppLanguage.SPANISH -> "$number juego(s) ignorado(s) durante los escaneos"; AppLanguage.RUSSIAN -> "Игнорировано игр при сканировании: $number"; AppLanguage.GERMAN -> "$number Spiel(e) beim Scannen ignoriert"; AppLanguage.CHINESE -> "扫描时忽略了 $number 个游戏"; AppLanguage.JAPANESE -> "スキャンで $number 本のゲームを無視"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) exemplaires")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number copies"; AppLanguage.SPANISH -> "$number copias"; AppLanguage.RUSSIAN -> "$number копий"; AppLanguage.GERMAN -> "$number Exemplare"; AppLanguage.CHINESE -> "$number 份副本"; AppLanguage.JAPANESE -> "$number コピー"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("(\\d+) lancements")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number launches"; AppLanguage.SPANISH -> "$number lanzamientos"; AppLanguage.RUSSIAN -> "$number запусков"; AppLanguage.GERMAN -> "$number Starts"; AppLanguage.CHINESE -> "$number 次启动"; AppLanguage.JAPANESE -> "$number 回の起動"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
         }
         Regex("^Version (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { version ->
             return when (language) {

@@ -1,6 +1,8 @@
 package fr.astragames.app.data.repository
 
 import android.content.Context
+import kotlin.coroutines.cancellation.CancellationException
+import java.util.Locale
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
@@ -25,9 +27,17 @@ import fr.astragames.app.core.model.ScanReportItemStatus
 import fr.astragames.app.core.search.parseTextTagList
 import fr.astragames.app.core.metadata.canonicalF95ThreadUrl
 import kotlinx.coroutines.flow.Flow
+import org.json.JSONArray
+import org.json.JSONObject
+import org.json.JSONTokener
 import java.text.Normalizer
 import java.io.File
 import java.util.UUID
+
+private data class ImportedTag(
+    val name: String,
+    val groupName: String? = null
+)
 
 class GameRepository(
     private val context: Context,
@@ -67,7 +77,13 @@ class GameRepository(
     suspend fun toggleSourceRecursive(id: String) = dao.toggleSourceRecursive(id)
 
     suspend fun removeSource(id: String, removeGames: Boolean = false) {
-        if (removeGames) dao.deleteSourceAndGames(id) else dao.deleteSource(id)
+        if (!removeGames) {
+            dao.deleteSource(id)
+            return
+        }
+        val games = dao.getGamesForSource(id)
+        dao.deleteSourceAndGames(id)
+        games.forEach { game -> removeManagedCover(game.coverUri) }
     }
 
     suspend fun scanSource(id: String, onProgress: (ScanProgressUpdate) -> Unit = {}) = scanner.scan(id, onProgress)
@@ -114,10 +130,17 @@ class GameRepository(
         val directory = File(context.filesDir, "covers").apply { mkdirs() }
         val previous = dao.getGame(id)?.coverUri?.let(Uri::parse)
         val destination = File(directory, "$id-${System.currentTimeMillis()}.jpg")
-        context.contentResolver.openInputStream(uri)?.use { input ->
+        try {
+            context.contentResolver.openInputStream(uri)?.use { input ->
             destination.outputStream().use(input::copyTo)
         } ?: error("Impossible de lire l'image recadrée.")
-        dao.setCover(id, Uri.fromFile(destination).toString())
+            dao.setCover(id, Uri.fromFile(destination).toString())
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            runCatching { destination.delete() }
+            throw error
+        }
         previous?.path?.let(::File)?.takeIf { it.parentFile == directory && it != destination }?.delete()
     }
 
@@ -179,10 +202,10 @@ class GameRepository(
         val secondary = dao.getGame(secondaryId) ?: error("Jeu secondaire introuvable.")
         val primarySaves = findSaveFiles(primary)
         val secondarySaves = findSaveFiles(secondary)
-        val primaryPaths = primarySaves.associateBy { it.relativePath.lowercase() }
+        val primaryPaths = primarySaves.associateBy { it.relativePath.lowercase(Locale.ROOT) }
         return DuplicateMergePreview(
             primary, secondary, primarySaves, secondarySaves,
-            secondarySaves.filter { it.relativePath.lowercase() in primaryPaths }
+            secondarySaves.filter { it.relativePath.lowercase(Locale.ROOT) in primaryPaths }
         )
     }
 
@@ -274,7 +297,7 @@ class GameRepository(
         fun find(folder: DocumentFile, depth: Int): DocumentFile? {
             if (depth > 6) return null
             val children = runCatching { folder.listFiles().toList() }.getOrDefault(emptyList())
-            children.firstOrNull { it.isDirectory && it.name.orEmpty().lowercase() in SAVE_FOLDER_NAMES }?.let { return it }
+            children.firstOrNull { it.isDirectory && it.name.orEmpty().lowercase(Locale.ROOT) in SAVE_FOLDER_NAMES }?.let { return it }
             return children.asSequence().filter(DocumentFile::isDirectory).mapNotNull { find(it, depth + 1) }.firstOrNull()
         }
         return find(root, 0)?.uri ?: root.uri
@@ -302,9 +325,9 @@ class GameRepository(
             folder.listFiles().forEach { child ->
                 val name = child.name.orEmpty()
                 val relative = listOf(path, name).filter(String::isNotBlank).joinToString("/")
-                val inSave = insideSaveFolder || name.lowercase() in SAVE_FOLDER_NAMES
+                val inSave = insideSaveFolder || name.lowercase(Locale.ROOT) in SAVE_FOLDER_NAMES
                 if (child.isDirectory) walk(child, relative, inSave, depth + 1)
-                else if (inSave || name.substringAfterLast('.', "").lowercase() in SAVE_EXTENSIONS) {
+                else if (inSave || name.substringAfterLast('.', "").lowercase(Locale.ROOT) in SAVE_EXTENSIONS) {
                     result += SaveFileDescriptor(relative, child.uri.toString(), child.length(), child.lastModified())
                 }
             }
@@ -485,19 +508,163 @@ class GameRepository(
     }
 
     suspend fun importTags(uri: Uri): Int {
-        val text = context.contentResolver.openInputStream(uri)?.bufferedReader()?.use { it.readText() }.orEmpty()
-        val extension = context.contentResolver.getType(uri).orEmpty()
-        val names = when {
-            extension.contains("json") || text.trimStart().startsWith('[') -> Regex("\"(?:name\"\\s*:\\s*\")?([^\"]+)\"")
-                .findAll(text).map { it.groupValues[1] }.filterNot { it == "name" || it == "group" }.toList()
-            extension.contains("csv") -> text.lineSequence().dropWhile { it.contains("name", true) }.map { it.substringBefore(',') }.toList()
-            else -> text.lineSequence().toList()
-        }.map { it.trim() }.filter { it.isNotBlank() }.distinctBy { normalize(it) }
-        return dao.insertTags(names.map { TagEntity(UUID.randomUUID().toString(), it, normalize(it)) }).count { it != -1L }
+        val text = context.contentResolver.openInputStream(uri)
+            ?.bufferedReader(Charsets.UTF_8)
+            ?.use { it.readText() }
+            ?: error("Impossible de lire le fichier de tags.")
+        val content = text.removePrefix("\uFEFF")
+        if (content.isBlank()) return 0
+
+        val mimeType = context.contentResolver.getType(uri).orEmpty().lowercase(Locale.ROOT)
+        val extension = uri.lastPathSegment
+            ?.substringAfterLast('.', "")
+            ?.lowercase(Locale.ROOT)
+            .orEmpty()
+        val trimmed = content.trimStart()
+        val imported = when {
+            mimeType.contains("json") || extension == "json" || trimmed.startsWith('[') || trimmed.startsWith('{') ->
+                parseJsonTags(content)
+            mimeType.contains("csv") || extension == "csv" -> parseCsvTags(content)
+            else -> parseTextTagList(content).map(::ImportedTag)
+        }
+            .map { it.copy(name = it.name.trim(), groupName = it.groupName?.trim()?.ifBlank { null }) }
+            .filter { it.name.isNotBlank() }
+            .distinctBy { normalize(it.name) }
+
+        if (imported.isEmpty()) return 0
+
+        val categories = dao.getTagCategories().associateBy { normalize(it.name) }.toMutableMap()
+        val canonicalNames = categories.mapValues { (_, category) -> category.name }.toMutableMap()
+        var nextOrder = (categories.values.maxOfOrNull { it.sortOrder } ?: -1) + 1
+        imported.mapNotNull { it.groupName }
+            .distinctBy(::normalize)
+            .forEach { groupName ->
+                val normalized = normalize(groupName)
+                if (categories[normalized] == null) {
+                    val category = TagCategoryEntity(UUID.randomUUID().toString(), groupName, normalized, nextOrder++)
+                    dao.upsertTagCategory(category)
+                    categories[normalized] = category
+                    canonicalNames[normalized] = groupName
+                }
+            }
+
+        val known = dao.getTags().mapTo(mutableSetOf()) { it.normalizedName }
+        val newTags = imported.mapNotNull { tag ->
+            val normalized = normalize(tag.name)
+            if (!known.add(normalized)) return@mapNotNull null
+            TagEntity(
+                UUID.randomUUID().toString(), tag.name, normalized,
+                tag.groupName?.let(::normalize)?.let(canonicalNames::get)
+            )
+        }
+        return dao.insertTags(newTags).count { it != -1L }
     }
 
+    private fun parseJsonTags(raw: String): List<ImportedTag> {
+        val root = try {
+            JSONTokener(raw).nextValue()
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            error("Le fichier JSON des tags est invalide.")
+        }
+        return collectJsonTags(root, allowScalar = true)
+    }
+
+    private fun collectJsonTags(value: Any?, allowScalar: Boolean = false): List<ImportedTag> = when (value) {
+        is JSONArray -> buildList {
+            for (index in 0 until value.length()) addAll(collectJsonTags(value.opt(index), allowScalar = true))
+        }
+        is JSONObject -> buildList {
+            val name = firstJsonString(value, "name", "tag", "label")
+            val group = firstJsonString(value, "groupName", "group", "categoryName", "category")
+            if (name != null) add(ImportedTag(name, group))
+            listOf("tags", "data", "items").forEach { key ->
+                if (value.has(key)) addAll(collectJsonTags(value.opt(key), allowScalar = true))
+            }
+        }
+        is String -> if (allowScalar) listOf(ImportedTag(value)) else emptyList()
+        else -> emptyList()
+    }
+
+    private fun firstJsonString(value: JSONObject, vararg keys: String): String? =
+        keys.asSequence()
+            .map { key -> value.optString(key, "").trim() }
+            .firstOrNull(String::isNotBlank)
+
+    private fun parseCsvTags(raw: String): List<ImportedTag> {
+        val rows = parseCsvRows(raw)
+        if (rows.isEmpty()) return emptyList()
+        val header = rows.first().map(::csvHeaderKey)
+        val nameIndex = header.indexOfFirst { it in setOf("name", "tag", "label", "nom", "tagname") }
+        val groupIndex = header.indexOfFirst { it in setOf("group", "groupname", "category", "categoryname", "groupe", "categorie") }
+        val hasHeader = nameIndex >= 0
+        val valueIndex = if (hasHeader) nameIndex else 0
+        return rows.drop(if (hasHeader) 1 else 0).mapNotNull { row ->
+            val name = row.getOrNull(valueIndex)?.trim().orEmpty()
+            if (name.isBlank()) null else ImportedTag(name, row.getOrNull(groupIndex)?.trim()?.ifBlank { null })
+        }
+    }
+
+
+
+    /** Choisit le séparateur CSV (virgule ou point-virgule) en ignorant les champs cités. */
+    private fun detectCsvSeparator(raw: String): Char {
+        var quoted = false
+        var commas = 0
+        var semicolons = 0
+        var index = 0
+        while (index < raw.length) {
+            when (raw[index]) {
+                '"' -> if (quoted && raw.getOrNull(index + 1) == '"') index++ else quoted = !quoted
+                ',' -> if (!quoted) commas++
+                ';' -> if (!quoted) semicolons++
+                else -> Unit
+            }
+            index++
+        }
+        return if (semicolons > commas) ';' else ','
+    }
+
+    private fun parseCsvRows(raw: String): List<List<String>> {
+        val separator = detectCsvSeparator(raw)
+        val rows = mutableListOf<List<String>>()
+        val row = mutableListOf<String>()
+        val field = StringBuilder()
+        var quoted = false
+        var index = 0
+        fun finishField() {
+            row += field.toString().trim()
+            field.setLength(0)
+        }
+        fun finishRow() {
+            finishField()
+            if (row.any(String::isNotBlank)) rows += row.toList()
+            row.clear()
+        }
+        while (index < raw.length) {
+            when (val character = raw[index]) {
+                '"' -> if (quoted && raw.getOrNull(index + 1) == '"') {
+                    field.append('"')
+                    index++
+                } else {
+                    quoted = !quoted
+                }
+                separator -> if (quoted) field.append(character) else finishField()
+                '\n' -> if (quoted) field.append(character) else finishRow()
+                '\r' -> if (quoted) field.append(character) else if (raw.getOrNull(index + 1) != '\n') finishRow()
+                else -> field.append(character)
+            }
+            index++
+        }
+        if (field.isNotEmpty() || row.isNotEmpty()) finishRow()
+        return rows
+    }
+
+    private fun csvHeaderKey(value: String): String = normalize(value).replace(Regex("[^\\p{L}\\p{N}]"), "")
+
     private fun normalize(value: String): String = Normalizer.normalize(value.trim(), Normalizer.Form.NFD)
-        .replace(Regex("\\p{Mn}+"), "").lowercase()
+        .replace(Regex("\\p{Mn}+"), "").lowercase(Locale.ROOT)
 
     private fun String?.cleanOrNull() = this?.trim()?.ifBlank { null }
 

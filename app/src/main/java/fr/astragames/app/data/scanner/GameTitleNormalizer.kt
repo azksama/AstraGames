@@ -11,7 +11,7 @@ object GameTitleNormalizer {
         var title = raw.trim().replace('_', ' ').replace(Regex("\\s+"), " ")
         val developer = developerRegex.find(title)?.groupValues?.get(1)?.trim()
         title = title.replace(developerRegex, "")
-        val productCode = productRegex.find(title)?.groupValues?.get(1)?.uppercase()
+        val productCode = productRegex.find(title)?.groupValues?.get(1)?.uppercase(java.util.Locale.ROOT)
         title = title.replace(productRegex, "").trim()
         val version = versionRegex.find(title)?.groupValues?.get(1)
         title = title.replace(versionRegex, "").trim().trim('-', '–', '—')

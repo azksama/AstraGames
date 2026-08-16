@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import fr.astragames.app.BuildConfig
 import android.annotation.SuppressLint
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
@@ -56,6 +57,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -469,7 +471,7 @@ private fun LanguageSelector(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Langue", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Box(Modifier.fillMaxWidth()) {
             OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
@@ -496,7 +498,7 @@ private fun SearchEngineSelector(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Moteur de recherche", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Box(Modifier.fillMaxWidth()) {
             OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
@@ -523,7 +525,7 @@ private fun CoverBlurSelector(
     modifier: Modifier = Modifier
 ) {
     var expanded by remember { mutableStateOf(false) }
-    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text("Flou des jaquettes", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Box(Modifier.fillMaxWidth()) {
             OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
@@ -713,9 +715,9 @@ private fun topLevelSlideDirection(
     ) {
         // Home and Settings are opposite anchors: keep both directions visually consistent.
         return if (fromRoute == Destination.LIBRARY.route) {
-            AnimatedContentTransitionScope.SlideDirection.Right
-        } else {
             AnimatedContentTransitionScope.SlideDirection.Left
+        } else {
+            AnimatedContentTransitionScope.SlideDirection.Right
         }
     }
     return if (to > from) AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right
@@ -861,7 +863,7 @@ private fun GameCover(game: GameEntity, modifier: Modifier = Modifier) {
         else Box(
             Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant))),
             contentAlignment = Alignment.Center
-        ) { Text(game.title.take(1).uppercase(), style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary) }
+        ) { Text(game.title.take(1).uppercase(java.util.Locale.ROOT), style = MaterialTheme.typography.displaySmall, color = MaterialTheme.colorScheme.primary) }
     }
 }
 
@@ -1080,7 +1082,7 @@ private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (
                     modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).heightIn(min = 40.dp),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                 ) {
-                    Icon(Icons.Default.CreateNewFolder, null, Modifier.size(19.dp)); Spacer(Modifier.width(6.dp)); Text("Nouveau dossier")
+                    Icon(Icons.Default.CreateNewFolder, null, Modifier.size(19.dp)); Spacer(Modifier.width(6.dp)); Text("Nouvelle collection")
                 }
             }
             items(visibleFolders, key = { it.id }) { folder ->
@@ -1111,7 +1113,7 @@ private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (
             if (visibleFolders.isEmpty() && displayedGames.isEmpty()) item { CenterMessage("Aucun dossier ni jeu ici", Modifier.fillMaxWidth().height(120.dp)) }
         }
     }
-    if (creating) NameDialog("Nouveau dossier", "", { name -> vm.createFolder(name, currentId); creating = false }, { creating = false })
+    if (creating) NameDialog("Nouvelle collection", "", { name -> vm.createFolder(name, currentId); creating = false }, { creating = false })
     editing?.let { folder -> NameDialog("Modifier le dossier", folder.name, { name -> vm.renameFolder(folder, name); editing = null }, { editing = null }) }
     deleting?.let { folder -> ConfirmDialog(
         "Supprimer ${folder.name} ?",
@@ -1257,7 +1259,7 @@ private fun SettingsScreen(
                 RoundedListItem(
                     headlineContent = { Text(source.displayName) }, leadingContent = { Icon(Icons.Default.Source, null) },
                     supportingContent = {
-                        Column { Text("${source.gamesCount} jeux • ${source.lastScanStatus.lowercase()}"); Row(verticalAlignment = Alignment.CenterVertically) {
+                        Column { Text("${source.gamesCount} jeux • ${source.lastScanStatus.lowercase(java.util.Locale.ROOT)}"); Row(verticalAlignment = Alignment.CenterVertically) {
                             TextButton(onClick = { vm.scanSource(source.id) }) { Text("Scanner") }
                             TextButton(onClick = { vm.showLatestScanReport(source.id) }, enabled = source.lastScanAt != null) { Text("Rapport") }
                             IconButton(onClick = { sourceToDelete = source }) { Icon(Icons.Default.DeleteOutline, "Supprimer") }
@@ -1286,7 +1288,14 @@ private fun SettingsScreen(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
-            item { SectionTitle("Apparence") }
+            item {
+                RoundedListItem(
+                    headlineContent = { Text("Rechercher dans le navigateur") },
+                    supportingContent = { Text("Les recherches du moteur sélectionné s’ouvrent directement dans le navigateur du téléphone.") },
+                    trailingContent = { Switch(state.settings.openSearchInExternalBrowser, vm::setOpenSearchInExternalBrowser) }
+                )
+            }
+            item { SectionTitle("Apparence", Modifier.padding(top = 12.dp, bottom = 8.dp)) }
             item {
                 LanguageSelector(
                     state.settings.language,
@@ -1302,13 +1311,7 @@ private fun SettingsScreen(
                 )
             }
             item { SettingsSwitch("Couleurs dynamiques", state.settings.dynamicColor, vm::setDynamicColor) }
-            item {
-                RoundedListItem(
-                    headlineContent = { Text("Rechercher dans le navigateur") },
-                    supportingContent = { Text("Les recherches du moteur sélectionné s’ouvrent directement dans le navigateur du téléphone.") },
-                    trailingContent = { Switch(state.settings.openSearchInExternalBrowser, vm::setOpenSearchInExternalBrowser) }
-                )
-            }
+
             item { LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(ThemeMode.entries) { mode -> FilterChip(state.settings.themeMode == mode, { vm.setTheme(mode) }, { Text(mode.label()) }) }
             } }
@@ -1356,6 +1359,15 @@ private fun SettingsScreen(
                 modifier = Modifier.clickable { confirmRestore = true }, headlineContent = { Text("Restaurer une sauvegarde") },
                 supportingContent = { Text("Remplace le catalogue par le contenu de l’archive") }, leadingContent = { Icon(Icons.Default.Restore, null) }
             ) }
+            item {
+                Text(
+                    "Version ${BuildConfig.VERSION_NAME}",
+                    modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 10.dp),
+                    textAlign = TextAlign.Center,
+                    style = MaterialTheme.typography.labelMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
         }
     }
     sourceToDelete?.let { source -> ConfirmDialog(
@@ -1415,12 +1427,15 @@ private fun GameDetailScreen(
                 model = item.coverUri,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth().height(470.dp).blur(30.dp)
+                modifier = Modifier.fillMaxSize().blur(30.dp)
             )
             Box(
-                Modifier.fillMaxWidth().height(480.dp).background(
+                Modifier.fillMaxSize().background(
                     Brush.verticalGradient(
-                        listOf(Color.Transparent, MaterialTheme.colorScheme.background.copy(alpha = .22f), MaterialTheme.colorScheme.background)
+                        0f to Color.Transparent,
+                        0.45f to Color.Transparent,
+                        0.75f to MaterialTheme.colorScheme.background.copy(alpha = .28f),
+                        1f to MaterialTheme.colorScheme.background
                     )
                 )
             )
@@ -1965,7 +1980,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     var importedF95TagNames by remember(game.id) { mutableStateOf(emptySet<String>()) }
     LaunchedEffect(state.tags, importedF95TagNames) {
         if (importedF95TagNames.isNotEmpty()) {
-            selectedTags = selectedTags + state.tags.filter { it.name.trim().lowercase() in importedF95TagNames }.map { it.id }
+            selectedTags = selectedTags + state.tags.filter { it.name.trim().lowercase(java.util.Locale.ROOT) in importedF95TagNames }.map { it.id }
         }
     }
 
@@ -2017,7 +2032,7 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
     if (showF95) F95ImportSheet(game, state.tags, f95State, state.settings.openSearchInExternalBrowser, { vm.fetchF95Metadata(game.id, it) }, {
         vm.prepareF95Search(game.id, game.title)
     }, { tags, image ->
-        importedF95TagNames = tags.map { it.trim().lowercase() }.toSet()
+        importedF95TagNames = tags.map { it.trim().lowercase(java.util.Locale.ROOT) }.toSet()
         vm.applyF95Tags(game.id, tags)
         image?.let { vm.chooseF95Cover(game.id, it) }
         showF95 = false
@@ -2233,7 +2248,7 @@ private fun F95ImportSheet(
                     val detectedTags = metadata?.tags.orEmpty()
                     if (detectedTags.isEmpty()) CenterMessage("Aucun tag détecté sur ce thread.", Modifier.height(300.dp))
                     else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 440.dp)) {
-                        items(detectedTags, key = { it.lowercase() }) { tag ->
+                        items(detectedTags, key = { it.lowercase(java.util.Locale.ROOT) }) { tag ->
                             val normalized = tag.normalizeTagName()
                             ListItem(
                                 modifier = Modifier.clickable { selectedTags = selectedTags.toggle(tag) },
@@ -2348,6 +2363,17 @@ private fun SearchF95PickerDialog(
                         color = MaterialTheme.colorScheme.error,
                         modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)
                     )
+                }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
+                    Button(onClick = {
+                        val threadUrl = webView?.url?.let(::extractF95ThreadUrl)
+                        if (threadUrl == null) {
+                            selectionError = "Ce lien n’est pas un thread F95Zone valide. Maintenez le titre d’un résultat F95Zone."
+                        } else {
+                            selectionError = null
+                            latestSelection(threadUrl)
+                        }
+                    }) { Text("Utiliser le lien") }
                 }
             }
         }
@@ -2509,6 +2535,9 @@ private fun SearchImagePickerDialog(
                     it, color = MaterialTheme.colorScheme.error,
                     modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
                 ) }
+                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
+                    Button(onClick = ::useDisplayedImage) { Text("Utiliser le lien") }
+                }
             }
         }
     }
@@ -2575,10 +2604,7 @@ private val IMAGE_SELECTION_SCRIPT = """
       const valid = candidates.filter(function(item) { return item.url && item.url.indexOf('https://') === 0; });
       const ranked = valid.sort(function(a, b) { return b.score - a.score; });
       const top = ranked[0];
-      const bestOriginal = top && ranked.find(function(item) {
-        return item.score >= top.score * 0.9 && !/https:\/\/(?:[^/]+\.)?(?:yandex|yastatic|google|gstatic|bing|qwant|duckduckgo|ecosia)\./i.test(item.url);
-      });
-      const best = bestOriginal || top;
+      const best = ranked[0];
       return best ? JSON.stringify({url: best.url, title: best.title || ''}) : '';
     })();
 """.trimIndent()
@@ -3210,7 +3236,7 @@ private fun ScanProgressOverlay(progress: ScanProgressState) {
 }
 
 @Composable
-private fun SectionTitle(text: String) = Text(text, Modifier.padding(start = 16.dp, top = 14.dp, bottom = 5.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+private fun SectionTitle(text: String, modifier: Modifier = Modifier) = Text(text, modifier.padding(start = 16.dp, top = 14.dp, bottom = 5.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 
 @Composable
 private fun CompactActionButton(
@@ -3271,8 +3297,8 @@ private fun InfoLine(label: String, value: String) { Text(label, style = Materia
 
 private fun Set<String>.toggle(id: String): Set<String> = toMutableSet().apply { if (!add(id)) remove(id) }
 private fun String.normalizeTagName(): String = Normalizer.normalize(trim(), Normalizer.Form.NFD)
-    .replace(Regex("\\p{Mn}+"), "").lowercase()
-private fun String.readableEngine() = lowercase().replace('_', ' ').split(' ').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
+    .replace(Regex("\\p{Mn}+"), "").lowercase(java.util.Locale.ROOT)
+private fun String.readableEngine() = lowercase(java.util.Locale.ROOT).replace('_', ' ').split(' ').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
 private fun Long.asDateTime(): String = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(this))
 
 private fun Long?.asDuration(): String {

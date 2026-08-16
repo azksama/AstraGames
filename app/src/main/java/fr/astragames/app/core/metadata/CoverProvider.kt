@@ -1,6 +1,8 @@
 package fr.astragames.app.core.metadata
 
 import android.content.Context
+import java.util.Locale
+import kotlin.coroutines.cancellation.CancellationException
 import android.net.Uri
 import androidx.core.content.FileProvider
 import fr.astragames.app.data.local.GameEntity
@@ -29,9 +31,17 @@ interface CoverProvider {
 }
 
 class CompositeCoverProvider(private val providers: List<CoverProvider>) : CoverProvider {
-    override suspend fun search(game: GameEntity): List<CoverCandidate> = providers
-        .flatMap { provider -> runCatching { provider.search(game) }.getOrDefault(emptyList()) }
-        .distinctBy(CoverCandidate::imageUrl)
+    override suspend fun search(game: GameEntity): List<CoverCandidate> = buildList {
+        providers.forEach { provider ->
+            try {
+                addAll(provider.search(game))
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                // Un fournisseur défaillant ne bloque pas les autres.
+            }
+        }
+    }.distinctBy(CoverCandidate::imageUrl)
         .sortedByDescending(CoverCandidate::confidence)
 }
 
@@ -141,13 +151,12 @@ class SearchCoverProvider(
 
     private fun isRemoteResult(value: String): Boolean {
         val uri = runCatching { URI(value) }.getOrNull() ?: return false
-        val host = uri.host?.lowercase().orEmpty()
-        return uri.scheme == "https" && host.isNotBlank() &&
-            SEARCH_HOSTS.none { host == it || host.endsWith(".$it") }
+        val host = uri.host?.lowercase(Locale.ROOT).orEmpty()
+        return uri.scheme == "https" && host.isNotBlank()
     }
 
     private fun looksLikeImageUrl(value: String): Boolean {
-        val path = runCatching { URI(value).path.lowercase() }.getOrDefault("")
+        val path = runCatching { URI(value).path.lowercase(Locale.ROOT) }.getOrDefault("")
         return IMAGE_EXTENSIONS.any { path.endsWith(it) } ||
             value.contains("format=image", true) || value.contains("/image/", true)
     }
@@ -199,10 +208,6 @@ class SearchCoverProvider(
         const val BROWSER_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/127.0 Mobile Safari/537.36"
         val URL_PATTERN = Regex("""https?://[^\s"'<>\\\[\]]+""", RegexOption.IGNORE_CASE)
         val IMAGE_EXTENSIONS = setOf(".jpg", ".jpeg", ".png", ".webp", ".gif", ".avif")
-        val SEARCH_HOSTS = setOf(
-            "yandex.com", "yastatic.net", "google.com", "googleusercontent.com", "gstatic.com",
-            "bing.com", "qwant.com", "duckduckgo.com", "ecosia.org"
-        )
     }
 }
 

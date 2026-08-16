@@ -9,5 +9,5 @@ fun parseTextTagList(raw: String): List<String> {
     return (bracketed + separated)
         .map(String::trim)
         .filter(String::isNotBlank)
-        .distinctBy { it.lowercase() }
+        .distinctBy { it.lowercase(java.util.Locale.ROOT) }
 }

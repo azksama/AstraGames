@@ -10,20 +10,20 @@ object DuplicateDetector {
         val groupedIds = mutableSetOf<String>()
         val result = mutableListOf<DuplicateGroup>()
         games.groupBy { it.fingerprint }.filterValues { it.size > 1 }.forEach { (fingerprint, group) ->
-            result += DuplicateGroup("fingerprint:$fingerprint", group.sortedBy { it.title.lowercase() })
+            result += DuplicateGroup("fingerprint:$fingerprint", group.sortedBy { it.title.lowercase(java.util.Locale.ROOT) })
             groupedIds += group.map { it.id }
         }
         games.filterNot { it.id in groupedIds }
             .groupBy { normalizeTitle(it.title) }
             .filterKeys { it.length >= 4 }
             .filterValues { it.size > 1 }
-            .forEach { (title, group) -> result += DuplicateGroup("title:$title", group.sortedBy { game -> game.title.lowercase() }) }
+            .forEach { (title, group) -> result += DuplicateGroup("title:$title", group.sortedBy { game -> game.title.lowercase(java.util.Locale.ROOT) }) }
         return result.sortedByDescending { it.games.size }
     }
 
     internal fun normalizeTitle(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)
         .replace(Regex("\\p{Mn}+"), "")
-        .lowercase()
+        .lowercase(java.util.Locale.ROOT)
         .replace(Regex("\\b(v(?:er(?:sion)?)?\\s*)?\\d+(?:[._-]\\d+)+\\b"), " ")
         .replace(Regex("\\b(?:win(?:dows)?|linux|mac(?:os)?|android|x64|x86)\\b"), " ")
         .replace(Regex("[^\\p{L}\\p{N}]+"), " ")

@@ -12,8 +12,8 @@ object DuplicateDetector {
     }
 
     private fun similarity(left: String, right: String): Double {
-        val a = left.lowercase().filter(Char::isLetterOrDigit)
-        val b = right.lowercase().filter(Char::isLetterOrDigit)
+        val a = left.lowercase(java.util.Locale.ROOT).filter(Char::isLetterOrDigit)
+        val b = right.lowercase(java.util.Locale.ROOT).filter(Char::isLetterOrDigit)
         if (a == b) return 1.0
         if (a.isEmpty() || b.isEmpty()) return 0.0
         val common = a.toSet().intersect(b.toSet()).size.toDouble()
