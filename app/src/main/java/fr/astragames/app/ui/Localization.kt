@@ -411,7 +411,28 @@ object AppLocalizer {
         t("Plus de", "More than", "Más de", "Более", "Mehr als", "超过", "以上"),
         t("Utiliser le lien", "Use link", "Usar enlace", "Использовать ссылку", "Link verwenden", "使用链接", "リンクを使用"),
         t("Toutes les métadonnées sont déjà présentes", "All metadata is already up to date", "Todos los metadatos ya están actualizados", "Все метаданные уже актуальны", "Alle Metadaten sind bereits aktuell", "所有元数据都已是最新", "すべてのメタデータは最新です"),
-        t("Aucune métadonnée trouvée — vérifiez votre connexion", "No metadata found — check your connection", "No se encontraron metadatos — comprueba tu conexión", "Метаданные не найдены — проверьте подключение", "Keine Metadaten gefunden — Verbindung prüfen", "未找到元数据 — 请检查网络连接", "メタデータが見つかりません — 接続を確認してください")
+        t("Aucune métadonnée trouvée — vérifiez votre connexion", "No metadata found — check your connection", "No se encontraron metadatos — comprueba tu conexión", "Метаданные не найдены — проверьте подключение", "Keine Metadaten gefunden — Verbindung prüfen", "未找到元数据 — 请检查网络连接", "メタデータが見つかりません — 接続を確認してください"),
+        t("Se connecter à F95Zone", "Log in to F95Zone", "Iniciar sesión en F95Zone", "Войти в F95Zone", "Bei F95Zone anmelden", "登录 F95Zone", "F95Zone にログイン"),
+        t("Se connecter", "Log in", "Iniciar sesión", "Войти", "Anmelden", "登录", "ログイン"),
+        t("Se déconnecter", "Log out", "Cerrar sesión", "Выйти", "Abmelden", "退出登录", "ログアウト"),
+        t("Utiliser cette session", "Use this session", "Usar esta sesión", "Использовать эту сессию", "Diese Sitzung verwenden", "使用此会话", "このセッションを使用"),
+        t("Session F95Zone : non connectée", "F95Zone session: not logged in", "Sesión de F95Zone: no iniciada", "Сессия F95Zone: не выполнен вход", "F95Zone-Sitzung: nicht angemeldet", "F95Zone 会话：未登录", "F95Zone セッション：未ログイン"),
+        t("Connectez-vous sur le site puis utilisez le bouton ci-dessous.", "Log in on the site, then use the button below.", "Inicia sesión en el sitio y usa el botón de abajo.", "Войдите на сайте, затем используйте кнопку ниже.", "Melde dich auf der Website an und nutze dann den Button unten.", "请在网站上登录，然后使用下方的按钮。", "サイトでログインし、下のボタンを使用してください。"),
+        t("Aucune session F95Zone détectée. Connectez-vous d’abord sur le site.", "No F95Zone session detected. Log in on the site first.", "No se detectó ninguna sesión de F95Zone. Inicia sesión primero en el sitio.", "Сессия F95Zone не обнаружена. Сначала войдите на сайт.", "Keine F95Zone-Sitzung erkannt. Melde dich zuerst auf der Website an.", "未检测到 F95Zone 会话，请先在网站上登录。", "F95Zone セッションが見つかりません。先にサイトでログインしてください。"),
+        t("Session F95Zone enregistrée", "F95Zone session saved", "Sesión de F95Zone guardada", "Сессия F95Zone сохранена", "F95Zone-Sitzung gespeichert", "F95Zone 会话已保存", "F95Zone セッションを保存しました"),
+        t("Session F95Zone supprimée", "F95Zone session removed", "Sesión de F95Zone eliminada", "Сессия F95Zone удалена", "F95Zone-Sitzung entfernt", "F95Zone 会话已删除", "F95Zone セッションを削除しました"),
+        t("Session F95Zone expirée ou invalide — reconnectez-vous.", "F95Zone session expired or invalid — log in again.", "Sesión de F95Zone caducada o inválida — vuelve a iniciar sesión.", "Сессия F95Zone истекла или недействительна — войдите снова.", "F95Zone-Sitzung abgelaufen oder ungültig — erneut anmelden.", "F95Zone 会话已过期或无效 — 请重新登录。", "F95Zone セッションが期限切れか無効です — 再ログインしてください。"),
+        t("Mises à jour", "Updates", "Actualizaciones", "Обновления", "Updates", "更新", "アップデート"),
+        t("Mises à jour de jeux", "Game updates", "Actualizaciones de juegos", "Обновления игр", "Spiel-Updates", "游戏更新", "ゲームの更新"),
+        t("Vérifier les mises à jour", "Check for updates", "Buscar actualizaciones", "Проверить обновления", "Nach Updates suchen", "检查更新", "更新を確認"),
+        t("Aucune mise à jour disponible", "No updates available", "No hay actualizaciones disponibles", "Обновлений нет", "Keine Updates verfügbar", "暂无可用更新", "利用可能な更新はありません"),
+        t("Aucun jeu lié à un thread F95Zone", "No game linked to an F95Zone thread", "Ningún juego enlazado a un hilo de F95Zone", "Нет игр, связанных с темой F95Zone", "Kein Spiel mit F95Zone-Thread verknüpft", "没有关联 F95Zone 主题的游戏", "F95Zone スレッドにリンクされたゲームがありません"),
+        t("Arrêter la synchronisation", "Stop syncing", "Detener la sincronización", "Остановить синхронизацию", "Synchronisierung stoppen", "停止同步", "同期を停止"),
+        t("Synchronisation arrêtée", "Sync stopped", "Sincronización detenida", "Синхронизация остановлена", "Synchronisierung gestoppt", "同步已停止", "同期を停止しました"),
+        t("Version inconnue", "Unknown version", "Versión desconocida", "Неизвестная версия", "Unbekannte Version", "未知版本", "不明なバージョン"),
+        t("Compte F95Zone (optionnel)", "F95Zone account (optional)", "Cuenta de F95Zone (opcional)", "Аккаунт F95Zone (необязательно)", "F95Zone-Konto (optional)", "F95Zone 账户（可选）", "F95Zone アカウント（任意）"),
+        t("Connectez-vous pour accéder au contenu réservé aux membres et récupérer les versions des jeux.", "Log in to access member-only content and fetch game versions.", "Inicia sesión para acceder al contenido exclusivo para miembros y obtener las versiones de los juegos.", "Войдите, чтобы получить доступ к контенту для участников и версиям игр.", "Melde dich an, um Mitglieder-Inhalte zu sehen und Spielversionen abzurufen.", "登录以访问会员专属内容并获取游戏版本。", "ログインすると会員限定コンテンツとゲームのバージョンを取得できます。"),
+        t("Arrêter", "Stop", "Detener", "Остановить", "Stoppen", "停止", "停止")
     )
 
     private val translations = AppLanguage.entries.associateWith { language ->
@@ -568,6 +589,14 @@ object AppLocalizer {
             val number = match.groupValues[1]; val title = match.groupValues[2]
             return when (language) {
                 AppLanguage.ENGLISH -> "Step $number of 3 · $title"; AppLanguage.SPANISH -> "Paso $number de 3 · $title"; AppLanguage.RUSSIAN -> "Шаг $number из 3 · $title"; AppLanguage.GERMAN -> "Schritt $number von 3 · $title"; AppLanguage.CHINESE -> "第 $number/3 步 · $title"; AppLanguage.JAPANESE -> "ステップ $number/3 · $title"; AppLanguage.FRENCH -> source
+            }
+        }
+        count(Regex("(\\d+) mise\\(s\\) à jour trouvée\\(s\\)")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number update(s) found"; AppLanguage.SPANISH -> "$number actualización(es) encontrada(s)"; AppLanguage.RUSSIAN -> "Найдено обновлений: $number"; AppLanguage.GERMAN -> "$number Update(s) gefunden"; AppLanguage.CHINESE -> "找到 $number 个更新"; AppLanguage.JAPANESE -> "$number 件の更新を検出"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        Regex("^Connecté en tant que (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { user ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Logged in as $user"; AppLanguage.SPANISH -> "Conectado como $user"; AppLanguage.RUSSIAN -> "Вход выполнен: $user"; AppLanguage.GERMAN -> "Angemeldet als $user"; AppLanguage.CHINESE -> "已登录为 $user"; AppLanguage.JAPANESE -> "$user としてログイン"; AppLanguage.FRENCH -> source
             }
         }
         Regex("^(.+) \\((\\d+)\\)$").matchEntire(source)?.let { match ->

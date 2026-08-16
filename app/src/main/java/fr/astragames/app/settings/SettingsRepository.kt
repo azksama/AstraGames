@@ -29,7 +29,10 @@ data class AstraSettings(
     val backupFolderUri: String? = null,
     val joiPlayCatalogJson: String = "",
     val joiPlayCatalogFetchedAt: Long = 0L,
-    val joiPlayNotifiedVersions: String = ""
+    val joiPlayNotifiedVersions: String = "",
+    val f95SessionUser: String? = null,
+    val f95SessionXfUser: String? = null,
+    val f95SessionXfSession: String? = null
 )
 
 class SettingsRepository(private val context: Context) {
@@ -49,7 +52,10 @@ class SettingsRepository(private val context: Context) {
             backupFolderUri = values[BACKUP_FOLDER_URI],
             joiPlayCatalogJson = values[JOIPLAY_CATALOG_JSON].orEmpty(),
             joiPlayCatalogFetchedAt = values[JOIPLAY_CATALOG_FETCHED_AT] ?: 0L,
-            joiPlayNotifiedVersions = values[JOIPLAY_NOTIFIED_VERSIONS].orEmpty()
+            joiPlayNotifiedVersions = values[JOIPLAY_NOTIFIED_VERSIONS].orEmpty(),
+            f95SessionUser = values[F95_SESSION_USER],
+            f95SessionXfUser = values[F95_SESSION_XF_USER],
+            f95SessionXfSession = values[F95_SESSION_XF_SESSION]
         )
     }
 
@@ -71,6 +77,18 @@ class SettingsRepository(private val context: Context) {
     }
     suspend fun setJoiPlayNotifiedVersions(value: String) = context.dataStore.edit { it[JOIPLAY_NOTIFIED_VERSIONS] = value }
 
+    suspend fun setF95Session(user: String?, xfUser: String, xfSession: String) = context.dataStore.edit {
+        if (user != null) it[F95_SESSION_USER] = user else it.remove(F95_SESSION_USER)
+        it[F95_SESSION_XF_USER] = xfUser
+        it[F95_SESSION_XF_SESSION] = xfSession
+    }
+
+    suspend fun clearF95Session() = context.dataStore.edit {
+        it.remove(F95_SESSION_USER)
+        it.remove(F95_SESSION_XF_USER)
+        it.remove(F95_SESSION_XF_SESSION)
+    }
+
     private inline fun <reified T : Enum<T>> enumValueOrDefault(value: String?, default: T): T =
         value?.let { runCatching { enumValueOf<T>(it) }.getOrNull() } ?: default
 
@@ -90,5 +108,8 @@ class SettingsRepository(private val context: Context) {
         private val JOIPLAY_CATALOG_JSON = stringPreferencesKey("joiplay_catalog_json")
         private val JOIPLAY_CATALOG_FETCHED_AT = androidx.datastore.preferences.core.longPreferencesKey("joiplay_catalog_fetched_at")
         private val JOIPLAY_NOTIFIED_VERSIONS = stringPreferencesKey("joiplay_notified_versions")
+        private val F95_SESSION_USER = stringPreferencesKey("f95_session_user")
+        private val F95_SESSION_XF_USER = stringPreferencesKey("f95_session_xf_user")
+        private val F95_SESSION_XF_SESSION = stringPreferencesKey("f95_session_xf_session")
     }
 }

@@ -4,6 +4,7 @@ import android.app.Application
 import android.net.Uri
 import android.provider.DocumentsContract
 import android.util.Log
+import android.webkit.CookieManager
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import fr.astragames.app.AstraApplication
@@ -16,6 +17,7 @@ import fr.astragames.app.core.model.TagMatchMode
 import fr.astragames.app.core.model.ThemeMode
 import fr.astragames.app.core.model.ScanReport
 import fr.astragames.app.core.metadata.CoverCandidate
+import fr.astragames.app.core.metadata.F95Session
 import fr.astragames.app.core.metadata.F95ZoneMetadata
 import fr.astragames.app.core.search.TagMatcher
 import fr.astragames.app.core.search.DuplicateDetector
@@ -55,6 +57,7 @@ import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -151,6 +154,12 @@ data class F95ImportState(
     val searchEngine: SearchEngine = SearchEngine.YANDEX
 )
 
+data class GameUpdateInfo(
+    val game: GameEntity,
+    val currentVersion: String?,
+    val latestVersion: String
+)
+
 sealed interface UiEvent {
     data class Message(val text: String) : UiEvent
 }
@@ -185,6 +194,12 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     private val metadataRefresh = MutableStateFlow(MetadataRefreshState())
     private val metadataMutex = Mutex()
     private val scanMutex = Mutex()
+    private var scanJob: Job? = null
+    private var metadataJob: Job? = null
+    private val mutableGameUpdates = MutableStateFlow<List<GameUpdateInfo>>(emptyList())
+    val gameUpdates: StateFlow<List<GameUpdateInfo>> = mutableGameUpdates
+    private val mutableUpdatesChecking = MutableStateFlow(false)
+    val updatesChecking: StateFlow<Boolean> = mutableUpdatesChecking
 
     private data class CoreData(
         val games: List<GameEntity>,
@@ -341,7 +356,13 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     init {
         viewModelScope.launch {
             repository.recoverInterruptedScans()
-            if (settingsRepository.settings.first().scanOnLaunch) scanAll(silent = true)
+            val settings = settingsRepository.settings.first()
+            settings.f95SessionXfUser?.let { xfUser ->
+                settings.f95SessionXfSession?.let { xfSession ->
+                    app.container.f95Zone.setSession(F95Session(settings.f95SessionUser, xfUser, xfSession))
+                }
+            }
+            if (settings.scanOnLaunch) scanAll(silent = true)
         }
     }
 
@@ -417,7 +438,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         repository.removeSource(id, removeGames = true)
         events.emit(UiEvent.Message("Source retirée. Les fichiers du dossier sont conservés."))
     }
-    fun scanSource(id: String) = viewModelScope.launch {
+    fun scanSource(id: String) { scanJob?.cancel(); scanJob = viewModelScope.launch {
         if (!scanMutex.tryLock()) return@launch
         scanning.value = true
         scanProgress.value = ScanProgressState(active = true, phase = "Préparation du scan")
@@ -437,8 +458,9 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             scanMutex.unlock()
         }
     }
+    }
 
-    fun scanAll(silent: Boolean = false) = viewModelScope.launch {
+    fun scanAll(silent: Boolean = false) { scanJob?.cancel(); scanJob = viewModelScope.launch {
         if (!scanMutex.tryLock()) return@launch
         scanning.value = true
         scanProgress.value = ScanProgressState(active = true, phase = "Préparation du scan")
@@ -459,6 +481,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             scanProgress.value = ScanProgressState()
             scanMutex.unlock()
         }
+    }
     }
 
     fun showLatestScanReport(sourceId: String) = viewModelScope.launch {
@@ -684,6 +707,15 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         val result = runCatching { app.container.f95Zone.fetch(url) }
         result.onSuccess { metadata ->
             repository.setF95Url(gameId, metadata.sourceUrl)
+            repository.applyAutomaticMetadata(
+                gameId = gameId,
+                originalTitle = null,
+                developer = null,
+                description = null,
+                f95Url = metadata.sourceUrl,
+                version = metadata.version,
+                language = metadata.language
+            )
             mutableF95Import.value = mutableF95Import.value.copy(loading = false, metadata = metadata, error = null)
         }.onFailure { error ->
             mutableF95Import.value = mutableF95Import.value.copy(loading = false, error = error.message ?: "Import F95Zone impossible.")
@@ -704,6 +736,31 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun chooseF95Cover(gameId: String, candidate: CoverCandidate) = chooseRemoteCover(gameId, candidate)
     fun clearF95Import() { mutableF95Import.value = F95ImportState() }
+
+    fun connectF95Session(cookies: String, username: String?) = viewModelScope.launch {
+        val xfUser = cookieValue(cookies, "xf_user")
+        val xfSession = cookieValue(cookies, "xf_session")
+        if (xfUser == null || xfSession == null) {
+            events.emit(UiEvent.Message("Aucune session F95Zone détectée. Connectez-vous d’abord sur le site."))
+            return@launch
+        }
+        settingsRepository.setF95Session(username, xfUser, xfSession)
+        app.container.f95Zone.setSession(F95Session(username, xfUser, xfSession))
+        events.emit(UiEvent.Message("Session F95Zone enregistrée"))
+    }
+
+    fun disconnectF95() = viewModelScope.launch {
+        settingsRepository.clearF95Session()
+        app.container.f95Zone.setSession(null)
+        CookieManager.getInstance().setCookie("https://f95zone.to", "xf_user=; Max-Age=0")
+        CookieManager.getInstance().setCookie("https://f95zone.to", "xf_session=; Max-Age=0")
+        CookieManager.getInstance().flush()
+        events.emit(UiEvent.Message("Session F95Zone supprimée"))
+    }
+
+    private fun cookieValue(cookies: String, name: String): String? =
+        cookies.split(';').map(String::trim).firstOrNull { it.startsWith("${name}=") }
+            ?.substringAfter('=')?.takeIf(String::isNotBlank)
     fun completeGameSetup(gameId: String) {
         setupQueueIds.value = setupQueueIds.value.filterNot { it == gameId }
     }
@@ -721,10 +778,11 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     fun refreshIncompleteMetadata() {
         if (metadataRefresh.value.running || metadataMutex.isLocked) return
+        metadataJob?.cancel()
         val ids = uiState.value.games.filter {
             it.coverUri == null || it.description.isNullOrBlank() || it.developer.isNullOrBlank()
         }.map { it.id }
-        viewModelScope.launch {
+        metadataJob = viewModelScope.launch {
             if (ids.isEmpty()) {
                 events.emit(UiEvent.Message("Toutes les métadonnées sont déjà présentes"))
                 return@launch
@@ -813,6 +871,50 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun refreshRuntimes() {
         runtimeRefresh.value += 1
+    }
+
+    fun cancelSyncs() {
+        scanJob?.cancel()
+        metadataJob?.cancel()
+        scanning.value = false
+        scanProgress.value = ScanProgressState()
+        metadataRefresh.value = MetadataRefreshState()
+        events.tryEmit(UiEvent.Message("Synchronisation arrêtée"))
+    }
+
+    fun checkGameUpdates() = viewModelScope.launch {
+        if (mutableUpdatesChecking.value) return@launch
+        val candidates = repository.games.first().filter { !it.f95Url.isNullOrBlank() }
+        if (candidates.isEmpty()) {
+            events.emit(UiEvent.Message("Aucun jeu lié à un thread F95Zone"))
+            return@launch
+        }
+        mutableUpdatesChecking.value = true
+        mutableGameUpdates.value = emptyList()
+        val updates = mutableListOf<GameUpdateInfo>()
+        candidates.forEachIndexed { index, game ->
+            val url = game.f95Url ?: return@forEachIndexed
+            val latest = try {
+                app.container.f95Zone.fetchVersion(url)
+            } catch (error: CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                Log.w("AstraMetadata", "Version introuvable pour « ${game.title} »", error)
+                null
+            }
+            if (latest != null && latest != game.version) {
+                updates += GameUpdateInfo(game, game.version, latest)
+            }
+            mutableGameUpdates.value = updates.toList()
+            if (index < candidates.lastIndex) delay(VNDB_REQUEST_INTERVAL_MS)
+        }
+        mutableUpdatesChecking.value = false
+        events.emit(
+            UiEvent.Message(
+                if (updates.isEmpty()) "Aucune mise à jour disponible"
+                else "${updates.size} mise(s) à jour trouvée(s)"
+            )
+        )
     }
     fun requestNotificationPermission() { notificationPermissionRequests.tryEmit(Unit) }
     fun configureBackupFolder(uri: Uri) = viewModelScope.launch {
