@@ -24,6 +24,7 @@ data class AstraSettings(
     val coverSize: CoverSize = CoverSize.MEDIUM,
     val gridColumns: Int = 2,
     val searchEngine: SearchEngine = SearchEngine.YANDEX,
+    val coverBlurMode: CoverBlurMode = CoverBlurMode.OFF,
     val openSearchInExternalBrowser: Boolean = false,
     val backupFolderUri: String? = null,
     val joiPlayCatalogJson: String = "",
@@ -43,6 +44,7 @@ class SettingsRepository(private val context: Context) {
             coverSize = enumValueOrDefault(values[COVER_SIZE], CoverSize.MEDIUM),
             gridColumns = (values[GRID_COLUMNS] ?: 2).coerceIn(2, 4),
             searchEngine = SearchEngine.fromCode(values[SEARCH_ENGINE]),
+            coverBlurMode = CoverBlurMode.fromCode(values[COVER_BLUR_MODE]),
             openSearchInExternalBrowser = values[OPEN_SEARCH_IN_EXTERNAL_BROWSER] ?: false,
             backupFolderUri = values[BACKUP_FOLDER_URI],
             joiPlayCatalogJson = values[JOIPLAY_CATALOG_JSON].orEmpty(),
@@ -60,6 +62,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setCoverSize(value: CoverSize) = context.dataStore.edit { it[COVER_SIZE] = value.name }
     suspend fun setGridColumns(value: Int) = context.dataStore.edit { it[GRID_COLUMNS] = value.coerceIn(2, 4) }
     suspend fun setSearchEngine(value: SearchEngine) = context.dataStore.edit { it[SEARCH_ENGINE] = value.code }
+    suspend fun setCoverBlurMode(value: CoverBlurMode) = context.dataStore.edit { it[COVER_BLUR_MODE] = value.code }
     suspend fun setOpenSearchInExternalBrowser(value: Boolean) = context.dataStore.edit { it[OPEN_SEARCH_IN_EXTERNAL_BROWSER] = value }
     suspend fun setBackupFolder(uri: String) = context.dataStore.edit { it[BACKUP_FOLDER_URI] = uri }
     suspend fun cacheJoiPlayCatalog(json: String, fetchedAt: Long = System.currentTimeMillis()) = context.dataStore.edit {
@@ -81,6 +84,7 @@ class SettingsRepository(private val context: Context) {
         private val COVER_SIZE = stringPreferencesKey("cover_size")
         private val GRID_COLUMNS = intPreferencesKey("grid_columns")
         private val SEARCH_ENGINE = stringPreferencesKey("search_engine")
+        private val COVER_BLUR_MODE = stringPreferencesKey("cover_blur_mode")
         private val OPEN_SEARCH_IN_EXTERNAL_BROWSER = booleanPreferencesKey("open_search_in_external_browser")
         private val BACKUP_FOLDER_URI = stringPreferencesKey("backup_folder_uri")
         private val JOIPLAY_CATALOG_JSON = stringPreferencesKey("joiplay_catalog_json")

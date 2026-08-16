@@ -62,9 +62,9 @@ class F95ZoneProviderTest {
         assertEquals("https://f95zone.to/images/cover-1920.jpg", metadata.images.single().imageUrl)
     }
 
-    @Test fun buildsYandexSearchWithoutSiteFilter() {
+    @Test fun buildsYandexSearchWithoutSiteOperator() {
         assertEquals(
-            "https://yandex.com/search/?text=Wind+Waiting+Island",
+            "https://yandex.com/search/?text=Wind+Waiting+Island+f95zone.to",
             F95ZoneProvider().yandexSearchUrl("Wind Waiting Island")
         )
     }

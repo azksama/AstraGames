@@ -41,6 +41,7 @@ import fr.astragames.app.launcher.JoiPlayRuntimeInfo
 import fr.astragames.app.launcher.JoiPlayRuntimeManager
 import fr.astragames.app.settings.AstraSettings
 import fr.astragames.app.settings.AppLanguage
+import fr.astragames.app.settings.CoverBlurMode
 import fr.astragames.app.settings.SearchEngine
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -729,6 +730,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun setCoverSize(size: CoverSize) = viewModelScope.launch { settingsRepository.setCoverSize(size) }
     fun setGridColumns(columns: Int) = viewModelScope.launch { settingsRepository.setGridColumns(columns) }
     fun setSearchEngine(engine: SearchEngine) = viewModelScope.launch { settingsRepository.setSearchEngine(engine) }
+    fun setCoverBlurMode(mode: CoverBlurMode) = viewModelScope.launch { settingsRepository.setCoverBlurMode(mode) }
     fun setOpenSearchInExternalBrowser(value: Boolean) = viewModelScope.launch {
         settingsRepository.setOpenSearchInExternalBrowser(value)
     }

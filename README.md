@@ -33,6 +33,7 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - édition complète des fiches et date du dernier lancement ;
 - ajout textuel de tags par virgules ou crochets pendant la configuration et l’édition, avec réutilisation automatique des tags existants ;
 - thèmes clair, sombre, système et couleurs dynamiques ;
+- flou des jaquettes désactivable, automatique au démarrage ou manuel, avec bascule rapide depuis l’accueil ;
 - navigation compacte flottante à trois entrées, glissement horizontal rapide entre les écrans principaux et interface adaptée aux tablettes/pliables ;
 - Baseline Profile embarqué et module de génération Macrobenchmark pour accélérer le démarrage et les parcours principaux ;
 - copie rapide du nom d’une jaquette en touchant son libellé et raccourci vers le dossier de sauvegarde d’un jeu ;
@@ -43,7 +44,7 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 
 ## Jaquettes et F95Zone
 
-Les recherches d’images et F95Zone utilisent le moteur choisi dans les paramètres (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), avec la requête directe et sans paramètre de filtrage de contenu ajouté par Astra. Les résultats d’images sont recherchés automatiquement à l’ouverture, et un bouton ouvre la même recherche dans le navigateur système. L’utilisateur peut aussi afficher les résultats dans le WebView intégré. Tout thread accepté est réduit à l’URL canonique HTTPS F95Zone, terminée juste après son identifiant. VNDB complète silencieusement jaquette, description et développeur lors de l’ajout, sans importer ses tags ; le bouton des paramètres relance cet enrichissement sur les fiches incomplètes.
+Les recherches d’images et F95Zone utilisent le moteur choisi dans les paramètres (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), avec la requête directe. La recherche F95Zone conserve le terme `f95zone.to` mais n’utilise plus l’opérateur `site:`. Aucun paramètre de filtrage de contenu n’est ajouté par Astra. Les résultats d’images sont recherchés automatiquement à l’ouverture, et un bouton ouvre la même recherche dans le navigateur système. L’utilisateur peut aussi afficher les résultats dans le WebView intégré. Tout thread accepté est réduit à l’URL canonique HTTPS F95Zone, terminée juste après son identifiant. VNDB complète silencieusement jaquette, description et développeur lors de l’ajout, sans importer ses tags ; le bouton des paramètres relance cet enrichissement sur les fiches incomplètes.
 
 ## Architecture
 

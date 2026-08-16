@@ -85,6 +85,7 @@ import fr.astragames.app.data.repository.SaveConflictStrategy
 import fr.astragames.app.core.search.DuplicateDetector.DuplicateGroup
 import fr.astragames.app.launcher.JoiPlayRuntimeInfo
 import fr.astragames.app.settings.AppLanguage
+import fr.astragames.app.settings.CoverBlurMode
 import fr.astragames.app.settings.SearchEngine
 import kotlinx.coroutines.flow.collectLatest
 import java.text.DateFormat
@@ -125,7 +126,18 @@ fun AstraApp(
         return
     }
     val navController = rememberNavController()
-    CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
+    var coverBlurred by remember(state.settings.coverBlurMode) {
+        mutableStateOf(state.settings.coverBlurMode == CoverBlurMode.STARTUP)
+    }
+    val coverBlurState = CoverBlurState(
+        blurred = coverBlurred,
+        enabled = state.settings.coverBlurMode != CoverBlurMode.OFF,
+        toggle = { coverBlurred = !coverBlurred }
+    )
+    CompositionLocalProvider(
+        LocalAppLanguage provides state.settings.language,
+        LocalCoverBlurState provides coverBlurState
+    ) {
         if (!state.settings.onboardingCompleted) {
             LanguageTransition(state.settings.language) { visibleLanguage ->
                 CompositionLocalProvider(LocalAppLanguage provides visibleLanguage) {
@@ -505,6 +517,33 @@ private fun SearchEngineSelector(
 }
 
 @Composable
+private fun CoverBlurSelector(
+    selected: CoverBlurMode,
+    onSelect: (CoverBlurMode) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Flou des jaquettes", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Box(Modifier.fillMaxWidth()) {
+            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
+                Text(selected.label(), Modifier.weight(1f), maxLines = 1)
+                Icon(Icons.Default.ArrowDropDown, null)
+            }
+            DropdownMenu(expanded, { expanded = false }, Modifier.widthIn(min = 220.dp, max = 320.dp)) {
+                CoverBlurMode.entries.forEach { mode ->
+                    DropdownMenuItem(
+                        text = { Text(mode.label()) },
+                        leadingIcon = { if (mode == selected) Icon(Icons.Default.Check, null) },
+                        onClick = { onSelect(mode); expanded = false }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
 private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit, onPickSource: () -> Unit) {
     var columnsMenu by remember { mutableStateOf(false) }
     var selectedGames by remember { mutableStateOf(emptySet<String>()) }
@@ -512,6 +551,7 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
     var bulkFolder by remember { mutableStateOf(false) }
     var bulkTags by remember { mutableStateOf(false) }
     var bulkDelete by remember { mutableStateOf(false) }
+    val coverBlur = LocalCoverBlurState.current
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
@@ -540,6 +580,12 @@ private fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
                 }
                 IconButton(onClick = { vm.scanAll() }) {
                     if (state.scanning) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp) else Icon(Icons.Default.Refresh, "Scanner")
+                }
+                if (coverBlur.enabled) IconButton(onClick = coverBlur.toggle) {
+                    Icon(
+                        if (coverBlur.blurred) Icons.Default.Visibility else Icons.Default.VisibilityOff,
+                        AppLocalizer.text(if (coverBlur.blurred) "Afficher les jaquettes" else "Flouter les jaquettes")
+                    )
                 }
                 }
             }
@@ -804,8 +850,14 @@ private fun CoverActionButton(
 
 @Composable
 private fun GameCover(game: GameEntity, modifier: Modifier = Modifier) {
+    val coverBlur = LocalCoverBlurState.current
     Surface(modifier, RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
-        if (game.coverUri != null) AsyncImage(game.coverUri, game.title, Modifier.fillMaxSize(), contentScale = ContentScale.Crop)
+        if (game.coverUri != null) AsyncImage(
+            game.coverUri,
+            game.title,
+            Modifier.fillMaxSize().then(if (coverBlur.blurred) Modifier.blur(24.dp) else Modifier),
+            contentScale = ContentScale.Crop
+        )
         else Box(
             Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant))),
             contentAlignment = Alignment.Center
@@ -1227,19 +1279,26 @@ private fun SettingsScreen(
                     else Icon(Icons.Default.AutoAwesome, null)
                 }
             ) }
+            item {
+                SearchEngineSelector(
+                    state.settings.searchEngine,
+                    vm::setSearchEngine,
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
             item { SectionTitle("Apparence") }
             item {
                 LanguageSelector(
                     state.settings.language,
                     vm::setLanguage,
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
             item {
-                SearchEngineSelector(
-                    state.settings.searchEngine,
-                    vm::setSearchEngine,
-                    Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+                CoverBlurSelector(
+                    state.settings.coverBlurMode,
+                    vm::setCoverBlurMode,
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
             item { SettingsSwitch("Couleurs dynamiques", state.settings.dynamicColor, vm::setDynamicColor) }
@@ -2561,6 +2620,7 @@ private fun CoverCandidateCard(candidate: CoverCandidate, selected: Boolean = fa
 
 @Composable
 private fun CoverFullscreenDialog(uri: String, title: String, onDismiss: () -> Unit) {
+    val coverBlur = LocalCoverBlurState.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         BoxWithConstraints(
             Modifier.fillMaxSize().background(Color.Black.copy(alpha = .94f)).clickable(onClick = onDismiss),
@@ -2570,7 +2630,10 @@ private fun CoverFullscreenDialog(uri: String, title: String, onDismiss: () -> U
             Surface(imageModifier, color = Color.Black) {
                 Box {
                     AsyncImage(
-                        uri, title, Modifier.fillMaxSize(), contentScale = ContentScale.Fit
+                        uri,
+                        title,
+                        Modifier.fillMaxSize().then(if (coverBlur.blurred) Modifier.blur(24.dp) else Modifier),
+                        contentScale = ContentScale.Fit
                     )
                     IconButton(
                         onClick = onDismiss,
@@ -3195,6 +3258,12 @@ private fun ThemeMode.label() = when (this) {
     ThemeMode.SYSTEM -> "Système"
     ThemeMode.LIGHT -> "Clair"
     ThemeMode.DARK -> "Sombre"
+}
+
+private fun CoverBlurMode.label() = when (this) {
+    CoverBlurMode.OFF -> "Désactivé"
+    CoverBlurMode.STARTUP -> "Automatique au démarrage"
+    CoverBlurMode.MANUAL -> "Manuel"
 }
 
 @Composable

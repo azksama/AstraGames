@@ -20,7 +20,7 @@ data class F95ZoneMetadata(
 class F95ZoneProvider {
     fun searchUrl(gameTitle: String, searchEngine: SearchEngine = SearchEngine.YANDEX): String {
         require(gameTitle.isNotBlank()) { "Le nom du jeu est vide." }
-        return searchEngine.webSearchUrl(gameTitle)
+        return searchEngine.webSearchUrl("${gameTitle.trim()} f95zone.to")
     }
 
     fun yandexSearchUrl(gameTitle: String): String = searchUrl(gameTitle, SearchEngine.YANDEX)
