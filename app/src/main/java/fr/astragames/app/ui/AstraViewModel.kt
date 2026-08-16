@@ -78,6 +78,7 @@ data class LibraryFilters(
     val systemFolderId: String? = null,
     val engine: GameEngine? = null,
     val tagIds: Set<String> = emptySet(),
+    val excludedTagIds: Set<String> = emptySet(),
     val tagMode: TagMatchMode = TagMatchMode.ALL,
     val favoritesOnly: Boolean = false,
     val missingOnly: Boolean = false,
@@ -299,9 +300,16 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         }
     }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), RuntimeState())
 
+    @Suppress("UNCHECKED_CAST")
     private val baseUiState: StateFlow<AstraUiState> = combine(
-        coreData, settingsRepository.settings, filters, backgroundState, setupQueueIds
-    ) { data, settings, filter, background, setupIds ->
+        coreData, settingsRepository.settings, filters, backgroundState, setupQueueIds, mutableLatestVersions
+    ) { values ->
+        val data = values[0] as CoreData
+        val settings = values[1] as AstraSettings
+        val filter = values[2] as LibraryFilters
+        val background = values[3] as BackgroundState
+        val setupIds = values[4] as Set<String>
+        val latestVersions = values[5] as Map<String, String>
         val refsByGame = data.refs.groupBy { it.gameId }.mapValues { (_, refs) -> refs.map { it.tagId }.toSet() }
         val playStatsByGame = data.playStats.associateBy { it.gameId }
         val selectedFolderIds = filter.folderId?.let { rootId -> descendantFolderIds(rootId, data.folders) }
@@ -319,13 +327,14 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         val filtered = data.candidates.filter { game ->
             val gameTags = refsByGame[game.id].orEmpty()
             val tagsMatch = TagMatcher.matches(filter.tagIds, gameTags, filter.tagMode)
+            val excludedTagsMatch = gameTags.none { it in filter.excludedTagIds }
             (filter.sourceId == null || game.sourceId == filter.sourceId) &&
                 (selectedFolderIds == null || game.libraryFolderId in selectedFolderIds) &&
                 (selectedCollectionGameIds == null || game.id in selectedCollectionGameIds) &&
                 (filter.systemFolderId == null || game.id in selectedSystemGameIds) &&
                 (filter.engine == null || game.engine == filter.engine.name) &&
                 (!filter.favoritesOnly || game.favorite) &&
-                (!filter.missingOnly || game.missing) && tagsMatch
+                (!filter.missingOnly || game.missing) && tagsMatch && excludedTagsMatch
         }.let { games ->
             when (filter.sort) {
                 LibrarySort.TITLE -> games.sortedBy { it.title.lowercase(java.util.Locale.ROOT) }
@@ -333,7 +342,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                 LibrarySort.LAST_PLAYED -> games.sortedByDescending { it.lastPlayedAt ?: Long.MIN_VALUE }
                 LibrarySort.MOST_PLAYED -> games.sortedByDescending { it.playCount }
                 LibrarySort.UPDATE_AVAILABLE -> games.sortedByDescending { game ->
-                    val latest = mutableLatestVersions.value[game.id]
+                    val latest = latestVersions[game.id]
                     if (latest != null && latest != game.version) 1 else 0
                 }
             }
@@ -401,6 +410,14 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun toggleTagFilter(id: String) {
         val next = filters.value.tagIds.toMutableSet().apply { if (!add(id)) remove(id) }
         filters.value = filters.value.copy(tagIds = next)
+    }
+    fun cycleTagFilter(id: String) {
+        val filter = filters.value
+        filters.value = when {
+            id in filter.tagIds -> filter.copy(tagIds = filter.tagIds - id, excludedTagIds = filter.excludedTagIds + id)
+            id in filter.excludedTagIds -> filter.copy(excludedTagIds = filter.excludedTagIds - id)
+            else -> filter.copy(tagIds = filter.tagIds + id)
+        }
     }
     fun setTagFilters(ids: Set<String>) { filters.value = filters.value.copy(tagIds = ids) }
     fun setTagMode(mode: TagMatchMode) { filters.value = filters.value.copy(tagMode = mode) }
