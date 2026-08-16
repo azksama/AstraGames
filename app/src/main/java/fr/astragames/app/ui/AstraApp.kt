@@ -272,9 +272,9 @@ private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> 
         if (badge > 0) {
             Box(
                 Modifier.align(Alignment.TopEnd).offset(x = (-12).dp, y = 10.dp)
-                    .background(Color(0xFF9E9E9E), RoundedCornerShape(50))
+                    .background(MaterialTheme.colorScheme.surfaceContainerLow, RoundedCornerShape(50))
                     .padding(horizontal = 5.dp, vertical = 0.dp)
-            ) { Text(badge.toString(), color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
+            ) { Text(badge.toString(), color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold) }
         }
     }
 }
@@ -1088,7 +1088,7 @@ private fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (
                             Card(
                                 Modifier.fillMaxWidth().height(108.dp).clickable { smartKey = smart.key },
                                 shape = RoundedCornerShape(18.dp),
-                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerHigh)
+                                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
                             ) {
                                 Column(Modifier.fillMaxSize().padding(6.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
                                     Icon(smart.icon, null, Modifier.size(28.dp), tint = if (smart.key == "favorites") Color.Red else MaterialTheme.colorScheme.primary)
@@ -1633,7 +1633,7 @@ private fun GameDetailScreen(
                 Box(
                     Modifier.fillMaxWidth().then(
                         if (item.coverUri != null) Modifier.height((LocalConfiguration.current.screenHeightDp * .5f).dp)
-                        else Modifier.padding(top = 96.dp)
+                        else Modifier
                     )
                 ) {
                     if (item.coverUri != null) {
@@ -1654,10 +1654,11 @@ private fun GameDetailScreen(
                             )
                         )
                     }
-                    Row(
-                        Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(horizontal = 16.dp),
-                        horizontalArrangement = Arrangement.spacedBy(16.dp)
+                    Column(
+                        Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 108.dp),
+                        verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
+                        Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         GameCover(
                             item,
                             Modifier.width(128.dp).aspectRatio(.72f).then(
@@ -1683,32 +1684,31 @@ private fun GameDetailScreen(
                                 item.version?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             }
                         }
-                    }
-                }
-            }
-            item {
-                if (latestUpdate != null && latestUpdate != item.version) {
-                    Surface(Modifier.fillMaxWidth().padding(horizontal = 16.dp), shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.tertiaryContainer) {
-                        Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.Update, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
-                            Spacer(Modifier.width(6.dp))
-                            Text("Nouvelle version disponible : ${latestUpdate}", Modifier.weight(1f), color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            IconButton(onClick = { confirmUpdate = true }, Modifier.size(30.dp)) {
-                                Icon(Icons.Default.CheckCircle, "Mise à jour effectuée", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                        }
+                        if (latestUpdate != null && latestUpdate != item.version) {
+                            Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.tertiaryContainer) {
+                                Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Update, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                                    Spacer(Modifier.width(6.dp))
+                                    Text("Nouvelle version disponible : ${latestUpdate}", Modifier.weight(1f), color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                                    IconButton(onClick = { confirmUpdate = true }, Modifier.size(30.dp)) {
+                                        Icon(Icons.Default.CheckCircle, "Mise à jour effectuée", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                                    }
+                                }
+                            }
+                        }
+                        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f).height(40.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Jouer") }
+                            FilledTonalButton(
+                                onClick = { vm.toggleFavorite(item.id) }, modifier = Modifier.height(40.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp)
+                            ) {
+                                Icon(if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", Modifier.size(20.dp), tint = if (item.favorite) Color.Red else LocalContentColor.current)
                             }
                         }
                     }
                 }
             }
-            item { Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f).height(40.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Jouer") }
-                FilledTonalButton(
-                    onClick = { vm.toggleFavorite(item.id) }, modifier = Modifier.height(40.dp),
-                    contentPadding = PaddingValues(horizontal = 12.dp)
-                ) {
-                    Icon(if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", Modifier.size(20.dp), tint = if (item.favorite) Color.Red else LocalContentColor.current)
-                }
-            } }
             item {
                 Card(
                     onClick = { showCompatibilityActions = true },
@@ -1738,8 +1738,8 @@ private fun GameDetailScreen(
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("Tags", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); TextButton(onClick = { pickTags = true }) { Icon(Icons.Default.Add, null); Text("Choisir") }
                 }
-                if (assignedTags.isEmpty()) Text("Aucun tag associé", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                else LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(assignedTags, key = { it.id }) { tag -> AssistChip(onClick = { onSearchTag(tag.id) }, label = { Text(tag.name) }) } }
+                if (assignedTags.isEmpty()) Text("Aucun tag associé", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
+                else LazyRow(Modifier.fillMaxWidth().padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(assignedTags, key = { it.id }) { tag -> AssistChip(onClick = { onSearchTag(tag.id) }, label = { Text(tag.name) }) } }
             }
             item.f95Url?.let { f95Url ->
                 item {
@@ -3655,13 +3655,13 @@ private fun SettingsSectionHeader(title: String, expanded: Boolean, onToggle: ()
     Surface(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onToggle),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerHigh
+        color = MaterialTheme.colorScheme.surfaceContainerLow
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
             Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
         }
     }
