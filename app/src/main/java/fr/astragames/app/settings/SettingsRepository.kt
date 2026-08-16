@@ -16,12 +16,14 @@ private val Context.dataStore by preferencesDataStore("astra_settings")
 
 data class AstraSettings(
     val onboardingCompleted: Boolean = false,
+    val language: AppLanguage = AppLanguage.ENGLISH,
     val scanOnLaunch: Boolean = true,
     val dynamicColor: Boolean = true,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val viewMode: LibraryViewMode = LibraryViewMode.GRID,
     val coverSize: CoverSize = CoverSize.MEDIUM,
     val gridColumns: Int = 2,
+    val openSearchInExternalBrowser: Boolean = false,
     val backupFolderUri: String? = null,
     val joiPlayCatalogJson: String = "",
     val joiPlayCatalogFetchedAt: Long = 0L,
@@ -32,12 +34,14 @@ class SettingsRepository(private val context: Context) {
     val settings: Flow<AstraSettings> = context.dataStore.data.map { values ->
         AstraSettings(
             onboardingCompleted = values[ONBOARDING] ?: false,
+            language = AppLanguage.fromCode(values[LANGUAGE]),
             scanOnLaunch = values[SCAN_ON_LAUNCH] ?: true,
             dynamicColor = values[DYNAMIC_COLOR] ?: true,
             themeMode = enumValueOrDefault(values[THEME], ThemeMode.SYSTEM),
             viewMode = enumValueOrDefault(values[VIEW_MODE], LibraryViewMode.GRID),
             coverSize = enumValueOrDefault(values[COVER_SIZE], CoverSize.MEDIUM),
             gridColumns = (values[GRID_COLUMNS] ?: 2).coerceIn(2, 4),
+            openSearchInExternalBrowser = values[OPEN_SEARCH_IN_EXTERNAL_BROWSER] ?: false,
             backupFolderUri = values[BACKUP_FOLDER_URI],
             joiPlayCatalogJson = values[JOIPLAY_CATALOG_JSON].orEmpty(),
             joiPlayCatalogFetchedAt = values[JOIPLAY_CATALOG_FETCHED_AT] ?: 0L,
@@ -46,12 +50,14 @@ class SettingsRepository(private val context: Context) {
     }
 
     suspend fun completeOnboarding() = context.dataStore.edit { it[ONBOARDING] = true }
+    suspend fun setLanguage(value: AppLanguage) = context.dataStore.edit { it[LANGUAGE] = value.code }
     suspend fun setScanOnLaunch(value: Boolean) = context.dataStore.edit { it[SCAN_ON_LAUNCH] = value }
     suspend fun setDynamicColor(value: Boolean) = context.dataStore.edit { it[DYNAMIC_COLOR] = value }
     suspend fun setTheme(value: ThemeMode) = context.dataStore.edit { it[THEME] = value.name }
     suspend fun setViewMode(value: LibraryViewMode) = context.dataStore.edit { it[VIEW_MODE] = value.name }
     suspend fun setCoverSize(value: CoverSize) = context.dataStore.edit { it[COVER_SIZE] = value.name }
     suspend fun setGridColumns(value: Int) = context.dataStore.edit { it[GRID_COLUMNS] = value.coerceIn(2, 4) }
+    suspend fun setOpenSearchInExternalBrowser(value: Boolean) = context.dataStore.edit { it[OPEN_SEARCH_IN_EXTERNAL_BROWSER] = value }
     suspend fun setBackupFolder(uri: String) = context.dataStore.edit { it[BACKUP_FOLDER_URI] = uri }
     suspend fun cacheJoiPlayCatalog(json: String, fetchedAt: Long = System.currentTimeMillis()) = context.dataStore.edit {
         it[JOIPLAY_CATALOG_JSON] = json
@@ -64,12 +70,14 @@ class SettingsRepository(private val context: Context) {
 
     companion object {
         private val ONBOARDING = booleanPreferencesKey("onboarding_completed")
+        private val LANGUAGE = stringPreferencesKey("language")
         private val SCAN_ON_LAUNCH = booleanPreferencesKey("scan_on_launch")
         private val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
         private val THEME = stringPreferencesKey("theme")
         private val VIEW_MODE = stringPreferencesKey("view_mode")
         private val COVER_SIZE = stringPreferencesKey("cover_size")
         private val GRID_COLUMNS = intPreferencesKey("grid_columns")
+        private val OPEN_SEARCH_IN_EXTERNAL_BROWSER = booleanPreferencesKey("open_search_in_external_browser")
         private val BACKUP_FOLDER_URI = stringPreferencesKey("backup_folder_uri")
         private val JOIPLAY_CATALOG_JSON = stringPreferencesKey("joiplay_catalog_json")
         private val JOIPLAY_CATALOG_FETCHED_AT = androidx.datastore.preferences.core.longPreferencesKey("joiplay_catalog_fetched_at")

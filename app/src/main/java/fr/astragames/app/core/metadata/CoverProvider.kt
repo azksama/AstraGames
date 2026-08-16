@@ -35,7 +35,7 @@ class CompositeCoverProvider(private val providers: List<CoverProvider>) : Cover
         .sortedByDescending(CoverCandidate::confidence)
 }
 
-class GoogleCoverProvider(
+class YandexCoverProvider(
     private val context: Context? = null
 ) : CoverProvider {
     val configured: Boolean = true
@@ -43,36 +43,38 @@ class GoogleCoverProvider(
     fun searchUrl(game: GameEntity): String {
         val engine = game.engine.lowercase().replace('_', ' ')
         val query = "${game.title} $engine game"
-        return "https://www.google.com/search?udm=2&safe=off&hl=fr&q=${encoded(query)}"
+        return "https://yandex.com/images/search?text=${encoded(query)}"
     }
 
     override suspend fun search(game: GameEntity): List<CoverCandidate> = withContext(Dispatchers.IO) {
         val endpoint = searchUrl(game)
         val response = Jsoup.connect(endpoint)
             .userAgent(BROWSER_USER_AGENT)
-            .header("Accept-Language", "fr-FR,fr;q=0.9,en;q=0.7")
+            .header("Accept-Language", "en-US,en;q=0.9")
             .header("Accept", "text/html,application/xhtml+xml")
             .timeout(20_000)
             .maxBodySize(8 * 1024 * 1024)
             .followRedirects(true)
             .ignoreHttpErrors(true)
             .execute()
-        check(response.statusCode() in 200..299) { "Google Images est inaccessible (${response.statusCode()})." }
+        check(response.statusCode() in 200..299) { "Yandex Images est inaccessible (${response.statusCode()})." }
         val body = response.body()
         parseHtml(body, endpoint).ifEmpty {
             if (body.contains("/httpservice/retry/enablejs") || body.contains("enablejs")) {
-                error("Google demande un navigateur interactif pour afficher les images.")
+                error("Yandex demande un navigateur interactif pour afficher les images.")
             }
-            error("Google n'a renvoyé aucune image exploitable.")
+            error("Yandex n'a renvoyé aucune image exploitable.")
         }
     }
 
-    internal fun parseHtml(html: String, searchUrl: String = "https://www.google.com/search?tbm=isch"): List<CoverCandidate> {
+    internal fun parseHtml(html: String, searchUrl: String = "https://yandex.com/images/search"): List<CoverCandidate> {
         val document = Jsoup.parse(html, searchUrl)
         val results = linkedMapOf<String, CoverCandidate>()
         document.select("a[href]").forEach { anchor ->
             val href = anchor.attr("href")
-            val original = queryParameter(href, "imgurl") ?: return@forEach
+            val original = sequenceOf("imgurl", "url", "img_url", "orig_url")
+                .firstNotNullOfOrNull { queryParameter(href, it) }
+                ?: return@forEach
             if (!isRemoteResult(original)) return@forEach
             val context = queryParameter(href, "imgrefurl")
             val thumbnail = anchor.selectFirst("img")?.let { image ->
@@ -83,6 +85,20 @@ class GoogleCoverProvider(
                 original,
                 candidate(original, thumbnail ?: original, context, anchor.selectFirst("img")?.attr("alt"), results.size)
             )
+        }
+
+        document.select("[data-bem], [data-state], [data-iurl], [data-original]").forEach { node ->
+            val raw = listOf("data-iurl", "data-original", "data-bem", "data-state")
+                .map { node.attr(it) }
+                .filter(String::isNotBlank)
+                .joinToString(" ")
+            URL_PATTERN.findAll(raw)
+                .map { it.value.replace("\\u002F", "/").replace("\\u003F", "?").replace("\\u003D", "=") }
+                .filter(::isRemoteResult)
+                .filter(::looksLikeImageUrl)
+                .forEach { original ->
+                    results.putIfAbsent(original, candidate(original, original, null, node.attr("aria-label"), results.size))
+                }
         }
 
         val unescaped = html
@@ -116,7 +132,7 @@ class GoogleCoverProvider(
     private fun queryParameter(rawHref: String, name: String): String? {
         val href = org.jsoup.parser.Parser.unescapeEntities(rawHref, false)
         val rawQuery = runCatching {
-            URI(if (href.startsWith('/')) "https://www.google.com$href" else href).rawQuery
+            URI(if (href.startsWith('/')) "https://yandex.com$href" else href).rawQuery
         }.getOrNull().orEmpty()
         return rawQuery.split('&').firstOrNull { it.substringBefore('=') == name }
             ?.substringAfter('=', "")?.takeIf(String::isNotBlank)
@@ -127,8 +143,8 @@ class GoogleCoverProvider(
         val uri = runCatching { URI(value) }.getOrNull() ?: return false
         val host = uri.host?.lowercase().orEmpty()
         return uri.scheme == "https" && host.isNotBlank() &&
-            host != "google.com" && !host.endsWith(".google.com") &&
-            host != "gstatic.com" && !host.endsWith(".gstatic.com")
+            host != "yandex.com" && !host.endsWith(".yandex.com") &&
+            host != "yastatic.net" && !host.endsWith(".yastatic.net")
     }
 
     private fun looksLikeImageUrl(value: String): Boolean {

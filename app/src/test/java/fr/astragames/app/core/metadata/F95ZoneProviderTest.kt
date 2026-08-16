@@ -62,10 +62,10 @@ class F95ZoneProviderTest {
         assertEquals("https://f95zone.to/images/cover-1920.jpg", metadata.images.single().imageUrl)
     }
 
-    @Test fun buildsBingSearchWithSafeSearchDisabledAndSiteFilter() {
+    @Test fun buildsYandexSearchWithSiteFilter() {
         assertEquals(
-            "https://www.bing.com/search?setlang=fr-FR&adlt=off&q=Wind+Waiting+Island+site%3Af95zone.to",
-            F95ZoneProvider().bingSearchUrl("Wind Waiting Island")
+            "https://yandex.com/search/?text=Wind+Waiting+Island+site%3Af95zone.to",
+            F95ZoneProvider().yandexSearchUrl("Wind Waiting Island")
         )
     }
 
@@ -94,7 +94,7 @@ class F95ZoneProviderTest {
         )
     }
 
-    @Test fun parsesFirstBingThreadResult() {
+    @Test fun parsesFirstYandexThreadResult() {
         val html = """
             <li class="b_algo"><h2><a href="https://f95zone.to/threads/game-name.987/page-2">Game</a></h2></li>
         """.trimIndent()

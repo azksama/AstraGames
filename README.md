@@ -5,6 +5,8 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 ## Fonctions incluses
 
 - onboarding et sélection de dossiers avec `ACTION_OPEN_DOCUMENT_TREE` ;
+- onboarding guidé avec choix de langue, import de tags, dossier de jeux et vérification des runtimes JoiPlay ;
+- interface disponible en français, anglais (par défaut), espagnol, russe, allemand, chinois et japonais, avec conservation des titres, tags et recherches Unicode ;
 - permissions SAF persistantes, sans `MANAGE_EXTERNAL_STORAGE` ;
 - sources multiples, activation, suppression, scan individuel ou global ;
 - scan toujours récursif de profondeur illimitée hors thread principal, avec arrêt et remontée dès qu'un dossier contient un exécutable, et écran de progression indiquant source, chemin, profondeur, dossiers et jeux ;
@@ -24,8 +26,8 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - gestionnaire de runtimes JoiPlay avec détection dynamique des variantes installées, catalogue officiel mis en cache sept jours et notification des mises à jour ;
 - suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
 - sauvegarde et restauration ZIP du catalogue, des profils et des jaquettes, avec raccourci vers le dossier choisi ;
-- choix manuel de jaquettes dans Google Images avec SafeSearch non forcé, sélection de l’image affichée, menu au long appui, choix local et recadrage libre ;
-- enrichissement silencieux des nouveaux jeux via VNDB (sans importer ses tags), puis recherche Bing du thread F95Zone avec SafeSearch désactivé et URL canonique conservée dans la fiche ;
+- choix manuel de jaquettes dans Yandex Images sans filtre de contenu imposé, sélection de l’image affichée, menu au long appui, choix local et recadrage libre ;
+- enrichissement silencieux des nouveaux jeux via VNDB (sans importer ses tags), puis recherche Yandex du thread F95Zone avec URL canonique conservée dans la fiche ;
 - import F95Zone pendant l'ajout ou l'édition : lien conservé dans la fiche, sélection des tags puis choix d'une image recadrable ;
 - assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
@@ -41,7 +43,7 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 
 ## Jaquettes et F95Zone
 
-Google Images n’est jamais lancé automatiquement : l’utilisateur ouvre explicitement le navigateur intégré, touche un résultat puis utilise l’image affichée ou le menu au long appui. La requête demande `safe=off`, mais un SafeSearch verrouillé par le compte, l’appareil ou le réseau reste sous le contrôle de Google. La détection F95Zone utilise Bing avec `adlt=off` et la requête `nom du jeu site:f95zone.to`. Tout résultat accepté est réduit à l’URL canonique HTTPS du thread, terminée juste après son identifiant. VNDB complète silencieusement jaquette, description et développeur lors de l’ajout, sans importer ses tags ; le bouton des paramètres relance cet enrichissement sur les fiches incomplètes.
+Yandex Images et la recherche Yandex F95Zone sont ouvertes avec la requête directe, sans paramètre de filtrage de contenu ajouté par Astra. L’utilisateur peut utiliser le navigateur intégré ou activer l’option « Rechercher dans le navigateur » dans les paramètres. Tout thread accepté est réduit à l’URL canonique HTTPS F95Zone, terminée juste après son identifiant. VNDB complète silencieusement jaquette, description et développeur lors de l’ajout, sans importer ses tags ; le bouton des paramètres relance cet enrichissement sur les fiches incomplètes.
 
 ## Architecture
 

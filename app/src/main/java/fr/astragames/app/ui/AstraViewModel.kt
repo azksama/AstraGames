@@ -40,6 +40,7 @@ import fr.astragames.app.launcher.CompatibilityDiagnostic
 import fr.astragames.app.launcher.JoiPlayRuntimeInfo
 import fr.astragames.app.launcher.JoiPlayRuntimeManager
 import fr.astragames.app.settings.AstraSettings
+import fr.astragames.app.settings.AppLanguage
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -586,7 +587,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             }
             .onFailure { error ->
                 mutableCoverSearch.value = mutableCoverSearch.value.copy(
-                    loading = false, error = error.message ?: "La recherche Google a échoué."
+                    loading = false, error = error.message ?: "La recherche Yandex a échoué."
                 )
             }
     }
@@ -630,7 +631,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun prepareF95Search(gameId: String, title: String) {
         mutableF95Import.value = mutableF95Import.value.copy(
             gameId = gameId,
-            browserUrl = app.container.f95Zone.bingSearchUrl(title)
+            browserUrl = app.container.f95Zone.yandexSearchUrl(title)
         )
     }
     fun applyF95Tags(gameId: String, selectedTags: Set<String>) = viewModelScope.launch {
@@ -703,12 +704,16 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
     fun completeOnboarding() = viewModelScope.launch { settingsRepository.completeOnboarding() }
+    fun setLanguage(language: AppLanguage) = viewModelScope.launch { settingsRepository.setLanguage(language) }
     fun setTheme(mode: ThemeMode) = viewModelScope.launch { settingsRepository.setTheme(mode) }
     fun setDynamicColor(value: Boolean) = viewModelScope.launch { settingsRepository.setDynamicColor(value) }
     fun setScanOnLaunch(value: Boolean) = viewModelScope.launch { settingsRepository.setScanOnLaunch(value) }
     fun setViewMode(mode: LibraryViewMode) = viewModelScope.launch { settingsRepository.setViewMode(mode) }
     fun setCoverSize(size: CoverSize) = viewModelScope.launch { settingsRepository.setCoverSize(size) }
     fun setGridColumns(columns: Int) = viewModelScope.launch { settingsRepository.setGridColumns(columns) }
+    fun setOpenSearchInExternalBrowser(value: Boolean) = viewModelScope.launch {
+        settingsRepository.setOpenSearchInExternalBrowser(value)
+    }
     fun requestNotificationPermission() { notificationPermissionRequests.tryEmit(Unit) }
     fun configureBackupFolder(uri: Uri) = viewModelScope.launch {
         runCatching {

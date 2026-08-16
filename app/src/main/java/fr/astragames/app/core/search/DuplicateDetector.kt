@@ -26,6 +26,6 @@ object DuplicateDetector {
         .lowercase()
         .replace(Regex("\\b(v(?:er(?:sion)?)?\\s*)?\\d+(?:[._-]\\d+)+\\b"), " ")
         .replace(Regex("\\b(?:win(?:dows)?|linux|mac(?:os)?|android|x64|x86)\\b"), " ")
-        .replace(Regex("[^a-z0-9]+"), " ")
+        .replace(Regex("[^\\p{L}\\p{N}]+"), " ")
         .trim()
 }

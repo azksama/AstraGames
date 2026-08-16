@@ -80,6 +80,7 @@ import fr.astragames.app.data.repository.DuplicateMergePreview
 import fr.astragames.app.data.repository.SaveConflictStrategy
 import fr.astragames.app.core.search.DuplicateDetector.DuplicateGroup
 import fr.astragames.app.launcher.JoiPlayRuntimeInfo
+import fr.astragames.app.settings.AppLanguage
 import kotlinx.coroutines.flow.collectLatest
 import java.text.DateFormat
 import java.text.Normalizer
@@ -109,15 +110,16 @@ fun AstraApp(
 ) {
     val snackbar = remember { SnackbarHostState() }
     val scanReports by viewModel.scanReports.collectAsStateWithLifecycle()
+    AppLocalizer.language = state.settings.language
     LaunchedEffect(viewModel) {
-        viewModel.events.collectLatest { if (it is UiEvent.Message) snackbar.showSnackbar(it.text) }
+        viewModel.events.collectLatest { if (it is UiEvent.Message) snackbar.showSnackbar(AppLocalizer.text(it.text)) }
     }
     if (!state.settingsLoaded) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
         return
     }
     if (!state.settings.onboardingCompleted) {
-        OnboardingScreen(state.sources.isNotEmpty(), onPickSource, viewModel::completeOnboarding)
+        OnboardingScreen(state, onPickSource, onPickTags, viewModel::setLanguage, viewModel::completeOnboarding)
         return
     }
 
@@ -148,7 +150,7 @@ fun AstraApp(
                         onClick = { navigate(navController, Destination.SEARCH.route) },
                         modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 72.dp),
                         containerColor = MaterialTheme.colorScheme.primaryContainer
-                    ) { Icon(Icons.Default.Search, "Rechercher") }
+                    ) { Icon(Icons.Default.Search, AppLocalizer.text("Rechercher")) }
                 }
             }
         }
@@ -222,7 +224,7 @@ private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> 
     ) {
         Box(contentAlignment = Alignment.Center) {
             Icon(
-                destination.icon(), destination.description,
+                destination.icon(), AppLocalizer.text(destination.description),
                 tint = if (selected) MaterialTheme.colorScheme.onPrimaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
             )
         }
@@ -288,7 +290,7 @@ private fun CompactHeader(
         Modifier.fillMaxWidth().statusBarsPadding().height(52.dp).padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Retour") }
+        if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, AppLocalizer.text("Retour")) }
         Column(Modifier.weight(1f)) {
             Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
             if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -298,19 +300,146 @@ private fun CompactHeader(
 }
 
 @Composable
-private fun OnboardingScreen(hasSource: Boolean, onPickSource: () -> Unit, onFinish: () -> Unit) {
+private fun OnboardingScreen(
+    state: AstraUiState,
+    onPickSource: () -> Unit,
+    onPickTags: () -> Unit,
+    onSetLanguage: (AppLanguage) -> Unit,
+    onFinish: () -> Unit
+) {
+    var step by rememberSaveable { mutableIntStateOf(0) }
+    val hasSource = state.sources.isNotEmpty()
+    val hasTags = state.tags.isNotEmpty()
+    val uriHandler = LocalUriHandler.current
     Box(
-        Modifier.fillMaxSize().background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.primaryContainer.copy(.55f)))).padding(32.dp)
+        Modifier.fillMaxSize()
+            .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.primaryContainer.copy(.55f))))
+            .padding(horizontal = 24.dp, vertical = 28.dp)
     ) {
-        Column(Modifier.align(Alignment.Center).fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
-            Box(Modifier.size(88.dp).clip(RoundedCornerShape(26.dp)).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
-                Icon(Icons.Default.AutoAwesome, null, Modifier.size(46.dp), tint = MaterialTheme.colorScheme.onPrimary)
+        Column(
+            Modifier.align(Alignment.Center).fillMaxWidth().widthIn(max = 560.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
+        ) {
+            Box(Modifier.size(76.dp).clip(RoundedCornerShape(24.dp)).background(MaterialTheme.colorScheme.primary), contentAlignment = Alignment.Center) {
+                Icon(Icons.Default.AutoAwesome, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onPrimary)
             }
-            Spacer(Modifier.height(24.dp)); Text("Toute votre bibliothèque. Un seul ciel.", style = MaterialTheme.typography.headlineLarge)
-            Spacer(Modifier.height(10.dp)); Text("Astra détecte, classe et lance vos jeux JoiPlay sans modifier leurs fichiers.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(28.dp)); Button(onClick = onPickSource) { Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(8.dp)); Text("Ajouter une source") }
-            Spacer(Modifier.height(10.dp)); OutlinedButton(onClick = onFinish, enabled = hasSource) { Text("Scanner ma bibliothèque") }
-            if (!hasSource) TextButton(onClick = onFinish) { Text("Configurer plus tard") }
+            Spacer(Modifier.height(18.dp))
+            Text("Toute votre bibliothèque. Un seul ciel.", style = MaterialTheme.typography.headlineMedium)
+            Spacer(Modifier.height(8.dp))
+            Text("Astra détecte, classe et lance vos jeux JoiPlay sans modifier leurs fichiers.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(18.dp))
+            Row(horizontalArrangement = Arrangement.spacedBy(7.dp)) {
+                repeat(4) { index ->
+                    Box(
+                        Modifier.width(if (index == step) 34.dp else 10.dp).height(7.dp)
+                            .clip(RoundedCornerShape(50))
+                            .background(if (index == step) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant)
+                    )
+                }
+            }
+            Spacer(Modifier.height(18.dp))
+            Card(Modifier.fillMaxWidth()) {
+                Column(Modifier.fillMaxWidth().padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    when (step) {
+                        0 -> {
+                            Text("Choisissez la langue d’Astra", style = MaterialTheme.typography.titleLarge)
+                            LanguageSelector(state.settings.language, onSetLanguage)
+                            Text("La langue est modifiable à tout moment dans Paramètres.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        1 -> {
+                            Text("Choisissez votre dossier de jeux", style = MaterialTheme.typography.titleLarge)
+                            Text("Astra parcourra récursivement tous les niveaux du dossier.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Button(onClick = onPickSource, Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(8.dp)); Text("Ajouter une source")
+                            }
+                            if (hasSource) {
+                                state.sources.take(2).forEach { source ->
+                                    ListItem(
+                                        headlineContent = { Text(source.displayName) },
+                                        supportingContent = { Text("Dossier sélectionné") },
+                                        leadingContent = { Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary) },
+                                        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
+                                    )
+                                }
+                            } else Text("Aucun dossier sélectionné", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        2 -> {
+                            Text("Importer des tags", style = MaterialTheme.typography.titleLarge)
+                            Text("Importez un fichier texte, CSV ou JSON, ou passez cette étape.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            OutlinedButton(onClick = onPickTags, Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Importer des tags")
+                            }
+                            Text(
+                                if (hasTags) "${state.tags.size} tags importés" else "Aucun tag importé",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        else -> {
+                            Text("Vérifier les runtimes", style = MaterialTheme.typography.titleLarge)
+                            Text("Astra vérifie les composants JoiPlay présents sur le téléphone.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            if (state.runtimes.isEmpty()) Text("Aucun runtime détecté", color = MaterialTheme.colorScheme.error)
+                            else state.runtimes.take(5).forEach { runtime ->
+                                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(
+                                        if (runtime.installed) Icons.Default.CheckCircle else Icons.Default.Warning,
+                                        null,
+                                        tint = if (runtime.installed) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary
+                                    )
+                                    Spacer(Modifier.width(10.dp))
+                                    Column(Modifier.weight(1f)) {
+                                        Text(runtime.name)
+                                        Text(
+                                            when {
+                                                runtime.installed -> "Installé${runtime.versionName?.let { " • $it" }.orEmpty()}"
+                                                runtime.required -> "Requis par votre bibliothèque • non installé"
+                                                else -> "Non installé"
+                                            },
+                                            style = MaterialTheme.typography.bodySmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                                        )
+                                    }
+                                    if (!runtime.installed) TextButton(onClick = { uriHandler.openUri(runtime.downloadUrl) }) { Text("Télécharger") }
+                                }
+                            }
+                        }
+                    }
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (step > 0) TextButton(onClick = { step-- }, Modifier.weight(1f)) { Text("Retour") }
+                        else Spacer(Modifier.weight(1f))
+                        if (step < 3) {
+                            Button(onClick = { step++ }, Modifier.weight(1f)) { Text("Continuer") }
+                        } else {
+                            Button(onClick = onFinish, Modifier.weight(1f)) { Text("Terminer") }
+                        }
+                    }
+                    if (step == 1 && !hasSource || step == 2 && !hasTags) {
+                        TextButton(onClick = { step++ }, Modifier.fillMaxWidth()) { Text("Configurer plus tard") }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun LanguageSelector(selected: AppLanguage, onSelect: (AppLanguage) -> Unit) {
+    var expanded by remember { mutableStateOf(false) }
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Text("Langue", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Box {
+            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
+                Text("${selected.flag}  ${selected.nativeName}", Modifier.weight(1f), maxLines = 1)
+                Icon(Icons.Default.ArrowDropDown, null)
+            }
+            DropdownMenu(expanded, { expanded = false }, Modifier.fillMaxWidth()) {
+                AppLanguage.entries.forEach { language ->
+                    DropdownMenuItem(
+                        text = { Text("${language.flag}  ${language.nativeName}") },
+                        leadingIcon = { if (language == selected) Icon(Icons.Default.Check, null) },
+                        onClick = { onSelect(language); expanded = false }
+                    )
+                }
+            }
         }
     }
 }
@@ -473,6 +602,16 @@ private fun topLevelSlideDirection(
     val from = menuDestinations.indexOfFirst { it.route == fromRoute }
     val to = menuDestinations.indexOfFirst { it.route == toRoute }
     if (from < 0 || to < 0 || from == to) return fallback
+    if ((fromRoute == Destination.LIBRARY.route && toRoute == Destination.SETTINGS.route) ||
+        (fromRoute == Destination.SETTINGS.route && toRoute == Destination.LIBRARY.route)
+    ) {
+        // Home and Settings are opposite anchors: keep both directions visually consistent.
+        return if (fromRoute == Destination.LIBRARY.route) {
+            AnimatedContentTransitionScope.SlideDirection.Right
+        } else {
+            AnimatedContentTransitionScope.SlideDirection.Left
+        }
+    }
     return if (to > from) AnimatedContentTransitionScope.SlideDirection.Left else AnimatedContentTransitionScope.SlideDirection.Right
 }
 
@@ -595,7 +734,7 @@ private fun CoverActionButton(
     description: String,
     icon: @Composable () -> Unit
 ) {
-    Box(modifier.size(40.dp).semantics { contentDescription = description }.clickable(onClick = onClick), contentAlignment = Alignment.Center) {
+    Box(modifier.size(40.dp).semantics { contentDescription = AppLocalizer.text(description) }.clickable(onClick = onClick), contentAlignment = Alignment.Center) {
         Surface(
             Modifier.size(28.dp), shape = RoundedCornerShape(50),
             color = MaterialTheme.colorScheme.surface.copy(alpha = .9f), tonalElevation = 2.dp
@@ -1021,16 +1160,25 @@ private fun SettingsScreen(
                 headlineContent = { Text("Actualiser les métadonnées manquantes") },
                 supportingContent = {
                     val refresh = state.metadataRefresh
-                    Text(if (refresh.running) "${refresh.completed}/${refresh.total} jeu(x) • VNDB et Bing" else "Jaquettes, descriptions et développeurs • VNDB, sans tags")
+                    Text(if (refresh.running) "${refresh.completed}/${refresh.total} jeu(x) • VNDB et Yandex" else "Jaquettes, descriptions et développeurs • VNDB, sans tags")
                 },
                 leadingContent = {
                     if (state.metadataRefresh.running) CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
                     else Icon(Icons.Default.AutoAwesome, null)
                 }
             ) }
-            item { SectionTitle("Apparence") }; item { SettingsSwitch("Couleurs dynamiques", state.settings.dynamicColor, vm::setDynamicColor) }
+            item { SectionTitle("Apparence") }
+            item { LanguageSelector(state.settings.language, vm::setLanguage) }
+            item { SettingsSwitch("Couleurs dynamiques", state.settings.dynamicColor, vm::setDynamicColor) }
+            item {
+                RoundedListItem(
+                    headlineContent = { Text("Rechercher dans le navigateur") },
+                    supportingContent = { Text("Les recherches Yandex s’ouvrent directement dans le navigateur du téléphone.") },
+                    trailingContent = { Switch(state.settings.openSearchInExternalBrowser, vm::setOpenSearchInExternalBrowser) }
+                )
+            }
             item { LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(ThemeMode.entries) { mode -> FilterChip(state.settings.themeMode == mode, { vm.setTheme(mode) }, { Text(mode.name.lowercase().replaceFirstChar(Char::uppercase)) }) }
+                items(ThemeMode.entries) { mode -> FilterChip(state.settings.themeMode == mode, { vm.setTheme(mode) }, { Text(mode.label()) }) }
             } }
             item { SectionTitle("JoiPlay") }
             item { RoundedListItem(
@@ -1175,9 +1323,9 @@ private fun GameDetailScreen(
                                     clipboard.setText(AnnotatedString(item.title))
                                     android.widget.Toast.makeText(context, "Nom du jeu copié", android.widget.Toast.LENGTH_SHORT).show()
                                 },
-                                style = MaterialTheme.typography.headlineSmall
+                                style = MaterialTheme.typography.titleLarge
                             )
-                            Spacer(Modifier.height(6.dp)); AssistChip(onClick = {}, label = { Text(item.engine.readableEngine()) })
+                            Spacer(Modifier.height(6.dp))
                             item.developer?.let { Text(it, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                             item.version?.let { Text("Version $it", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
@@ -1238,6 +1386,7 @@ private fun GameDetailScreen(
             }
             item {
                 ExpandableDetailSection("Informations", informationExpanded, { informationExpanded = !informationExpanded }) {
+                    InfoLine("Moteur", item.engine.readableEngine())
                     InfoLine("Lancements", item.playCount.toString())
                     InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
                     InfoLine("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration())
@@ -1269,10 +1418,10 @@ private fun GameDetailScreen(
     if (item != null && pickTags) GameTagPickerSheet(state.tags, state.tagCategories, assignedTags.map { it.id }.toSet(), {
         vm.setGameTags(item.id, it); pickTags = false
     }, { pickTags = false })
-    if (item != null && pickCover) CoverPickerSheet(item, coverState, { vm.chooseRemoteCover(item.id, it) }, {
+    if (item != null && pickCover) CoverPickerSheet(item, coverState, state.settings.openSearchInExternalBrowser, { vm.chooseRemoteCover(item.id, it) }, {
         onPickCover(item.id); pickCover = false
     }, { vm.removeCover(item.id); pickCover = false }, { pickCover = false; vm.clearCoverSearch() })
-    if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, { vm.fetchF95Metadata(item.id, it) }, {
+    if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, state.settings.openSearchInExternalBrowser, { vm.fetchF95Metadata(item.id, it) }, {
         vm.prepareF95Search(item.id, item.title)
     }, { tags, image ->
         vm.applyF95Tags(item.id, tags)
@@ -1730,10 +1879,10 @@ private fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickC
         }
     }
     if (showTags) GameTagPickerSheet(state.tags, state.tagCategories, selectedTags, { selectedTags = it; showTags = false }, { showTags = false })
-    if (showCover) CoverPickerSheet(game, coverState, { vm.chooseRemoteCover(game.id, it) }, {
+    if (showCover) CoverPickerSheet(game, coverState, state.settings.openSearchInExternalBrowser, { vm.chooseRemoteCover(game.id, it) }, {
         onPickCover(game.id); showCover = false
     }, { vm.removeCover(game.id); showCover = false }, { showCover = false; vm.clearCoverSearch() })
-    if (showF95) F95ImportSheet(game, state.tags, f95State, { vm.fetchF95Metadata(game.id, it) }, {
+    if (showF95) F95ImportSheet(game, state.tags, f95State, state.settings.openSearchInExternalBrowser, { vm.fetchF95Metadata(game.id, it) }, {
         vm.prepareF95Search(game.id, game.title)
     }, { tags, image ->
         importedF95TagNames = tags.map { it.trim().lowercase() }.toSet()
@@ -1770,7 +1919,7 @@ private fun EditGameDialog(
                     if (game.coverUri != null) OutlinedButton(
                         onClick = onRemoveCover,
                         colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
-                    ) { Icon(Icons.Default.DeleteOutline, null); Spacer(Modifier.width(6.dp)); Text("Supprimer") }
+                    ) { Icon(Icons.Default.DeleteOutline, "Supprimer la jaquette") }
                 }
             }
             item { HorizontalDivider(); Text("Métadonnées", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium) }
@@ -1859,6 +2008,7 @@ private fun F95ImportSheet(
     game: GameEntity,
     existingTags: List<TagEntity>,
     state: F95ImportState,
+    openInExternalBrowser: Boolean,
     onFetch: (String) -> Unit,
     onPrepareSearch: () -> Unit,
     onComplete: (Set<String>, CoverCandidate?) -> Unit,
@@ -1869,7 +2019,8 @@ private fun F95ImportSheet(
     var step by remember(game.id) { mutableIntStateOf(0) }
     var selectedTags by remember(metadata?.sourceUrl) { mutableStateOf(metadata?.tags?.toSet().orEmpty()) }
     var selectedImage by remember(metadata?.sourceUrl) { mutableStateOf<CoverCandidate?>(null) }
-    var showBingSearch by remember(game.id) { mutableStateOf(false) }
+    var showYandexSearch by remember(game.id) { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
     val existingNames = remember(existingTags) { existingTags.map { it.normalizedName }.toSet() }
     LaunchedEffect(metadata?.sourceUrl) {
         if (metadata != null) step = 1
@@ -1912,13 +2063,17 @@ private fun F95ImportSheet(
                         modifier = Modifier.fillMaxWidth()
                     ) { Icon(Icons.Default.Search, null); Spacer(Modifier.width(6.dp)); Text("Analyser le lien") }
                     OutlinedButton(
-                        onClick = { showBingSearch = true },
+                        onClick = {
+                            state.browserUrl?.let { url ->
+                                if (openInExternalBrowser) uriHandler.openUri(url) else showYandexSearch = true
+                            }
+                        },
                         modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
                         enabled = state.browserUrl != null && !state.loading
                     ) {
                         Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
                         Spacer(Modifier.width(7.dp))
-                        Text("Rechercher le thread sur Bing")
+                        Text(if (openInExternalBrowser) "Ouvrir la recherche sur Yandex" else "Rechercher le thread sur Yandex")
                     }
                 }
                 1 -> Column(Modifier.fillMaxWidth()) {
@@ -1976,20 +2131,20 @@ private fun F95ImportSheet(
             }
         }
     }
-    if (showBingSearch && state.browserUrl != null) BingF95PickerDialog(
+    if (showYandexSearch && state.browserUrl != null) YandexF95PickerDialog(
         searchUrl = state.browserUrl,
         onThreadSelected = { selectedUrl ->
-            showBingSearch = false
+            showYandexSearch = false
             url = selectedUrl
             onFetch(selectedUrl)
         },
-        onDismiss = { showBingSearch = false }
+        onDismiss = { showYandexSearch = false }
     )
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun BingF95PickerDialog(searchUrl: String, onThreadSelected: (String) -> Unit, onDismiss: () -> Unit) {
+private fun YandexF95PickerDialog(searchUrl: String, onThreadSelected: (String) -> Unit, onDismiss: () -> Unit) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var selectionError by remember { mutableStateOf<String?>(null) }
     val latestSelection by rememberUpdatedState(onThreadSelected)
@@ -1998,7 +2153,7 @@ private fun BingF95PickerDialog(searchUrl: String, onThreadSelected: (String) ->
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 CompactHeader(
-                    "Rechercher sur Bing",
+                    "Rechercher sur Yandex",
                     "Appui long sur le bon résultat F95Zone",
                     onBack = onDismiss
                 )
@@ -2010,8 +2165,8 @@ private fun BingF95PickerDialog(searchUrl: String, onThreadSelected: (String) ->
                             settings.loadsImagesAutomatically = true
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                    val host = request.url.host.orEmpty().lowercase()
-                                    return host != "bing.com" && !host.endsWith(".bing.com")
+                                    // Let Yandex follow its own result redirects and open the selected thread.
+                                    return false
                                 }
                             }
                             setOnLongClickListener {
@@ -2051,10 +2206,11 @@ private fun BingF95PickerDialog(searchUrl: String, onThreadSelected: (String) ->
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun CoverPickerSheet(
-    game: GameEntity, state: CoverSearchState, onCandidate: (CoverCandidate) -> Unit,
+    game: GameEntity, state: CoverSearchState, openInExternalBrowser: Boolean, onCandidate: (CoverCandidate) -> Unit,
     onLocal: () -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit
 ) {
-    var showGoogleBrowser by remember { mutableStateOf(false) }
+    var showYandexBrowser by remember { mutableStateOf(false) }
+    val uriHandler = LocalUriHandler.current
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
             Text("Jaquette de ${game.title}", style = MaterialTheme.typography.titleLarge)
@@ -2063,10 +2219,14 @@ private fun CoverPickerSheet(
                 if (game.coverUri != null) TextButton(onClick = onRemove) { Text("Supprimer") }
             }
             Button(
-                onClick = { showGoogleBrowser = true },
+                onClick = {
+                    state.browserUrl?.let { url ->
+                        if (openInExternalBrowser) uriHandler.openUri(url) else showYandexBrowser = true
+                    }
+                },
                 enabled = state.browserUrl != null && !state.downloading,
                 modifier = Modifier.fillMaxWidth()
-            ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text("Google Images") }
+            ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text(if (openInExternalBrowser) "Ouvrir Yandex Images" else "Yandex Images") }
             when {
                 state.downloading -> CenterMessage("Préparation du recadrage…", Modifier.height(220.dp), true)
                 state.error != null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
@@ -2078,16 +2238,16 @@ private fun CoverPickerSheet(
             }
         }
     }
-    if (showGoogleBrowser && state.browserUrl != null) GoogleImagePickerDialog(
+    if (showYandexBrowser && state.browserUrl != null) YandexImagePickerDialog(
         searchUrl = state.browserUrl,
-        onCandidate = { showGoogleBrowser = false; onCandidate(it) },
-        onDismiss = { showGoogleBrowser = false }
+        onCandidate = { showYandexBrowser = false; onCandidate(it) },
+        onDismiss = { showYandexBrowser = false }
     )
 }
 
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
-private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandidate) -> Unit, onDismiss: () -> Unit) {
+private fun YandexImagePickerDialog(searchUrl: String, onCandidate: (CoverCandidate) -> Unit, onDismiss: () -> Unit) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var contextImageUrl by remember { mutableStateOf<String?>(null) }
     var selectionError by remember { mutableStateOf<String?>(null) }
@@ -2112,7 +2272,7 @@ private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
     fun useDisplayedImage() {
         val target = webView ?: return
         selectionError = null
-        target.evaluateJavascript(GOOGLE_IMAGE_SELECTION_SCRIPT) { rawResult ->
+        target.evaluateJavascript(YANDEX_IMAGE_SELECTION_SCRIPT) { rawResult ->
             val payload = runCatching {
                 val jsonText = org.json.JSONTokener(rawResult).nextValue() as? String
                 jsonText?.takeIf(String::isNotBlank)?.let { org.json.JSONObject(it) }
@@ -2125,7 +2285,7 @@ private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                CompactHeader("Google Images", "Touchez une image pour afficher son aperçu", onBack = onDismiss)
+                CompactHeader("Yandex Images", "Touchez une image pour afficher son aperçu", onBack = onDismiss)
                 AndroidView(
                     factory = { context ->
                         WebView(context).apply {
@@ -2134,8 +2294,8 @@ private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
                             settings.loadsImagesAutomatically = true
                             webViewClient = object : WebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                    val host = request.url.host.orEmpty().lowercase()
-                                    return host != "google.com" && !host.endsWith(".google.com")
+                                    // Keep navigation unrestricted so the user can use Yandex normally.
+                                    return false
                                 }
                             }
                             setOnLongClickListener {
@@ -2183,16 +2343,20 @@ private fun GoogleImagePickerDialog(searchUrl: String, onCandidate: (CoverCandid
     DisposableEffect(Unit) { onDispose { webView?.destroy() } }
 }
 
-private val GOOGLE_IMAGE_SELECTION_SCRIPT = """
+private val YANDEX_IMAGE_SELECTION_SCRIPT = """
     (function() {
       const candidates = [];
-      document.querySelectorAll('[aria-selected="true"] [data-iurl], [data-iurl][aria-selected="true"]').forEach(function(node) {
-        candidates.push({url: node.getAttribute('data-iurl'), title: node.getAttribute('aria-label') || '', score: 2000000000000});
+      document.querySelectorAll('[data-iurl], [data-original], [data-src], [data-bem], [data-state]').forEach(function(node) {
+        const raw = [node.getAttribute('data-iurl'), node.getAttribute('data-original'), node.getAttribute('data-src'), node.getAttribute('data-bem'), node.getAttribute('data-state')].filter(Boolean).join(' ');
+        const urls = raw.match(/https?:\/\/[^\s"'<>]+/g) || [];
+        urls.forEach(function(url) {
+          candidates.push({url: url.replace(/\\u002F/g, '/').replace(/\\u003F/g, '?').replace(/\\u003D/g, '='), title: node.getAttribute('aria-label') || '', score: 2000000000000});
+        });
       });
       document.images.forEach(function(img) {
         const rect = img.getBoundingClientRect();
         const visible = rect.width > 80 && rect.height > 80 && rect.bottom > 0 && rect.top < window.innerHeight;
-        const preview = img.matches('.iPVvYb, .sFlh5c, .n3VNCb') || img.closest('[aria-selected="true"]');
+        const preview = img.closest('[aria-selected="true"], .serp-item_selected, .MMImageContainer') || visible;
         const score = (preview ? 1000000000000 : 0) + (visible ? 10000000000 : 0) + (img.naturalWidth || 0) * (img.naturalHeight || 0);
         [img.currentSrc, img.src, img.getAttribute('data-src')].forEach(function(url) {
           if (url) candidates.push({url: url, title: img.alt || '', score: score});
@@ -2202,7 +2366,7 @@ private val GOOGLE_IMAGE_SELECTION_SCRIPT = """
       const ranked = valid.sort(function(a, b) { return b.score - a.score; });
       const top = ranked[0];
       const bestOriginal = top && ranked.find(function(item) {
-        return item.score >= top.score * 0.9 && item.url.indexOf('google.') < 0 && item.url.indexOf('gstatic.') < 0;
+        return item.score >= top.score * 0.9 && item.url.indexOf('yandex.') < 0 && item.url.indexOf('yastatic.') < 0;
       });
       const best = bestOriginal || top;
       return best ? JSON.stringify({url: best.url, title: best.title || ''}) : '';
@@ -2840,7 +3004,7 @@ private fun CompactActionButton(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String
 ) = IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
-    Icon(icon, description, Modifier.size(18.dp))
+    Icon(icon, AppLocalizer.text(description), Modifier.size(18.dp))
 }
 
 @Composable
@@ -2874,6 +3038,12 @@ private fun LibrarySort.label() = when (this) {
     LibrarySort.RECENTLY_ADDED -> "Ajouts récents"
     LibrarySort.LAST_PLAYED -> "Dernier lancement"
     LibrarySort.MOST_PLAYED -> "Plus joués"
+}
+
+private fun ThemeMode.label() = when (this) {
+    ThemeMode.SYSTEM -> "Système"
+    ThemeMode.LIGHT -> "Clair"
+    ThemeMode.DARK -> "Sombre"
 }
 
 @Composable

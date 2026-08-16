@@ -345,7 +345,7 @@ class GameRepository(
     private fun uniqueSaveName(folder: DocumentFile, original: String, gameTitle: String): String {
         val extension = original.substringAfterLast('.', "").takeIf(String::isNotBlank)
         val base = if (extension == null) original else original.removeSuffix(".$extension")
-        val suffix = gameTitle.replace(Regex("[^A-Za-z0-9]+"), "-").trim('-').take(24).ifBlank { "doublon" }
+        val suffix = gameTitle.replace(Regex("[^\\p{L}\\p{N}]+"), "-").trim('-').take(24).ifBlank { "doublon" }
         var candidate = "$base-astra-$suffix${extension?.let { ".$it" }.orEmpty()}"
         var index = 2
         while (folder.findFile(candidate) != null) {
