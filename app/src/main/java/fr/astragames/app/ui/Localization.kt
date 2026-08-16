@@ -446,7 +446,9 @@ object AppLocalizer {
         t("7 jours", "7 days", "7 días", "7 дней", "7 Tage", "7 天", "7日"),
         t("15 jours", "15 days", "15 días", "15 дней", "15 Tage", "15 天", "15日"),
         t("30 jours", "30 days", "30 días", "30 дней", "30 Tage", "30 天", "30日"),
-        t("Marquer comme vu", "Mark as seen", "Marcar como visto", "Отметить как просмотренное", "Als gesehen markieren", "标记为已查看", "確認済みにする")
+        t("Marquer comme vu", "Mark as seen", "Marcar como visto", "Отметить как просмотренное", "Als gesehen markieren", "标记为已查看", "確認済みにする"),
+        t("Mise à jour effectuée ?", "Update done?", "¿Actualización realizada?", "Обновление выполнено?", "Update durchgeführt?", "更新完成了吗？", "アップデートは完了しましたか？"),
+        t("Mise à jour effectuée", "Update done", "Actualización realizada", "Обновление выполнено", "Update durchgeführt", "更新已完成", "アップデート完了")
     )
 
     private val translations = AppLanguage.entries.associateWith { language ->
@@ -607,6 +609,9 @@ object AppLocalizer {
         }
         count(Regex("(\\d+) mise\\(s\\) à jour trouvée\\(s\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number update(s) found"; AppLanguage.SPANISH -> "$number actualización(es) encontrada(s)"; AppLanguage.RUSSIAN -> "Найдено обновлений: $number"; AppLanguage.GERMAN -> "$number Update(s) gefunden"; AppLanguage.CHINESE -> "找到 $number 个更新"; AppLanguage.JAPANESE -> "$number 件の更新を検出"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(Regex("Avez-vous effectué la mise à jour vers la version (.+?) ?\\?")) { version -> when (language) {
+            AppLanguage.ENGLISH -> "Did you install version $version?"; AppLanguage.SPANISH -> "¿Has instalado la versión $version?"; AppLanguage.RUSSIAN -> "Вы установили версию $version?"; AppLanguage.GERMAN -> "Hast du Version $version installiert?"; AppLanguage.CHINESE -> "你是否已安装 $version 版本？"; AppLanguage.JAPANESE -> "$version をインストールしましたか？"; AppLanguage.FRENCH -> source
         } }?.let { return it }
         count(Regex("Nouvelle version disponible : (.+)")) { version -> when (language) {
             AppLanguage.ENGLISH -> "New version available: $version"; AppLanguage.SPANISH -> "Nueva versión disponible: $version"; AppLanguage.RUSSIAN -> "Доступна новая версия: $version"; AppLanguage.GERMAN -> "Neue Version verfügbar: $version"; AppLanguage.CHINESE -> "新版本可用：$version"; AppLanguage.JAPANESE -> "新しいバージョンが利用可能：$version"; AppLanguage.FRENCH -> source

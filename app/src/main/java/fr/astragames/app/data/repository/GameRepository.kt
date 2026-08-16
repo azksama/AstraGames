@@ -128,6 +128,8 @@ class GameRepository(
         if (exists) dao.markGameFound(id)
         return exists
     }
+    suspend fun setGameVersion(id: String, version: String) = dao.setGameVersion(id, version)
+
     suspend fun setCover(id: String, uri: Uri) {
         val directory = File(context.filesDir, "covers").apply { mkdirs() }
         val previous = dao.getGame(id)?.coverUri?.let(Uri::parse)

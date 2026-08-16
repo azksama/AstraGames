@@ -53,6 +53,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalClipboardManager
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -269,7 +270,7 @@ private fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> 
         )
         if (badge > 0) {
             Box(
-                Modifier.align(Alignment.TopEnd).offset(x = 5.dp, y = (-2).dp)
+                Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = 0.dp)
                     .background(MaterialTheme.colorScheme.primary, RoundedCornerShape(50))
                     .padding(horizontal = 5.dp, vertical = 1.dp)
             ) { Text(badge.toString(), color = MaterialTheme.colorScheme.onPrimary, style = MaterialTheme.typography.labelSmall) }
@@ -1593,30 +1594,23 @@ private fun GameDetailScreen(
     var pickFolder by remember { mutableStateOf(false) }
     var confirmGameRemoval by remember { mutableStateOf(false) }
     val item = game
+    var confirmUpdate by rememberSaveable { mutableStateOf(false) }
+    val latestUpdate = latestVersions[id]
+    if (confirmUpdate && latestUpdate != null && item != null) {
+        AlertDialog(
+            onDismissRequest = { confirmUpdate = false },
+            title = { Text("Mise à jour effectuée ?") },
+            text = { Text("Avez-vous effectué la mise à jour vers la version ${latestUpdate} ?") },
+            confirmButton = { TextButton(onClick = { vm.confirmGameUpdate(item.id, latestUpdate); confirmUpdate = false }) { Text("Oui") } },
+            dismissButton = { TextButton(onClick = { confirmUpdate = false }) { Text("Non") } }
+        )
+    }
     val diagnostic = compatibilityByGame[id]
     LaunchedEffect(id, item?.missing, item?.engine, item?.executableName, launchProfile) {
         if (item?.missing == true) vm.verifyGamePresence(id)
         if (item != null) vm.diagnoseGame(id)
     }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-        if (item?.coverUri != null) {
-            AsyncImage(
-                model = item.coverUri,
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxWidth().fillMaxHeight(.5f).blur(30.dp)
-            )
-            Box(
-                Modifier.fillMaxWidth().fillMaxHeight(.5f).background(
-                    Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        0.5f to Color.Transparent,
-                        0.8f to MaterialTheme.colorScheme.background.copy(alpha = .35f),
-                        1f to MaterialTheme.colorScheme.background
-                    )
-                )
-            )
-        }
         Scaffold(
             modifier = Modifier.fillMaxSize(),
             containerColor = Color.Transparent,
@@ -1628,6 +1622,28 @@ private fun GameDetailScreen(
             Modifier.padding(padding),
             contentPadding = PaddingValues(start = 16.dp, top = 10.dp, end = 16.dp, bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
+            if (item.coverUri != null) {
+                item {
+                    Box(Modifier.fillMaxWidth().height((LocalConfiguration.current.screenHeightDp * .5f).dp)) {
+                        AsyncImage(
+                            model = item.coverUri,
+                            contentDescription = null,
+                            contentScale = ContentScale.Crop,
+                            modifier = Modifier.fillMaxSize().blur(30.dp)
+                        )
+                        Box(
+                            Modifier.fillMaxSize().background(
+                                Brush.verticalGradient(
+                                    0f to Color.Transparent,
+                                    0.55f to Color.Transparent,
+                                    0.85f to MaterialTheme.colorScheme.background.copy(alpha = .35f),
+                                    1f to MaterialTheme.colorScheme.background
+                                )
+                            )
+                        )
+                    }
+                }
+            }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     GameCover(
@@ -1658,13 +1674,15 @@ private fun GameDetailScreen(
                 }
             }
             item {
-                val latest = latestVersions[id]
-                if (latest != null && latest != item.version) {
-                    Surface(shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.tertiaryContainer) {
-                        Row(Modifier.padding(horizontal = 12.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                if (latestUpdate != null && latestUpdate != item.version) {
+                    Surface(Modifier.fillMaxWidth(), shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.tertiaryContainer) {
+                        Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Default.Update, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
                             Spacer(Modifier.width(6.dp))
-                            Text("Nouvelle version disponible : ${latest}", color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                            Text("Nouvelle version disponible : ${latestUpdate}", Modifier.weight(1f), color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            IconButton(onClick = { confirmUpdate = true }, Modifier.size(30.dp)) {
+                                Icon(Icons.Default.CheckCircle, "Mise à jour effectuée", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
+                            }
                         }
                     }
                 }
@@ -3583,12 +3601,18 @@ private fun SectionTitle(text: String, modifier: Modifier = Modifier) = Text(tex
 
 @Composable
 private fun SettingsSectionHeader(title: String, expanded: Boolean, onToggle: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(start = 16.dp, end = 16.dp, top = 12.dp, bottom = 4.dp),
-        verticalAlignment = Alignment.CenterVertically
+    Surface(
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onToggle),
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surfaceContainerHigh
     ) {
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
-        Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+            Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+        }
     }
 }
 

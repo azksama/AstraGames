@@ -1023,6 +1023,11 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
+    fun confirmGameUpdate(gameId: String, version: String) = viewModelScope.launch {
+        repository.setGameVersion(gameId, version)
+        acknowledgeGameUpdate(gameId)
+    }
+
     fun setUpdateCheckInterval(interval: String) = viewModelScope.launch {
         settingsRepository.setUpdateCheckInterval(interval)
         GameUpdatesWorker.schedule(getApplication(), interval)

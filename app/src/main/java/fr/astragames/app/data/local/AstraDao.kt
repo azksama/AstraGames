@@ -67,6 +67,9 @@ interface AstraDao {
     @Query("UPDATE games SET coverUri = :coverUri WHERE id = :id")
     suspend fun setCover(id: String, coverUri: String?)
 
+    @Query("UPDATE games SET version = :version WHERE id = :id")
+    suspend fun setGameVersion(id: String, version: String)
+
     @Query("UPDATE games SET f95Url = :f95Url WHERE id = :id")
     suspend fun setF95Url(id: String, f95Url: String?)
 
