@@ -13,6 +13,8 @@ import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
+import androidx.work.ExistingWorkPolicy
+import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
@@ -94,11 +96,28 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
         private const val CHANNEL_ID = "game_updates"
         private const val NOTIFICATION_ID = 2_107
 
-        fun schedule(context: Context) {
-            WorkManager.getInstance(context).enqueueUniquePeriodicWork(
+        fun schedule(context: Context, interval: String = "DAY_7") {
+            val manager = WorkManager.getInstance(context)
+            if (interval == "LAUNCH") {
+                manager.cancelUniqueWork(UNIQUE_NAME)
+                manager.enqueueUniqueWork(
+                    "$UNIQUE_NAME-launch",
+                    ExistingWorkPolicy.REPLACE,
+                    OneTimeWorkRequestBuilder<GameUpdatesWorker>().build()
+                )
+                return
+            }
+            val days = when (interval) {
+                "DAY_1" -> 1L
+                "DAY_3" -> 3L
+                "DAY_15" -> 15L
+                "DAY_30" -> 30L
+                else -> 7L
+            }
+            manager.enqueueUniquePeriodicWork(
                 UNIQUE_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
-                PeriodicWorkRequestBuilder<GameUpdatesWorker>(6, TimeUnit.HOURS).build()
+                PeriodicWorkRequestBuilder<GameUpdatesWorker>(days, TimeUnit.DAYS).build()
             )
         }
     }

@@ -47,6 +47,7 @@ import fr.astragames.app.settings.AstraSettings
 import fr.astragames.app.settings.AppLanguage
 import fr.astragames.app.settings.CoverBlurMode
 import fr.astragames.app.settings.SearchEngine
+import fr.astragames.app.worker.GameUpdatesWorker
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -91,7 +92,7 @@ data class SystemFolderFilter(
     val gameIds: Set<String>
 )
 
-enum class LibrarySort { TITLE, RECENTLY_ADDED, LAST_PLAYED, MOST_PLAYED }
+enum class LibrarySort { TITLE, RECENTLY_ADDED, LAST_PLAYED, MOST_PLAYED, UPDATE_AVAILABLE }
 
 data class AstraUiState(
     val games: List<GameEntity> = emptyList(),
@@ -210,6 +211,8 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val updatesChecking: StateFlow<Boolean> = mutableUpdatesChecking
     private val mutableLatestVersions = MutableStateFlow<Map<String, String>>(emptyMap())
     val latestGameVersions: StateFlow<Map<String, String>> = mutableLatestVersions
+    val updateBadgeCount: StateFlow<Int> = mutableGameUpdates.map { it.size }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), 0)
     private val mutableTagMerges = MutableStateFlow<List<TagMergeSuggestion>>(emptyList())
     val tagMerges: StateFlow<List<TagMergeSuggestion>> = mutableTagMerges
     private val ignoredTagMerges = MutableStateFlow<Set<String>>(emptySet())
@@ -329,6 +332,10 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                 LibrarySort.RECENTLY_ADDED -> games.sortedByDescending { it.dateAdded }
                 LibrarySort.LAST_PLAYED -> games.sortedByDescending { it.lastPlayedAt ?: Long.MIN_VALUE }
                 LibrarySort.MOST_PLAYED -> games.sortedByDescending { it.playCount }
+                LibrarySort.UPDATE_AVAILABLE -> games.sortedByDescending { game ->
+                    val latest = mutableLatestVersions.value[game.id]
+                    if (latest != null && latest != game.version) 1 else 0
+                }
             }
         }
         val customGames = data.collections.associate { collection ->
@@ -371,6 +378,8 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             repository.recoverInterruptedScans()
             val settings = settingsRepository.settings.first()
             mutableLatestVersions.value = parseLatestVersions(settings.f95LatestVersions)
+            GameUpdatesWorker.schedule(app, settings.updateCheckInterval)
+            GameUpdatesWorker.schedule(app, settings.updateCheckInterval)
             settings.f95SessionXfUser?.let { xfUser ->
                 settings.f95SessionXfSession?.let { xfSession ->
                     app.container.f95Zone.setSession(F95Session(settings.f95SessionUser, xfUser, xfSession))
@@ -997,6 +1006,26 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             }
         }
         return suggestions
+    }
+
+    fun acknowledgeGameUpdate(gameId: String) = viewModelScope.launch {
+        val update = mutableGameUpdates.value.firstOrNull { it.game.id == gameId } ?: return@launch
+        mutableGameUpdates.value = mutableGameUpdates.value.filterNot { it.game.id == gameId }
+        val latestMap = mutableLatestVersions.value - gameId
+        mutableLatestVersions.value = latestMap
+        settingsRepository.setF95LatestVersions(
+            latestMap.entries.joinToString("|") { "${it.key}:${it.value}" }
+        )
+        val notified = settingsRepository.settings.first().f95NotifiedUpdates
+        val key = "${gameId}:${update.latestVersion}"
+        settingsRepository.setF95NotifiedUpdates(
+            (notified.split("|").filter(String::isNotBlank) + key).distinct().joinToString("|")
+        )
+    }
+
+    fun setUpdateCheckInterval(interval: String) = viewModelScope.launch {
+        settingsRepository.setUpdateCheckInterval(interval)
+        GameUpdatesWorker.schedule(getApplication(), interval)
     }
 
     fun mergeTagPair(keep: TagEntity, removed: TagEntity) = viewModelScope.launch {

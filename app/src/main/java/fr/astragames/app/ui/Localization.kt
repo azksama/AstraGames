@@ -439,7 +439,14 @@ object AppLocalizer {
         t("Aucune fusion à vérifier", "No merges to review", "No hay fusiones que revisar", "Нет слияний для проверки", "Keine Zusammenführungen zu prüfen", "没有需要检查的合并", "確認する統合はありません"),
         t("Historique des modifications", "Modification history", "Historial de cambios", "История изменений", "Änderungsverlauf", "修改历史", "変更履歴"),
         t("Fusions de tags, suppressions et modifications", "Tag merges, deletions and changes", "Fusiones de etiquetas, eliminaciones y cambios", "Слияния тегов, удаления и изменения", "Tag-Zusammenführungen, Löschungen und Änderungen", "标签合并、删除和修改", "タグの統合、削除、変更"),
-        t("Aucun événement enregistré", "No events recorded", "No hay eventos registrados", "События не записаны", "Keine Ereignisse aufgezeichnet", "暂无记录事件", "記録されたイベントはありません")
+        t("Aucun événement enregistré", "No events recorded", "No hay eventos registrados", "События не записаны", "Keine Ereignisse aufgezeichnet", "暂无记录事件", "記録されたイベントはありません"),
+        t("Chaque lancement", "Every launch", "Cada inicio", "При каждом запуске", "Bei jedem Start", "每次启动", "起動のたびに"),
+        t("1 jour", "1 day", "1 día", "1 день", "1 Tag", "1 天", "1日"),
+        t("3 jours", "3 days", "3 días", "3 дня", "3 Tage", "3 天", "3日"),
+        t("7 jours", "7 days", "7 días", "7 дней", "7 Tage", "7 天", "7日"),
+        t("15 jours", "15 days", "15 días", "15 дней", "15 Tage", "15 天", "15日"),
+        t("30 jours", "30 days", "30 días", "30 дней", "30 Tage", "30 天", "30日"),
+        t("Marquer comme vu", "Mark as seen", "Marcar como visto", "Отметить как просмотренное", "Als gesehen markieren", "标记为已查看", "確認済みにする")
     )
 
     private val translations = AppLanguage.entries.associateWith { language ->
