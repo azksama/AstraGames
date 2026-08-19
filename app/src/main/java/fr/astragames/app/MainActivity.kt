@@ -7,11 +7,14 @@ import android.net.Uri
 import android.content.Intent
 import android.provider.DocumentsContract
 import android.os.Build
-import androidx.activity.ComponentActivity
+import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
+import androidx.biometric.BiometricManager
+import androidx.biometric.BiometricPrompt
+import androidx.core.content.ContextCompat
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
@@ -26,7 +29,7 @@ import fr.astragames.app.ui.AstraViewModel
 import fr.astragames.app.ui.theme.AstraTheme
 import kotlinx.coroutines.launch
 
-class MainActivity : ComponentActivity() {
+class MainActivity : FragmentActivity() {
     private val viewModel by viewModels<AstraViewModel>()
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private var coverGameId: String? = null
@@ -41,6 +44,15 @@ class MainActivity : ComponentActivity() {
     }
     private val backupRestorePicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         uri?.let(viewModel::restoreBackup)
+    }
+    private val saveFolderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let(viewModel::addSaveLocation)
+    }
+    private val modsRootPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+        uri?.let(viewModel::setModsRoot)
+    }
+    private val modZipPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        uri?.let { viewModel.importModZip(it, null, false) }
     }
     private val coverCropper = registerForActivityResult(CropImageContract()) { result ->
         val gameId = coverGameId
@@ -71,6 +83,28 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.pickSaveFolderRequests.collect { saveFolderPicker.launch(null) }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.pickModsRootRequests.collect { modsRootPicker.launch(null) }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.pickModZipRequests.collect {
+                    modZipPicker.launch(arrayOf("application/zip", "application/octet-stream"))
+                }
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                viewModel.biometricUnlockRequests.collect { promptBiometric() }
+            }
+        }
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             AstraTheme(state.settings.themeMode, state.settings.dynamicColor) {
@@ -93,7 +127,34 @@ class MainActivity : ComponentActivity() {
     override fun onResume() {
         super.onResume()
         viewModel.refreshRuntimes()
-        viewModel.finishActivePlaySession()
+        viewModel.onAppResumed()
+    }
+
+    override fun onStop() {
+        if (!isChangingConfigurations) viewModel.onAppBackgrounded()
+        super.onStop()
+    }
+
+    private fun promptBiometric() {
+        val manager = BiometricManager.from(this)
+        val authenticators = BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL
+        if (manager.canAuthenticate(authenticators) != BiometricManager.BIOMETRIC_SUCCESS) return
+        val prompt = BiometricPrompt(
+            this,
+            ContextCompat.getMainExecutor(this),
+            object : BiometricPrompt.AuthenticationCallback() {
+                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) {
+                    viewModel.unlockApp()
+                }
+            }
+        )
+        prompt.authenticate(
+            BiometricPrompt.PromptInfo.Builder()
+                .setTitle("Astra")
+                .setSubtitle("Deverrouiller Astra")
+                .setAllowedAuthenticators(authenticators)
+                .build()
+        )
     }
 
     private fun launchCrop(gameId: String, source: Uri?) {

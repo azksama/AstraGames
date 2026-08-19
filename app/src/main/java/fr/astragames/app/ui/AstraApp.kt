@@ -102,7 +102,7 @@ import kotlin.math.abs
 
 private enum class Destination(val route: String, val description: String, val visibleInMenu: Boolean = true) {
     LIBRARY("library", "Bibliothèque"), SEARCH("search", "Recherche", false),
-    COLLECTIONS("collections", "Collections"), UPDATES("updates", "Mises à jour"), TAGS("tags", "Tags", false), SETTINGS("settings", "Paramètres")
+    COLLECTIONS("collections", "Collections"), UPDATES("updates", "Mises à jour"), HISTORY("history", "Historique", false), TAGS("tags", "Tags", false), SETTINGS("settings", "Paramètres")
 }
 
 private val menuDestinations = Destination.entries.filter { it.visibleInMenu }
@@ -131,6 +131,11 @@ fun AstraApp(
     }
     if (!state.settingsLoaded) {
         Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background))
+        return
+    }
+    val locked by viewModel.isLocked.collectAsStateWithLifecycle()
+    if (locked) {
+        LockScreen(state, viewModel)
         return
     }
     val navController = rememberNavController()
@@ -288,6 +293,7 @@ private fun Destination.icon() = when (this) {
     Destination.SEARCH -> Icons.Default.Search
     Destination.COLLECTIONS -> Icons.Default.CollectionsBookmark
     Destination.UPDATES -> Icons.Default.Update
+    Destination.HISTORY -> Icons.Default.History
     Destination.TAGS -> Icons.Default.Style
     Destination.SETTINGS -> Icons.Default.Settings
 }
@@ -310,9 +316,10 @@ private fun AppNavHost(
         composable(Destination.SEARCH.route) { SearchScreen(state, vm, { nav.navigate("game/$it") }, nav::popBackStack) }
         composable(Destination.COLLECTIONS.route) { CollectionsScreen(state, vm) { nav.navigate("game/$it") } }
         composable(Destination.UPDATES.route) { GameUpdatesScreen(state, vm) { nav.navigate("game/$it") } }
+        composable(Destination.HISTORY.route) { HistoryScreen(state, vm) }
         composable(Destination.TAGS.route) { TagsScreen(state, vm, onPickTags, nav::popBackStack) }
         composable(Destination.SETTINGS.route) {
-            SettingsScreen(state, vm, onPickSource, { nav.navigate(Destination.TAGS.route) }, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
+            SettingsScreen(state, vm, onPickSource, { nav.navigate(Destination.TAGS.route) }, { nav.navigate(Destination.HISTORY.route) }, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
         }
         composable("game/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
             GameDetailScreen(
@@ -1383,6 +1390,7 @@ private fun SettingsScreen(
     vm: AstraViewModel,
     onPickSource: () -> Unit,
     onOpenTags: () -> Unit,
+    onOpenHistory: () -> Unit,
     onPickBackupFolder: () -> Unit,
     onRestoreBackup: () -> Unit,
     onOpenBackupFolder: () -> Unit
@@ -1396,6 +1404,8 @@ private fun SettingsScreen(
     var joiplayExpanded by rememberSaveable { mutableStateOf(false) }
     var organizationExpanded by rememberSaveable { mutableStateOf(false) }
     var backupExpanded by rememberSaveable { mutableStateOf(false) }
+    var securityExpanded by rememberSaveable { mutableStateOf(false) }
+    var showPinSetup by remember { mutableStateOf(false) }
     var intervalMenu by remember { mutableStateOf(false) }
     var showRuntimes by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
@@ -1520,6 +1530,30 @@ private fun SettingsScreen(
                 leadingContent = { Icon(Icons.Default.History, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
             ) }
             }
+            item { SettingsSectionHeader("Securite et historique", securityExpanded) { securityExpanded = !securityExpanded } }
+            if (securityExpanded) {
+            item { SettingsSwitch("Verrouillage biometrique", state.settings.lockBiometricEnabled, vm::setBiometricLock) }
+            item { RoundedListItem(
+                modifier = Modifier.clickable { if (state.settings.lockPinEnabled) vm.setPinLock(null) else showPinSetup = true },
+                headlineContent = { Text(if (state.settings.lockPinEnabled) "Desactiver le code" else "Verrouillage par code") },
+                supportingContent = { Text("Code chiffre de 4 a 8 chiffres, stocke chiffre") },
+                leadingContent = { Icon(Icons.Default.Lock, null) }
+            ) }
+            item { SettingsSwitch("Enregistrer l historique de jeu", state.settings.historyEnabled, vm::setHistoryEnabled) }
+            item { RoundedListItem(
+                modifier = Modifier.clickable(onClick = onOpenHistory),
+                headlineContent = { Text("Historique de jeux") },
+                supportingContent = { Text("Sessions terminees, groupees par jour") },
+                leadingContent = { Icon(Icons.Default.History, null) },
+                trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
+            ) }
+            item { RoundedListItem(
+                modifier = Modifier.clickable(onClick = vm::requestModsRoot),
+                headlineContent = { Text(if (state.settings.modsRootUri == null) "Choisir le depot de mods" else "Changer le depot de mods") },
+                supportingContent = { Text(if (state.settings.modsRootUri == null) "Dossier Astra/Mods" else "Depot configure") },
+                leadingContent = { Icon(Icons.Default.Folder, null) }
+            ) }
+            }
             item { SettingsSectionHeader("Sauvegarde et restauration", backupExpanded) { backupExpanded = !backupExpanded } }
             if (backupExpanded) {
             item { RoundedListItem(
@@ -1570,6 +1604,7 @@ private fun SettingsScreen(
         { confirmRestore = false; onRestoreBackup() },
         { confirmRestore = false }
     )
+    if (showPinSetup) PinSetupDialog({ vm.setPinLock(it); showPinSetup = false }, { showPinSetup = false })
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -1601,6 +1636,7 @@ private fun GameDetailScreen(
     var informationExpanded by rememberSaveable(id) { mutableStateOf(false) }
     var pickFolder by remember { mutableStateOf(false) }
     var confirmGameRemoval by remember { mutableStateOf(false) }
+    var showTools by remember { mutableStateOf(false) }
     val item = game
     var confirmUpdate by rememberSaveable { mutableStateOf(false) }
     val latestUpdate = latestVersions[id]
@@ -1699,6 +1735,10 @@ private fun GameDetailScreen(
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f).height(40.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Jouer") }
+                            FilledTonalButton(
+                                onClick = { showTools = true }, modifier = Modifier.height(40.dp),
+                                contentPadding = PaddingValues(horizontal = 12.dp)
+                            ) { Icon(Icons.Default.Build, null); Spacer(Modifier.width(6.dp)); Text("Outils") }
                             FilledTonalButton(
                                 onClick = { vm.toggleFavorite(item.id) }, modifier = Modifier.height(40.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp)
@@ -1851,6 +1891,7 @@ private fun GameDetailScreen(
         confirmButton = { TextButton(onClick = { vm.removeCover(item.id); confirmCoverRemoval = false }) { Text("Supprimer") } },
         dismissButton = { TextButton(onClick = { confirmCoverRemoval = false }) { Text("Annuler") } }
     )
+    if (item != null && showTools) GameToolsSheet(item, vm) { showTools = false }
 }
 
 @Composable
