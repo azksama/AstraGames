@@ -9,6 +9,9 @@ import fr.astragames.app.data.local.AstraDatabase
 import fr.astragames.app.data.backup.BackupManager
 import fr.astragames.app.data.repository.GameRepository
 import fr.astragames.app.data.scanner.RecursiveSourceScanner
+import fr.astragames.app.data.mods.ModsManager
+import fr.astragames.app.data.saves.SaveFinder
+import fr.astragames.app.data.saves.SaveManager
 import fr.astragames.app.launcher.JoiPlayLauncher
 import fr.astragames.app.launcher.JoiPlayCatalogProvider
 import fr.astragames.app.settings.SettingsRepository
@@ -24,6 +27,7 @@ class AstraApplication : Application() {
         val database = AstraDatabase.create(this)
         val resolver = FileAccessResolver(this)
         val scanner = RecursiveSourceScanner(this, database.dao(), resolver)
+        val finder = SaveFinder(this)
         container = AppContainer(
             repository = GameRepository(this, database.dao(), scanner, BackupManager(this, database)),
             settings = SettingsRepository(this),
@@ -31,7 +35,10 @@ class AstraApplication : Application() {
             covers = SearchCoverProvider(this),
             f95Zone = F95ZoneProvider(),
             vndb = VndbProvider(),
-            joiPlayCatalog = JoiPlayCatalogProvider()
+            joiPlayCatalog = JoiPlayCatalogProvider(),
+            saveManager = SaveManager(this, database.dao(), finder),
+            modsManager = ModsManager(this, database.dao()),
+            dao = database.dao()
         )
         JoiPlayUpdateWorker.schedule(this)
         GameUpdatesWorker.schedule(this)
@@ -45,5 +52,8 @@ data class AppContainer(
     val covers: SearchCoverProvider,
     val f95Zone: F95ZoneProvider,
     val vndb: VndbProvider,
-    val joiPlayCatalog: JoiPlayCatalogProvider
+    val joiPlayCatalog: JoiPlayCatalogProvider,
+    val saveManager: SaveManager,
+    val modsManager: ModsManager,
+    val dao: fr.astragames.app.data.local.AstraDao
 )

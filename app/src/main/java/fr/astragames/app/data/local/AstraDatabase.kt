@@ -14,9 +14,11 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         LibraryFolderEntity::class, PlaySessionEntity::class, MetadataEntity::class,
         CoverCandidateEntity::class, CollectionEntity::class, CollectionRuleEntity::class,
         ScanHistoryEntity::class, ScanReportItemEntity::class, LaunchProfileEntity::class,
-        DeletedGameEntity::class, IgnoredDuplicateGroupEntity::class, AuditEventEntity::class
+        DeletedGameEntity::class, IgnoredDuplicateGroupEntity::class, AuditEventEntity::class,
+        GameSaveLocationEntity::class, SaveBackupEntity::class, ModEntity::class,
+        ModInstallationEntity::class, ModInstalledFileEntity::class
     ],
-    version = 7,
+    version = 8,
     exportSchema = true
 )
 abstract class AstraDatabase : RoomDatabase() {
@@ -27,7 +29,7 @@ abstract class AstraDatabase : RoomDatabase() {
             context.applicationContext,
             AstraDatabase::class.java,
             "astra_games.db"
-        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7).fallbackToDestructiveMigration(false).build()
+        ).addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8).fallbackToDestructiveMigration(false).build()
 
         private val MIGRATION_1_2 = object : Migration(1, 2) {
             override fun migrate(db: SupportSQLiteDatabase) {
@@ -90,6 +92,34 @@ abstract class AstraDatabase : RoomDatabase() {
                     "CREATE TABLE IF NOT EXISTS audit_events (id TEXT NOT NULL, type TEXT NOT NULL, detail TEXT NOT NULL, timestamp INTEGER NOT NULL, PRIMARY KEY(id))"
                 )
                 db.execSQL("CREATE INDEX IF NOT EXISTS index_audit_events_timestamp ON audit_events (timestamp)")
+            }
+        }
+
+        private val MIGRATION_7_8 = object : Migration(7, 8) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS game_save_locations (id TEXT NOT NULL, gameId TEXT NOT NULL, uri TEXT NOT NULL, type TEXT NOT NULL, displayName TEXT NOT NULL, autoDetected INTEGER NOT NULL, enabled INTEGER NOT NULL, addedAt INTEGER NOT NULL, PRIMARY KEY(id))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_game_save_locations_gameId ON game_save_locations (gameId)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS save_backups (id TEXT NOT NULL, gameId TEXT NOT NULL, sourceUri TEXT NOT NULL, sourceName TEXT NOT NULL, backupUri TEXT NOT NULL, createdAt INTEGER NOT NULL, sizeBytes INTEGER NOT NULL, PRIMARY KEY(id))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_save_backups_gameId ON save_backups (gameId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_save_backups_sourceUri ON save_backups (sourceUri)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS mods (id TEXT NOT NULL, modId TEXT NOT NULL, name TEXT NOT NULL, version TEXT, author TEXT, description TEXT, engine TEXT NOT NULL, folderUri TEXT NOT NULL, hasManifest INTEGER NOT NULL, installMode TEXT NOT NULL, target TEXT, filesRoot TEXT NOT NULL, lastSeenAt INTEGER NOT NULL, PRIMARY KEY(id))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_mods_modId_engine ON mods (modId, engine)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_mods_folderUri ON mods (folderUri)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS mod_installations (id TEXT NOT NULL, modId TEXT NOT NULL, gameId TEXT NOT NULL, installedAt INTEGER NOT NULL, modVersion TEXT, installMode TEXT NOT NULL, status TEXT NOT NULL, PRIMARY KEY(id))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_mod_installations_modId ON mod_installations (modId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_mod_installations_gameId ON mod_installations (gameId)")
+                db.execSQL(
+                    "CREATE TABLE IF NOT EXISTS mod_installed_files (id TEXT NOT NULL, installationId TEXT NOT NULL, relativePath TEXT NOT NULL, action TEXT NOT NULL, originalHash TEXT, installedHash TEXT, backupUri TEXT, PRIMARY KEY(id))"
+                )
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_mod_installed_files_installationId ON mod_installed_files (installationId)")
             }
         }
     }

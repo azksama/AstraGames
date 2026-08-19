@@ -159,6 +159,21 @@ class AstraDatabaseTest {
         assertNull(dao.getGame("g2"))
     }
 
+    @Test fun saveAndModTablesExistAfterCreation() = runTest {
+        val dao = database.dao()
+        dao.upsertSaveLocation(
+            GameSaveLocationEntity("loc1", "g1", "content://saves", "RENPY", "saves", true, true, 1)
+        )
+        dao.insertSaveBackup(SaveBackupEntity("b1", "g1", "content://slot1", "slot1.save", "content://backup", 2, 10))
+        dao.upsertMod(ModEntity("m1", "example.mod", "Example", "1.0", "A", "D", "RENPY", "content://mod", true, "OVERLAY", "game", "files", 3))
+        dao.upsertInstallation(ModInstallationEntity("i1", "m1", "g1", 4, "1.0", "OVERLAY", "INSTALLED"))
+        dao.insertInstalledFiles(listOf(ModInstalledFileEntity("f1", "i1", "content://file", "ADDED", null, "abc", null)))
+        assertEquals("saves", dao.getSaveLocations("g1").single().displayName)
+        assertEquals("slot1.save", dao.getSaveBackupsForSource("content://slot1").single().sourceName)
+        assertEquals("Example", dao.getMods().single().name)
+        assertEquals("ADDED", dao.getInstalledFiles("i1").single().action)
+    }
+
     private fun game() = GameEntity(
         id = "g1", title = "Wind Waiting Island", documentUri = "content://g1", physicalPath = null,
         executableName = "Game.exe", engine = "RPG_MAKER_MV", launcher = "JOIPLAY", sourceId = "s1",

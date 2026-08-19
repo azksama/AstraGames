@@ -12,6 +12,7 @@ import fr.astragames.app.core.model.ThemeMode
 import fr.astragames.app.core.security.KeystoreCrypto
 import java.util.Base64
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
 private val Context.dataStore by preferencesDataStore("astra_settings")
@@ -37,7 +38,12 @@ data class AstraSettings(
     val f95SessionXfSession: String? = null,
     val f95NotifiedUpdates: String = "",
     val f95LatestVersions: String = "",
-    val updateCheckInterval: String = "DAY_7"
+    val updateCheckInterval: String = "DAY_7",
+    val lockBiometricEnabled: Boolean = false,
+    val lockPinEnabled: Boolean = false,
+    val historyEnabled: Boolean = true,
+    val modsRootUri: String? = null,
+    val saveEditorFavorites: String = ""
 )
 
 class SettingsRepository(private val context: Context) {
@@ -62,6 +68,11 @@ class SettingsRepository(private val context: Context) {
             f95NotifiedUpdates = values[F95_NOTIFIED_UPDATES].orEmpty(),
             f95LatestVersions = values[F95_LATEST_VERSIONS].orEmpty(),
             updateCheckInterval = values[UPDATE_CHECK_INTERVAL] ?: "DAY_7",
+            lockBiometricEnabled = values[LOCK_BIOMETRIC] ?: false,
+            lockPinEnabled = values[LOCK_PIN_ENABLED] ?: false,
+            historyEnabled = values[HISTORY_ENABLED] ?: true,
+            modsRootUri = values[MODS_ROOT_URI],
+            saveEditorFavorites = values[SAVE_EDITOR_FAVORITES].orEmpty(),
             f95SessionXfUser = values[F95_SESSION_XF_USER]?.let { encoded ->
                 runCatching { String(KeystoreCrypto.decrypt(Base64.getDecoder().decode(encoded))) }.getOrNull()
             },
@@ -101,7 +112,31 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setUpdateCheckInterval(value: String) = context.dataStore.edit { it[UPDATE_CHECK_INTERVAL] = value }
 
+    suspend fun setBiometricLock(enabled: Boolean) = context.dataStore.edit { it[LOCK_BIOMETRIC] = enabled }
 
+    suspend fun setPinLock(pin: String?) = context.dataStore.edit {
+        if (pin == null) {
+            it.remove(LOCK_PIN)
+            it[LOCK_PIN_ENABLED] = false
+        } else {
+            it[LOCK_PIN] = Base64.getEncoder().encodeToString(KeystoreCrypto.encrypt(pin.toByteArray()))
+            it[LOCK_PIN_ENABLED] = true
+        }
+    }
+
+    suspend fun verifyPin(pin: String): Boolean {
+        val encoded = context.dataStore.data.first()[LOCK_PIN] ?: return false
+        val stored = runCatching { String(KeystoreCrypto.decrypt(Base64.getDecoder().decode(encoded))) }.getOrNull()
+        return stored != null && stored == pin
+    }
+
+    suspend fun setModsRoot(uri: String?) = context.dataStore.edit {
+        if (uri == null) it.remove(MODS_ROOT_URI) else it[MODS_ROOT_URI] = uri
+    }
+
+    suspend fun setSaveEditorFavorites(value: String) = context.dataStore.edit { it[SAVE_EDITOR_FAVORITES] = value }
+
+    suspend fun setHistoryEnabled(value: Boolean) = context.dataStore.edit { it[HISTORY_ENABLED] = value }
 
     suspend fun clearF95Session() = context.dataStore.edit {
         it.remove(F95_SESSION_USER)
@@ -134,5 +169,11 @@ class SettingsRepository(private val context: Context) {
         private val F95_NOTIFIED_UPDATES = stringPreferencesKey("f95_notified_updates")
         private val F95_LATEST_VERSIONS = stringPreferencesKey("f95_latest_versions")
         private val UPDATE_CHECK_INTERVAL = stringPreferencesKey("update_check_interval")
+        private val LOCK_BIOMETRIC = booleanPreferencesKey("lock_biometric")
+        private val LOCK_PIN_ENABLED = booleanPreferencesKey("lock_pin_enabled")
+        private val LOCK_PIN = stringPreferencesKey("lock_pin")
+        private val HISTORY_ENABLED = booleanPreferencesKey("history_enabled")
+        private val MODS_ROOT_URI = stringPreferencesKey("mods_root_uri")
+        private val SAVE_EDITOR_FAVORITES = stringPreferencesKey("save_editor_favorites")
     }
 }

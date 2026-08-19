@@ -250,3 +250,70 @@ data class AuditEventEntity(
     val detail: String,
     val timestamp: Long
 )
+
+/** Emplacement de dossier de sauvegardes connu pour un jeu (auto-détecté ou défini manuellement). */
+@Entity(tableName = "game_save_locations", indices = [Index("gameId")])
+data class GameSaveLocationEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val gameId: String,
+    val uri: String,
+    val type: String,
+    val displayName: String,
+    val autoDetected: Boolean,
+    val enabled: Boolean = true,
+    val addedAt: Long
+)
+
+/** Backup automatique d'une sauvegarde de jeu, créé avant chaque écriture. */
+@Entity(tableName = "save_backups", indices = [Index("gameId"), Index("sourceUri")])
+data class SaveBackupEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val gameId: String,
+    val sourceUri: String,
+    val sourceName: String,
+    val backupUri: String,
+    val createdAt: Long,
+    val sizeBytes: Long
+)
+
+/** Mod détecté dans le dépôt local Astra/Mods/&lt;Engine&gt;/. */
+@Entity(tableName = "mods", indices = [Index(value = ["modId", "engine"]), Index("folderUri")])
+data class ModEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val modId: String,
+    val name: String,
+    val version: String?,
+    val author: String?,
+    val description: String?,
+    val engine: String,
+    val folderUri: String,
+    val hasManifest: Boolean,
+    val installMode: String,
+    val target: String?,
+    val filesRoot: String,
+    val lastSeenAt: Long
+)
+
+/** Installation d'un mod sur un jeu, nécessaire à la désinstallation contrôlée. */
+@Entity(tableName = "mod_installations", indices = [Index("modId"), Index("gameId")])
+data class ModInstallationEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val modId: String,
+    val gameId: String,
+    val installedAt: Long,
+    val modVersion: String?,
+    val installMode: String,
+    val status: String
+)
+
+/** Fichier individuel touché par une installation de mod. */
+@Entity(tableName = "mod_installed_files", indices = [Index("installationId")])
+data class ModInstalledFileEntity(
+    @androidx.room.PrimaryKey val id: String,
+    val installationId: String,
+    val relativePath: String,
+    val action: String,
+    val originalHash: String?,
+    val installedHash: String?,
+    val backupUri: String?
+)

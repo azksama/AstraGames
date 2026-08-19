@@ -126,6 +126,10 @@ interface AstraDao {
         deleteMetadata(gameId)
         deleteCoverCandidates(gameId)
         deleteLaunchProfile(gameId)
+        deleteSaveLocationsForGame(gameId)
+        deleteSaveBackupsForGame(gameId)
+        deleteInstalledFilesForGame(gameId)
+        deleteInstallationsForGame(gameId)
         deleteGame(gameId)
     }
 
@@ -200,6 +204,12 @@ interface AstraDao {
             deleteCoverCandidatesForGames(gameIds)
             deleteLaunchProfilesForGames(gameIds)
             deleteGamesForSource(sourceId)
+            gameIds.forEach { gameId ->
+                deleteSaveLocationsForGame(gameId)
+                deleteSaveBackupsForGame(gameId)
+                deleteInstalledFilesForGame(gameId)
+                deleteInstallationsForGame(gameId)
+            }
         }
         deleteScanReportItemsForSource(sourceId)
         deleteScanHistoryForSource(sourceId)
@@ -314,6 +324,21 @@ interface AstraDao {
     @Query("UPDATE play_sessions SET endedAt = :endedAt, durationMs = :durationMs WHERE id = :id")
     suspend fun finishPlaySession(id: String, endedAt: Long, durationMs: Long)
 
+    @Query("SELECT * FROM play_sessions WHERE endedAt IS NOT NULL ORDER BY startedAt DESC LIMIT :limit")
+    suspend fun getPlayHistory(limit: Int = 200): List<PlaySessionEntity>
+
+    @Query("SELECT play_sessions.* FROM play_sessions JOIN games ON play_sessions.gameId = games.id WHERE play_sessions.endedAt IS NOT NULL AND games.hidden = 0 ORDER BY play_sessions.startedAt DESC LIMIT :limit")
+    fun observePlayHistory(limit: Int = 200): Flow<List<PlaySessionEntity>>
+
+    @Query("DELETE FROM play_sessions WHERE id = :id")
+    suspend fun deletePlaySession(id: String)
+
+    @Query("DELETE FROM play_sessions WHERE endedAt IS NOT NULL AND endedAt < :before")
+    suspend fun deletePlaySessionsBefore(before: Long)
+
+    @Query("DELETE FROM play_sessions WHERE endedAt IS NOT NULL")
+    suspend fun clearEndedPlaySessions()
+
     @Query("UPDATE play_sessions SET gameId = :primaryId WHERE gameId = :secondaryId")
     suspend fun movePlaySessions(primaryId: String, secondaryId: String)
 
@@ -419,4 +444,76 @@ interface AstraDao {
     suspend fun insertAudit(event: AuditEventEntity)
     @Query("SELECT * FROM audit_events ORDER BY timestamp DESC")
     fun observeAuditEvents(): Flow<List<AuditEventEntity>>
+
+    @Query("SELECT * FROM game_save_locations WHERE gameId = :gameId ORDER BY addedAt")
+    fun observeSaveLocations(gameId: String): Flow<List<GameSaveLocationEntity>>
+
+    @Query("SELECT * FROM game_save_locations WHERE gameId = :gameId AND enabled = 1")
+    suspend fun getSaveLocations(gameId: String): List<GameSaveLocationEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertSaveLocation(location: GameSaveLocationEntity)
+
+    @Query("DELETE FROM game_save_locations WHERE id = :id")
+    suspend fun deleteSaveLocation(id: String)
+
+    @Query("DELETE FROM game_save_locations WHERE gameId = :gameId")
+    suspend fun deleteSaveLocationsForGame(gameId: String)
+
+    @Query("SELECT * FROM save_backups WHERE gameId = :gameId ORDER BY createdAt DESC")
+    fun observeSaveBackups(gameId: String): Flow<List<SaveBackupEntity>>
+
+    @Query("SELECT * FROM save_backups WHERE sourceUri = :sourceUri ORDER BY createdAt DESC")
+    suspend fun getSaveBackupsForSource(sourceUri: String): List<SaveBackupEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertSaveBackup(backup: SaveBackupEntity)
+
+    @Query("DELETE FROM save_backups WHERE id = :id")
+    suspend fun deleteSaveBackup(id: String)
+
+    @Query("DELETE FROM save_backups WHERE gameId = :gameId")
+    suspend fun deleteSaveBackupsForGame(gameId: String)
+
+    @Query("SELECT * FROM mods ORDER BY engine, name COLLATE NOCASE")
+    fun observeMods(): Flow<List<ModEntity>>
+
+    @Query("SELECT * FROM mods")
+    suspend fun getMods(): List<ModEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertMod(mod: ModEntity)
+
+    @Query("DELETE FROM mods WHERE id NOT IN (:keepIds)")
+    suspend fun deleteModsNotIn(keepIds: List<String>)
+
+    @Query("DELETE FROM mods WHERE id IN (:ids)")
+    suspend fun deleteMods(ids: List<String>)
+
+    @Query("SELECT * FROM mod_installations WHERE gameId = :gameId ORDER BY installedAt DESC")
+    fun observeInstallationsForGame(gameId: String): Flow<List<ModInstallationEntity>>
+
+    @Query("SELECT * FROM mod_installations WHERE modId = :modId")
+    suspend fun getInstallationsForMod(modId: String): List<ModInstallationEntity>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertInstallation(installation: ModInstallationEntity)
+
+    @Query("DELETE FROM mod_installations WHERE id = :id")
+    suspend fun deleteInstallation(id: String)
+
+    @Query("DELETE FROM mod_installations WHERE gameId = :gameId")
+    suspend fun deleteInstallationsForGame(gameId: String)
+
+    @Query("DELETE FROM mod_installed_files WHERE installationId IN (SELECT id FROM mod_installations WHERE gameId = :gameId)")
+    suspend fun deleteInstalledFilesForGame(gameId: String)
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun insertInstalledFiles(files: List<ModInstalledFileEntity>)
+
+    @Query("SELECT * FROM mod_installed_files WHERE installationId = :installationId ORDER BY relativePath")
+    suspend fun getInstalledFiles(installationId: String): List<ModInstalledFileEntity>
+
+    @Query("DELETE FROM mod_installed_files WHERE installationId = :installationId")
+    suspend fun deleteInstalledFiles(installationId: String)
 }

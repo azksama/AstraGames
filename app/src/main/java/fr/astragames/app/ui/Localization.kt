@@ -449,7 +449,28 @@ object AppLocalizer {
         t("30 jours", "30 days", "30 días", "30 дней", "30 Tage", "30 天", "30日"),
         t("Marquer comme vu", "Mark as seen", "Marcar como visto", "Отметить как просмотренное", "Als gesehen markieren", "标记为已查看", "確認済みにする"),
         t("Mise à jour effectuée ?", "Update done?", "¿Actualización realizada?", "Обновление выполнено?", "Update durchgeführt?", "更新完成了吗？", "アップデートは完了しましたか？"),
-        t("Mise à jour effectuée", "Update done", "Actualización realizada", "Обновление выполнено", "Update durchgeführt", "更新已完成", "アップデート完了")
+        t("Mise à jour effectuée", "Update done", "Actualización realizada", "Обновление выполнено", "Update durchgeführt", "更新已完成", "アップデート完了"),
+        t("Outils", "Tools", "Herramientas", "Инструменты", "Werkzeuge", "工具", "ツール"),
+        t("Historique", "History", "Historial", "История", "Verlauf", "历史", "履歴"),
+        t("Historique de jeux", "Play history", "Historial de partidas", "История игр", "Spielverlauf", "游戏历史", "プレイ履歴"),
+        t("Verrouillage biometrique", "Biometric lock", "Bloqueo biometrico", "Биометрическая блокировка", "Biometrische Sperre", "生物识别锁定", "生体認証ロック"),
+        t("Verrouillage par code", "PIN lock", "Bloqueo por codigo", "Блокировка кодом", "Codesperre", "密码锁定", "PINロック"),
+        t("Desactiver le code", "Disable PIN", "Desactivar el codigo", "Отключить код", "Code deaktivieren", "关闭密码", "PINを無効化"),
+        t("Astra est verrouille", "Astra is locked", "Astra esta bloqueado", "Astra заблокирован", "Astra ist gesperrt", "Astra 已锁定", "Astra はロック中です"),
+        t("Deverrouiller", "Unlock", "Desbloquear", "Разблокировать", "Entsperren", "解锁", "ロック解除"),
+        t("Deverrouiller par biometrie", "Unlock with biometrics", "Desbloquear con biometria", "Разблокировать биометрией", "Mit Biometrie entsperren", "使用生物识别解锁", "生体認証で解除"),
+        t("Dossier des sauvegardes", "Save folder", "Carpeta de guardados", "Папка сохранений", "Spielstandordner", "存档文件夹", "セーブフォルダ"),
+        t("Editer une sauvegarde", "Edit a save", "Editar una partida", "Изменить сохранение", "Spielstand bearbeiten", "编辑存档", "セーブを編集"),
+        t("Gerer les mods", "Manage mods", "Gestionar mods", "Управлять модами", "Mods verwalten", "管理模组", "MODを管理"),
+        t("Installer", "Install", "Instalar", "Установить", "Installieren", "安装", "インストール"),
+        t("Desinstaller", "Uninstall", "Desinstalar", "Удалить", "Deinstallieren", "卸载", "アンインストール"),
+        t("Importer un ZIP", "Import a ZIP", "Importar un ZIP", "Импортировать ZIP", "ZIP importieren", "导入 ZIP", "ZIPを読み込む"),
+        t("Simple", "Simple", "Simple", "Простой", "Einfach", "简易", "シンプル"),
+        t("Avance", "Advanced", "Avanzado", "Расширенный", "Erweitert", "高级", "詳細"),
+        t("Argent", "Money", "Dinero", "Деньги", "Geld", "金钱", "所持金"),
+        t("Niveau", "Level", "Nivel", "Уровень", "Stufe", "等级", "レベル"),
+        t("Experience", "Experience", "Experiencia", "Опыт", "Erfahrung", "经验", "経験値"),
+        t("Securite et historique", "Security and history", "Seguridad e historial", "Безопасность и история", "Sicherheit und Verlauf", "安全与历史", "セキュリティと履歴")
     )
 
     private val translations = AppLanguage.entries.associateWith { language ->

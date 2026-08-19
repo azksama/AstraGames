@@ -179,6 +179,9 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as AstraApplication
     private val repository = app.container.repository
     private val settingsRepository = app.container.settings
+    private val saveManager = app.container.saveManager
+    private val modsManager = app.container.modsManager
+    private val dao = app.container.dao
     private val filters = MutableStateFlow(LibraryFilters())
     private val scanning = MutableStateFlow(false)
     private val scanProgress = MutableStateFlow(ScanProgressState())
@@ -200,6 +203,23 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val duplicatePreview: StateFlow<DuplicateMergePreview?> = mutableDuplicatePreview
     val openFolderRequests = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
     val notificationPermissionRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val pickSaveFolderRequests = MutableSharedFlow<String>(extraBufferCapacity = 1)
+    val pickModsRootRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val pickModZipRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    val biometricUnlockRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    private val locked = MutableStateFlow(false)
+    val isLocked: StateFlow<Boolean> = locked
+    private val playHistory = dao.observePlayHistory(200)
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
+    private val mutableSaves = MutableStateFlow<List<fr.astragames.app.data.saves.GameSave>>(emptyList())
+    val gameSaves: StateFlow<List<fr.astragames.app.data.saves.GameSave>> = mutableSaves
+    private val mutableSaveEntries = MutableStateFlow<List<fr.astragames.app.data.saves.SaveEntry>>(emptyList())
+    val saveEntries: StateFlow<List<fr.astragames.app.data.saves.SaveEntry>> = mutableSaveEntries
+    private val mutableMods = MutableStateFlow<List<fr.astragames.app.data.mods.ModCatalogItem>>(emptyList())
+    val modsCatalog: StateFlow<List<fr.astragames.app.data.mods.ModCatalogItem>> = mutableMods
+    private val pendingSaveFolderGameId = MutableStateFlow<String?>(null)
+    private var backgrounded = false
+    private var ignoreNextRelock = false
     private val runtimeManager = JoiPlayRuntimeManager()
     private val metadataRefresh = MutableStateFlow(MetadataRefreshState())
     private val metadataMutex = Mutex()
@@ -404,6 +424,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             if (settings.scanOnLaunch) scanAll(silent = true)
+            if (settings.lockBiometricEnabled || settings.lockPinEnabled) locked.value = true
         }
     }
 
@@ -1060,6 +1081,193 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         GameUpdatesWorker.schedule(getApplication(), interval)
     }
 
+    fun lockAppIfNeeded() {
+        val settings = uiState.value.settings
+        locked.value = settings.lockBiometricEnabled || settings.lockPinEnabled
+    }
+
+    fun unlockApp() { locked.value = false }
+
+    fun requestBiometricUnlock() { biometricUnlockRequests.tryEmit(Unit) }
+
+    fun verifyLockPin(pin: String, onResult: (Boolean) -> Unit) = viewModelScope.launch {
+        val ok = settingsRepository.verifyPin(pin)
+        if (ok) locked.value = false
+        onResult(ok)
+        if (!ok) events.emit(UiEvent.Message("Code incorrect"))
+    }
+
+    fun setBiometricLock(enabled: Boolean) = viewModelScope.launch {
+        settingsRepository.setBiometricLock(enabled)
+        if (enabled) locked.value = true
+    }
+
+    fun setPinLock(pin: String?) = viewModelScope.launch {
+        settingsRepository.setPinLock(pin)
+        locked.value = pin != null || uiState.value.settings.lockBiometricEnabled
+        events.emit(UiEvent.Message(if (pin == null) "Code desactive" else "Code enregistre"))
+    }
+
+    fun setHistoryEnabled(value: Boolean) = viewModelScope.launch { settingsRepository.setHistoryEnabled(value) }
+
+    fun playHistory() = playHistory
+
+    fun deletePlaySession(id: String) = viewModelScope.launch { dao.deletePlaySession(id) }
+
+    fun clearPlayHistory() = viewModelScope.launch {
+        dao.clearEndedPlaySessions()
+        events.emit(UiEvent.Message("Historique efface"))
+    }
+
+    fun observeSaveLocations(gameId: String) = saveManager.observeLocations(gameId)
+
+    fun observeSaveBackups(gameId: String) = saveManager.observeBackups(gameId)
+
+    fun detectSaveLocations(gameId: String) = viewModelScope.launch {
+        val game = repository.getGame(gameId) ?: return@launch
+        runCatching { saveManager.detectLocations(game) }
+            .onSuccess { events.emit(UiEvent.Message(it.size.toString() + " emplacement(s) de sauvegarde")) }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Detection impossible")) }
+    }
+
+    fun requestSaveFolder(gameId: String) {
+        pendingSaveFolderGameId.value = gameId
+        ignoreNextRelock = true
+        pickSaveFolderRequests.tryEmit(gameId)
+    }
+
+    fun addSaveLocation(uri: Uri) = viewModelScope.launch {
+        val gameId = pendingSaveFolderGameId.value ?: return@launch
+        val game = repository.getGame(gameId) ?: return@launch
+        runCatching { saveManager.addLocation(game, uri, uri.lastPathSegment.orEmpty()) }
+            .onSuccess { events.emit(UiEvent.Message("Dossier de sauvegarde ajoute")) }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Ajout impossible")) }
+    }
+
+    fun removeSaveLocation(id: String) = viewModelScope.launch { saveManager.removeLocation(id) }
+
+    fun loadSaves(gameId: String) = viewModelScope.launch {
+        val game = repository.getGame(gameId) ?: return@launch
+        runCatching { saveManager.listSaves(game) }
+            .onSuccess { mutableSaves.value = it }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Lecture des sauvegardes impossible")) }
+    }
+
+    fun loadSaveEntries(gameId: String, save: fr.astragames.app.data.saves.GameSave) = viewModelScope.launch {
+        val game = repository.getGame(gameId) ?: return@launch
+        runCatching { saveManager.readSave(game, save).second }
+            .onSuccess { mutableSaveEntries.value = it }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Lecture de la sauvegarde impossible")) }
+    }
+
+    fun applySaveEdits(gameId: String, save: fr.astragames.app.data.saves.GameSave, edits: List<fr.astragames.app.data.saves.SaveEdit>) = viewModelScope.launch {
+        val game = repository.getGame(gameId) ?: return@launch
+        runCatching { saveManager.writeSave(game, save, edits) }
+            .onSuccess {
+                events.emit(UiEvent.Message("Sauvegarde enregistree avec backup"))
+                loadSaveEntries(gameId, save)
+            }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Ecriture impossible")) }
+    }
+
+    fun restoreSaveBackup(backup: fr.astragames.app.data.local.SaveBackupEntity) = viewModelScope.launch {
+        runCatching { saveManager.restoreBackup(backup) }
+            .onSuccess { events.emit(UiEvent.Message("Backup restaure")) }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Restauration impossible")) }
+    }
+
+    fun deleteSaveBackup(backup: fr.astragames.app.data.local.SaveBackupEntity) = viewModelScope.launch {
+        runCatching { saveManager.deleteBackup(backup) }
+            .onSuccess { events.emit(UiEvent.Message("Backup supprime")) }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Suppression impossible")) }
+    }
+
+    fun setSaveEditorFavorites(value: String) = viewModelScope.launch { settingsRepository.setSaveEditorFavorites(value) }
+
+    fun requestModsRoot() {
+        ignoreNextRelock = true
+        pickModsRootRequests.tryEmit(Unit)
+    }
+
+    fun setModsRoot(uri: Uri) = viewModelScope.launch {
+        settingsRepository.setModsRoot(uri.toString())
+        runCatching { modsManager.scanRepository(uri.toString()) }
+            .onSuccess { events.emit(UiEvent.Message(it.toString() + " mod(s) detecte(s)")) }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Scan des mods impossible")) }
+    }
+
+    fun scanMods() = viewModelScope.launch {
+        val root = settingsRepository.settings.first().modsRootUri
+        if (root == null) {
+            events.emit(UiEvent.Message("Choisissez d abord le dossier Astra/Mods"))
+            return@launch
+        }
+        runCatching { modsManager.scanRepository(root) }
+            .onSuccess { events.emit(UiEvent.Message(it.toString() + " mod(s) detecte(s)")) }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Scan des mods impossible")) }
+    }
+
+    fun loadMods(gameId: String) = viewModelScope.launch {
+        val game = repository.getGame(gameId) ?: return@launch
+        val root = settingsRepository.settings.first().modsRootUri
+        if (root != null) runCatching { modsManager.scanRepository(root) }
+        runCatching { modsManager.catalogFor(game) }
+            .onSuccess { mutableMods.value = it }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Catalogue de mods illisible")) }
+    }
+
+    fun requestModZipImport() {
+        ignoreNextRelock = true
+        pickModZipRequests.tryEmit(Unit)
+    }
+
+    fun importModZip(uri: Uri, engine: String?, replaceExisting: Boolean) = viewModelScope.launch {
+        val root = settingsRepository.settings.first().modsRootUri
+        if (root == null) {
+            events.emit(UiEvent.Message("Choisissez d abord le dossier Astra/Mods"))
+            return@launch
+        }
+        runCatching { modsManager.importZip(uri, root, engine, replaceExisting) }
+            .onSuccess { events.emit(UiEvent.Message("Mod importe : " + it.name)) }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Import impossible")) }
+    }
+
+    fun installMod(gameId: String, modId: String) = viewModelScope.launch {
+        val game = repository.getGame(gameId) ?: return@launch
+        val mod = dao.getMods().firstOrNull { it.id == modId } ?: return@launch
+        runCatching { modsManager.install(game, mod) }
+            .onSuccess {
+                events.emit(UiEvent.Message("Mod installe"))
+                loadMods(gameId)
+            }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Installation impossible")) }
+    }
+
+    fun uninstallMod(gameId: String, installationId: String, force: Boolean = false) = viewModelScope.launch {
+        val installation = dao.observeInstallationsForGame(gameId).first().firstOrNull { it.id == installationId } ?: return@launch
+        runCatching { modsManager.uninstall(installation, force) }
+            .onSuccess { warnings ->
+                if (warnings.isNotEmpty()) events.emit(UiEvent.Message("Des fichiers ont change depuis l installation"))
+                else {
+                    events.emit(UiEvent.Message("Mod desinstalle"))
+                    loadMods(gameId)
+                }
+            }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Desinstallation impossible")) }
+    }
+
+    fun openGameFolder(gameId: String) = viewModelScope.launch {
+        val game = repository.getGame(gameId) ?: return@launch
+        openFolderRequests.emit(Uri.parse(game.documentUri))
+    }
+
+    fun rescanGame(gameId: String) = viewModelScope.launch {
+        val game = repository.getGame(gameId) ?: return@launch
+        repository.verifyGamePresence(gameId)
+        scanSource(game.sourceId)
+        events.emit(UiEvent.Message("Rescan du jeu lance"))
+    }
+
     fun mergeTagPair(keep: TagEntity, removed: TagEntity) = viewModelScope.launch {
         repository.mergeTags(keep.id, removed.id)
         refreshTagMerges()
@@ -1171,13 +1379,25 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         when (val result = app.container.launcher.launch(getApplication(), game, profile)) {
             LaunchResult.Success -> {
                 repository.recordLaunch(id)
-                repository.startPlaySession(id)
+                if (settingsRepository.settings.first().historyEnabled) repository.startPlaySession(id)
             }
             is LaunchResult.Failure -> events.emit(UiEvent.Message(result.message))
         }
     }
 
     fun finishActivePlaySession() = viewModelScope.launch { repository.finishActivePlaySession() }
+
+    fun onAppResumed() {
+        finishActivePlaySession()
+        if (backgrounded && !ignoreNextRelock) {
+            val settings = uiState.value.settings
+            if (settings.lockBiometricEnabled || settings.lockPinEnabled) locked.value = true
+        }
+        ignoreNextRelock = false
+        backgrounded = false
+    }
+
+    fun onAppBackgrounded() { backgrounded = true }
 
     private fun descendantFolderIds(rootId: String, folders: List<LibraryFolderEntity>): Set<String> {
         val result = mutableSetOf(rootId)

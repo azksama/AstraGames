@@ -64,7 +64,7 @@ class F95ZoneProviderTest {
 
     @Test fun buildsYandexSearchWithoutSiteOperator() {
         assertEquals(
-            "https://yandex.com/search/?text=Wind+Waiting+Island+f95zone.to",
+            "https://yandex.com/search/?text=Wind+Waiting+Island+f95zone.to&filter=0",
             F95ZoneProvider().yandexSearchUrl("Wind Waiting Island")
         )
     }
@@ -104,3 +104,4 @@ class F95ZoneProviderTest {
         )
     }
 }
+
