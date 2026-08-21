@@ -102,7 +102,7 @@ import kotlin.math.abs
 
 private enum class Destination(val route: String, val description: String, val visibleInMenu: Boolean = true) {
     LIBRARY("library", "Bibliothèque"), SEARCH("search", "Recherche", false),
-    COLLECTIONS("collections", "Collections"), UPDATES("updates", "Mises à jour"), HISTORY("history", "Historique", false), TAGS("tags", "Tags", false), SETTINGS("settings", "Paramètres")
+    COLLECTIONS("collections", "Collections"), UPDATES("updates", "Mises à jour"), HISTORY("history", "Historique"), TAGS("tags", "Tags", false), SETTINGS("settings", "Paramètres")
 }
 
 private val menuDestinations = Destination.entries.filter { it.visibleInMenu }
@@ -319,7 +319,7 @@ private fun AppNavHost(
         composable(Destination.HISTORY.route) { HistoryScreen(state, vm) }
         composable(Destination.TAGS.route) { TagsScreen(state, vm, onPickTags, nav::popBackStack) }
         composable(Destination.SETTINGS.route) {
-            SettingsScreen(state, vm, onPickSource, { nav.navigate(Destination.TAGS.route) }, { nav.navigate(Destination.HISTORY.route) }, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
+            SettingsScreen(state, vm, onPickSource, { nav.navigate(Destination.TAGS.route) }, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
         }
         composable("game/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
             GameDetailScreen(
@@ -1390,7 +1390,6 @@ private fun SettingsScreen(
     vm: AstraViewModel,
     onPickSource: () -> Unit,
     onOpenTags: () -> Unit,
-    onOpenHistory: () -> Unit,
     onPickBackupFolder: () -> Unit,
     onRestoreBackup: () -> Unit,
     onOpenBackupFolder: () -> Unit
@@ -1539,14 +1538,8 @@ private fun SettingsScreen(
                 supportingContent = { Text("Code chiffre de 4 a 8 chiffres, stocke chiffre") },
                 leadingContent = { Icon(Icons.Default.Lock, null) }
             ) }
+            item { SettingsSwitch("Verrouiller en arriere-plan", state.settings.lockOnBackground, vm::setLockOnBackground) }
             item { SettingsSwitch("Enregistrer l historique de jeu", state.settings.historyEnabled, vm::setHistoryEnabled) }
-            item { RoundedListItem(
-                modifier = Modifier.clickable(onClick = onOpenHistory),
-                headlineContent = { Text("Historique de jeux") },
-                supportingContent = { Text("Sessions terminees, groupees par jour") },
-                leadingContent = { Icon(Icons.Default.History, null) },
-                trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
-            ) }
             item { RoundedListItem(
                 modifier = Modifier.clickable(onClick = vm::requestModsRoot),
                 headlineContent = { Text(if (state.settings.modsRootUri == null) "Choisir le depot de mods" else "Changer le depot de mods") },
@@ -1809,9 +1802,6 @@ private fun GameDetailScreen(
             item { OutlinedButton(onClick = { pickFolder = true }, Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
                 Icon(Icons.Default.FolderCopy, null); Spacer(Modifier.width(8.dp))
                 Text(state.folders.firstOrNull { it.id == item.libraryFolderId }?.name ?: "Classer dans un dossier")
-            } }
-            item { OutlinedButton(onClick = { vm.openGameSaveFolder(item.id) }, Modifier.fillMaxWidth().padding(horizontal = 16.dp)) {
-                Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir le dossier des sauvegardes")
             } }
             if (item.missing) item { Card(Modifier.fillMaxWidth().padding(horizontal = 16.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                 Text("Ce jeu est introuvable. Rescannez sa source.", Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onErrorContainer)

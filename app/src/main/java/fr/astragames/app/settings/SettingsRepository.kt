@@ -41,6 +41,7 @@ data class AstraSettings(
     val updateCheckInterval: String = "DAY_7",
     val lockBiometricEnabled: Boolean = false,
     val lockPinEnabled: Boolean = false,
+    val lockOnBackground: Boolean = true,
     val historyEnabled: Boolean = true,
     val modsRootUri: String? = null,
     val saveEditorFavorites: String = ""
@@ -70,6 +71,7 @@ class SettingsRepository(private val context: Context) {
             updateCheckInterval = values[UPDATE_CHECK_INTERVAL] ?: "DAY_7",
             lockBiometricEnabled = values[LOCK_BIOMETRIC] ?: false,
             lockPinEnabled = values[LOCK_PIN_ENABLED] ?: false,
+            lockOnBackground = values[LOCK_ON_BACKGROUND] ?: true,
             historyEnabled = values[HISTORY_ENABLED] ?: true,
             modsRootUri = values[MODS_ROOT_URI],
             saveEditorFavorites = values[SAVE_EDITOR_FAVORITES].orEmpty(),
@@ -138,6 +140,8 @@ class SettingsRepository(private val context: Context) {
 
     suspend fun setHistoryEnabled(value: Boolean) = context.dataStore.edit { it[HISTORY_ENABLED] = value }
 
+    suspend fun setLockOnBackground(value: Boolean) = context.dataStore.edit { it[LOCK_ON_BACKGROUND] = value }
+
     suspend fun clearF95Session() = context.dataStore.edit {
         it.remove(F95_SESSION_USER)
         it.remove(F95_SESSION_XF_USER)
@@ -172,6 +176,7 @@ class SettingsRepository(private val context: Context) {
         private val LOCK_BIOMETRIC = booleanPreferencesKey("lock_biometric")
         private val LOCK_PIN_ENABLED = booleanPreferencesKey("lock_pin_enabled")
         private val LOCK_PIN = stringPreferencesKey("lock_pin")
+        private val LOCK_ON_BACKGROUND = booleanPreferencesKey("lock_on_background")
         private val HISTORY_ENABLED = booleanPreferencesKey("history_enabled")
         private val MODS_ROOT_URI = stringPreferencesKey("mods_root_uri")
         private val SAVE_EDITOR_FAVORITES = stringPreferencesKey("save_editor_favorites")

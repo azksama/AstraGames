@@ -46,28 +46,21 @@ class SaveFinder(private val context: Context) {
     fun locations(game: GameEntity, rootUri: Uri): List<GameSaveLocationEntity> {
         val root = documentDir(context, rootUri) ?: return emptyList()
         val found = mutableListOf<GameSaveLocationEntity>()
-        fun walk(folder: DocumentFile, path: String, depth: Int) {
-            if (depth > 4) return
+        candidateFolders(root, game.engine).forEach { folder ->
             val children = runCatching { folder.listFiles().toList() }.getOrDefault(emptyList())
-            val name = folder.name.orEmpty().lowercase(Locale.ROOT)
-            val type = when {
-                children.any { isSaveFile(it.name.orEmpty(), game.engine) } -> typeFor(game.engine)
-                name == "saves" && children.any { it.name.orEmpty().endsWith(".save") } -> "RENPY"
-                else -> null
+            if (children.any { it.isFile && isSaveFile(it.name.orEmpty(), game.engine) }) {
+                found += GameSaveLocationEntity(
+                    id = UUID.randomUUID().toString(),
+                    gameId = game.id,
+                    uri = folder.uri.toString(),
+                    type = typeFor(game.engine),
+                    displayName = folder.name.orEmpty().ifBlank { "Sauvegardes" },
+                    autoDetected = true,
+                    enabled = true,
+                    addedAt = System.currentTimeMillis()
+                )
             }
-            if (type != null) found += GameSaveLocationEntity(
-                id = UUID.randomUUID().toString(),
-                gameId = game.id,
-                uri = folder.uri.toString(),
-                type = type,
-                displayName = path.ifBlank { folder.name.orEmpty() },
-                autoDetected = true,
-                enabled = true,
-                addedAt = System.currentTimeMillis()
-            )
-            children.filter(DocumentFile::isDirectory).forEach { walk(it, listOf(path, it.name.orEmpty()).filter(String::isNotBlank).joinToString("/"), depth + 1) }
         }
-        walk(root, "", 0)
         return found
     }
 
@@ -91,6 +84,30 @@ class SaveFinder(private val context: Context) {
                 }
         }
         return result.distinctBy { it.uri }.sortedWith(compareBy({ it.slot ?: Int.MAX_VALUE }, { it.name }))
+    }
+
+    private fun candidateFolders(root: DocumentFile, engine: String): List<DocumentFile> {
+        val names = when (engine) {
+            "RENPY" -> listOf("saves", "save", "game/saves")
+            "RPG_MAKER_MV" -> listOf("www/save", "save", "www")
+            "RPG_MAKER_MZ" -> listOf("save", "www/save")
+            "RPG_MAKER_XP", "RPG_MAKER_VX", "RPG_MAKER_VX_ACE" -> listOf("Save", "save")
+            else -> listOf("saves", "save", "savedata")
+        }
+        val folders = linkedSetOf<DocumentFile>()
+        names.forEach { path -> findChild(root, path)?.let(folders::add) }
+        if (runCatching { root.listFiles().any { it.isFile && isSaveFile(it.name.orEmpty(), engine) } }.getOrDefault(false)) {
+            folders += root
+        }
+        return folders.toList()
+    }
+
+    private fun findChild(root: DocumentFile, relative: String): DocumentFile? {
+        var current: DocumentFile? = root
+        relative.split("/").filter { it.isNotBlank() }.forEach { segment ->
+            current = current?.listFiles()?.firstOrNull { it.isDirectory && it.name.equals(segment, ignoreCase = true) }
+        }
+        return current
     }
 
     private fun typeFor(engine: String) = when (engine) {

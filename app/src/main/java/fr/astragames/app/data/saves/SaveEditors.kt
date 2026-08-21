@@ -115,13 +115,13 @@ class RpgMakerJsonSaveEditor(
 
     override suspend fun read(save: GameSave): SaveData {
         val text = String(readBytes(context, save.uri), StandardCharsets.UTF_8)
-        val json = runCatching { JSONObject(text) }.getOrElse { error("Sauvegarde JSON illisible.") }
+        val json = decodeRpgMakerJson(text)
         return SaveData.JsonSave(json)
     }
 
     override suspend fun write(save: GameSave, data: SaveData) {
         val json = (data as? SaveData.JsonSave)?.json ?: error("Donnees JSON attendues.")
-        writeBytes(context, save.uri, json.toString().toByteArray(StandardCharsets.UTF_8))
+        writeBytes(context, save.uri, encodeRpgMakerJson(json).toByteArray(StandardCharsets.UTF_8))
     }
 }
 
@@ -156,10 +156,10 @@ class RgssSaveEditor(
 }
 
 object JsonSaveEditor {
-    fun flatten(json: JSONObject, limit: Int = 4000): List<SaveEntry> {
+    fun flatten(json: JSONObject, limit: Int = 2500): List<SaveEntry> {
         val result = mutableListOf<SaveEntry>()
         fun walk(value: Any?, path: String, depth: Int) {
-            if (result.size >= limit || depth > 8) return
+            if (result.size >= limit || depth > 6) return
             when (value) {
                 null, JSONObject.NULL -> result += SaveEntry(path, SaveEntryType.UNKNOWN, "null", false)
                 is Boolean -> result += SaveEntry(path, SaveEntryType.BOOLEAN, if (value) "true" else "false", true)
@@ -178,7 +178,7 @@ object JsonSaveEditor {
                 }
                 is JSONArray -> {
                     result += SaveEntry(path, SaveEntryType.LIST, "[" + value.length() + "]", false)
-                    for (index in 0 until value.length().coerceAtMost(250)) {
+                    for (index in 0 until value.length().coerceAtMost(120)) {
                         walk(value.opt(index), path + "[" + index + "]", depth + 1)
                     }
                 }
@@ -260,8 +260,8 @@ object SaveFieldClassifier {
             inventory = many("item", "invent", "bag", "equip"),
             relations = many("affection", "relation", "love", "friend"),
             progress = many("chapter", "progress", "scene", "label", "map"),
-            variables = many("variable", "var[", "gamevariables"),
-            switches = many("switch", "flag", "gameswitches")
+            variables = many("variable", "var[", "gamevariables", ".variables", "_variables", "game_variables"),
+            switches = many("switch", "flag", "gameswitches", ".switches", "_switches", "game_switches")
         )
     }
 }
@@ -326,9 +326,9 @@ class SaveManager(
         val patched = when (game.engine) {
             "RENPY" -> RenPySaveEditor(context, finder).applyEdits(original, edits)
             "RPG_MAKER_MV", "RPG_MAKER_MZ" -> {
-                val json = JSONObject(String(original, StandardCharsets.UTF_8))
+                val json = decodeRpgMakerJson(String(original, StandardCharsets.UTF_8))
                 edits.forEach { JsonSaveEditor.apply(json, it) }
-                json.toString().toByteArray(StandardCharsets.UTF_8)
+                encodeRpgMakerJson(json).toByteArray(StandardCharsets.UTF_8)
             }
             "RPG_MAKER_XP", "RPG_MAKER_VX", "RPG_MAKER_VX_ACE" ->
                 RgssSaveEditor(context, finder).applyEdits(original, edits)
@@ -416,7 +416,7 @@ class SaveManager(
 internal fun flattenPickle(root: PickleNode, limit: Int = 4000): List<SaveEntry> {
     val result = mutableListOf<SaveEntry>()
     fun walk(node: PickleNode, path: String, depth: Int) {
-        if (result.size >= limit || depth > 8) return
+        if (result.size >= limit || depth > 6) return
         when (node) {
             is PickleNode.PInt -> result += SaveEntry(path, SaveEntryType.INT, node.value.toString(), true)
             is PickleNode.PFloat -> result += SaveEntry(path, SaveEntryType.FLOAT, node.value.toString(), true)

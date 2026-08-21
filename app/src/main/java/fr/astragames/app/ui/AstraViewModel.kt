@@ -637,7 +637,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         events.emit(UiEvent.Message("Jeu réautorisé. Relancez le scan de sa source."))
     }
     fun openGameSaveFolder(id: String) = viewModelScope.launch {
-        val uri = repository.findSaveFolderUri(id)
+        val uri = withContext(Dispatchers.IO) { repository.findSaveFolderUri(id) }
         if (uri == null) events.emit(UiEvent.Message("Aucun dossier de sauvegarde détecté"))
         else openFolderRequests.emit(uri)
     }
@@ -1110,6 +1110,8 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     fun setHistoryEnabled(value: Boolean) = viewModelScope.launch { settingsRepository.setHistoryEnabled(value) }
 
+    fun setLockOnBackground(value: Boolean) = viewModelScope.launch { settingsRepository.setLockOnBackground(value) }
+
     fun playHistory() = playHistory
 
     fun deletePlaySession(id: String) = viewModelScope.launch { dao.deletePlaySession(id) }
@@ -1125,7 +1127,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     fun detectSaveLocations(gameId: String) = viewModelScope.launch {
         val game = repository.getGame(gameId) ?: return@launch
-        runCatching { saveManager.detectLocations(game) }
+        runCatching { withContext(Dispatchers.IO) { saveManager.detectLocations(game) } }
             .onSuccess { events.emit(UiEvent.Message(it.size.toString() + " emplacement(s) de sauvegarde")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Detection impossible")) }
     }
@@ -1139,7 +1141,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun addSaveLocation(uri: Uri) = viewModelScope.launch {
         val gameId = pendingSaveFolderGameId.value ?: return@launch
         val game = repository.getGame(gameId) ?: return@launch
-        runCatching { saveManager.addLocation(game, uri, uri.lastPathSegment.orEmpty()) }
+        runCatching { withContext(Dispatchers.IO) { saveManager.addLocation(game, uri, uri.lastPathSegment.orEmpty()) } }
             .onSuccess { events.emit(UiEvent.Message("Dossier de sauvegarde ajoute")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Ajout impossible")) }
     }
@@ -1148,21 +1150,23 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     fun loadSaves(gameId: String) = viewModelScope.launch {
         val game = repository.getGame(gameId) ?: return@launch
-        runCatching { saveManager.listSaves(game) }
+        mutableSaves.value = emptyList()
+        runCatching { withContext(Dispatchers.IO) { saveManager.listSaves(game) } }
             .onSuccess { mutableSaves.value = it }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Lecture des sauvegardes impossible")) }
     }
 
     fun loadSaveEntries(gameId: String, save: fr.astragames.app.data.saves.GameSave) = viewModelScope.launch {
         val game = repository.getGame(gameId) ?: return@launch
-        runCatching { saveManager.readSave(game, save).second }
+        mutableSaveEntries.value = emptyList()
+        runCatching { withContext(Dispatchers.IO) { saveManager.readSave(game, save).second } }
             .onSuccess { mutableSaveEntries.value = it }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Lecture de la sauvegarde impossible")) }
     }
 
     fun applySaveEdits(gameId: String, save: fr.astragames.app.data.saves.GameSave, edits: List<fr.astragames.app.data.saves.SaveEdit>) = viewModelScope.launch {
         val game = repository.getGame(gameId) ?: return@launch
-        runCatching { saveManager.writeSave(game, save, edits) }
+        runCatching { withContext(Dispatchers.IO) { saveManager.writeSave(game, save, edits) } }
             .onSuccess {
                 events.emit(UiEvent.Message("Sauvegarde enregistree avec backup"))
                 loadSaveEntries(gameId, save)
@@ -1171,13 +1175,13 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun restoreSaveBackup(backup: fr.astragames.app.data.local.SaveBackupEntity) = viewModelScope.launch {
-        runCatching { saveManager.restoreBackup(backup) }
+        runCatching { withContext(Dispatchers.IO) { saveManager.restoreBackup(backup) } }
             .onSuccess { events.emit(UiEvent.Message("Backup restaure")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Restauration impossible")) }
     }
 
     fun deleteSaveBackup(backup: fr.astragames.app.data.local.SaveBackupEntity) = viewModelScope.launch {
-        runCatching { saveManager.deleteBackup(backup) }
+        runCatching { withContext(Dispatchers.IO) { saveManager.deleteBackup(backup) } }
             .onSuccess { events.emit(UiEvent.Message("Backup supprime")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Suppression impossible")) }
     }
@@ -1391,7 +1395,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         finishActivePlaySession()
         if (backgrounded && !ignoreNextRelock) {
             val settings = uiState.value.settings
-            if (settings.lockBiometricEnabled || settings.lockPinEnabled) locked.value = true
+            if (settings.lockOnBackground && (settings.lockBiometricEnabled || settings.lockPinEnabled)) locked.value = true
         }
         ignoreNextRelock = false
         backgrounded = false

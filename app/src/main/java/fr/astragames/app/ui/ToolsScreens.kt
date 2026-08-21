@@ -153,7 +153,6 @@ private fun sessionLabel(session: PlaySessionEntity): String {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () -> Unit) {
-    var showLocations by remember { mutableStateOf(false) }
     var showSaves by remember { mutableStateOf(false) }
     var showBackups by remember { mutableStateOf(false) }
     var showMods by remember { mutableStateOf(false) }
@@ -169,7 +168,7 @@ internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () 
                     leadingContent = { Icon(tool.icon, null) },
                     modifier = Modifier.clickable {
                         when (tool.id) {
-                            "save_folder" -> { vm.detectSaveLocations(game.id); showLocations = true }
+                            "save_folder" -> vm.openGameSaveFolder(game.id)
                             "save_editor" -> { vm.loadSaves(game.id); showSaves = true }
                             "save_backups" -> showBackups = true
                             "mods" -> { vm.loadMods(game.id); showMods = true }
@@ -182,28 +181,10 @@ internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () 
         }
         Spacer(Modifier.height(24.dp))
     }
-    if (showLocations) SaveLocationsSheet(game, vm) { showLocations = false }
     if (showSaves) SaveListSheet(game, vm, { editing = it; showSaves = false }, { showSaves = false })
     if (showBackups) SaveBackupsSheet(game, vm) { showBackups = false }
     if (showMods) ModsSheet(game, vm) { showMods = false }
     editing?.let { save -> SaveEditorDialog(game, save, vm) { editing = null } }
-}
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun SaveLocationsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () -> Unit) {
-    val locations by vm.observeSaveLocations(game.id).collectAsStateWithLifecycle(emptyList())
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Text("Dossier des sauvegardes", Modifier.padding(20.dp), style = MaterialTheme.typography.titleLarge)
-        if (locations.isEmpty()) Text("Aucun emplacement connu. Detectez-en un ou ajoutez-en un manuellement.", Modifier.padding(horizontal = 20.dp))
-        locations.forEach { location ->
-            ListItem(headlineContent = { Text(location.displayName.ifBlank { location.uri }) }, supportingContent = { Text((if (location.autoDetected) "Detecte" else "Manuel") + " - " + location.type) }, leadingContent = { Icon(Icons.Default.Folder, null) }, trailingContent = { TextButton(onClick = { vm.removeSaveLocation(location.id) }) { Text("Retirer") } })
-        }
-        Row(Modifier.padding(20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilledTonalButton(onClick = { vm.detectSaveLocations(game.id) }) { Text("Detecter") }
-            OutlinedButton(onClick = { vm.requestSaveFolder(game.id) }) { Text("Ajouter un dossier") }
-        }
-    }
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -254,21 +235,21 @@ private fun SaveEditorDialog(game: GameEntity, save: GameSave, vm: AstraViewMode
             }
             Spacer(Modifier.height(12.dp))
             if (tab == 0) {
-                simpleField("Argent", simple.money, drafts)
-                simpleField("Niveau", simple.level, drafts)
-                simpleField("Experience", simple.experience, drafts)
-                simpleField("PV", simple.hp, drafts)
-                simpleField("PM", simple.mp, drafts)
+                SimpleField("Argent", simple.money, drafts)
+                SimpleField("Niveau", simple.level, drafts)
+                SimpleField("Experience", simple.experience, drafts)
+                SimpleField("PV", simple.hp, drafts)
+                SimpleField("PM", simple.mp, drafts)
                 if (simple.inventory.isNotEmpty()) Text("Inventaire", fontWeight = FontWeight.SemiBold)
-                simple.inventory.take(8).forEach { simpleField(it.path.substringAfterLast(".").substringAfterLast("[").removeSuffix("]"), it, drafts) }
+                simple.inventory.take(8).forEach { SimpleField(it.path.substringAfterLast(".").substringAfterLast("[").removeSuffix("]"), it, drafts) }
                 if (simple.relations.isNotEmpty()) Text("Relations", fontWeight = FontWeight.SemiBold)
-                simple.relations.take(8).forEach { simpleField(it.path.substringAfterLast("."), it, drafts) }
+                simple.relations.take(8).forEach { SimpleField(it.path.substringAfterLast("."), it, drafts) }
                 if (simple.progress.isNotEmpty()) Text("Progression", fontWeight = FontWeight.SemiBold)
-                simple.progress.take(8).forEach { simpleField(it.path.substringAfterLast("."), it, drafts) }
+                simple.progress.take(8).forEach { SimpleField(it.path.substringAfterLast("."), it, drafts) }
                 if (simple.variables.isNotEmpty()) Text("Variables", fontWeight = FontWeight.SemiBold)
-                simple.variables.take(8).forEach { simpleField(it.path.substringAfterLast("."), it, drafts) }
+                simple.variables.take(8).forEach { SimpleField(it.path.substringAfterLast("."), it, drafts) }
                 if (simple.switches.isNotEmpty()) Text("Switches", fontWeight = FontWeight.SemiBold)
-                simple.switches.take(8).forEach { simpleField(it.path.substringAfterLast("."), it, drafts) }
+                simple.switches.take(8).forEach { SimpleField(it.path.substringAfterLast("."), it, drafts) }
                 if (entries.none { it.editable }) Text("Aucune valeur reconnue automatiquement. Passez en mode avance.")
             } else {
                 OutlinedTextField(query, { query = it }, label = { Text("Recherche") }, leadingIcon = { Icon(Icons.Default.Search, null) }, modifier = Modifier.fillMaxWidth())
@@ -294,7 +275,7 @@ private fun SaveEditorDialog(game: GameEntity, save: GameSave, vm: AstraViewMode
 }
 
 @Composable
-private fun simpleField(label: String, entry: SaveEntry?, drafts: MutableMap<String, String>) {
+private fun SimpleField(label: String, entry: SaveEntry?, drafts: MutableMap<String, String>) {
     if (entry == null) return
     OutlinedTextField(value = drafts[entry.path] ?: entry.displayValue, onValueChange = { drafts[entry.path] = it }, label = { Text(label) }, modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp))
 }
@@ -332,5 +313,3 @@ internal fun PinSetupDialog(onSave: (String) -> Unit, onDismiss: () -> Unit) {
     var second by remember { mutableStateOf("") }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Definir un code") }, text = { Column { OutlinedTextField(first, { first = it.filter(Char::isDigit).take(8) }, label = { Text("Code (4 a 8 chiffres)") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), modifier = Modifier.fillMaxWidth()); Spacer(Modifier.height(8.dp)); OutlinedTextField(second, { second = it.filter(Char::isDigit).take(8) }, label = { Text("Confirmer") }, visualTransformation = PasswordVisualTransformation(), keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), modifier = Modifier.fillMaxWidth()) } }, confirmButton = { TextButton(onClick = { onSave(first) }, enabled = first.length in 4..8 && first == second) { Text("Enregistrer") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } })
 }
-
-
