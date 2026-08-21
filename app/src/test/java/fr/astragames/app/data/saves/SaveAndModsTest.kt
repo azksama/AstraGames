@@ -48,6 +48,27 @@ class SaveAndModsTest {
     }
 
     @Test
+    fun rpgMakerJsonRoundTripKeepsGold() {
+        val encoded = encodeRpgMakerJson(JSONObject("""{"party":{"gold":42},"system":{"_variables":[null,1,2]}}"""))
+        val decoded = decodeRpgMakerJson(encoded)
+        assertEquals(42, decoded.getJSONObject("party").getInt("gold"))
+        assertEquals(2, decoded.getJSONObject("system").getJSONArray("_variables").getInt(2))
+    }
+
+    @Test
+    fun rpgMakerJsonUsesCompatibleLzStringBase64() {
+        val decodedExternal = decodeRpgMakerJson(
+            "N4IgDghgTgLgniAXKA5gewDYBMkBYBMAvgDQgDOcZMApgLZKgD6AbtAJYQBGG1ZSA2gDsArhgzEAjMXwBdEiFq8yEFNSQgAkxgAXzagAJAp6aAac0B5UfsC8G4AA9kISA==="
+        )
+        assertEquals(42, decodedExternal.getJSONObject("party").getInt("gold"))
+        assertEquals("Élève 日本語 😀", decodedExternal.getString("message"))
+
+        val json = JSONObject("""{"party":{"gold":42},"system":{"_variables":[null,1,2]},"message":"Élève 日本語 😀"}""")
+        val encoded = encodeRpgMakerJson(json)
+        assertEquals(json.toString(), decodeRpgMakerJson(encoded).toString())
+    }
+
+    @Test
     fun manifestParserReadsSupportedFields() {
         val manifest = AstraModManifestParser.parse("""{"formatVersion":1,"id":"example.mod","name":"Example","version":"1.0.0","author":"A","description":"D","engines":["RenPy"],"installMode":"OVERLAY","target":"game","filesRoot":"files"}""")
         assertEquals("example.mod", manifest.id)

@@ -24,7 +24,7 @@ interface GameTool {
 object SaveFolderTool : GameTool {
     override val id = "save_folder"
     override val title = "Dossier des sauvegardes"
-    override val description = "Voir, ouvrir ou définir les emplacements de sauvegarde"
+    override val description = "Ouvrir le dossier de sauvegarde du jeu"
     override val icon = Icons.Default.Folder
     override val section = "Sauvegardes"
     override fun isAvailable(game: GameEntity) = true

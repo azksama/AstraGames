@@ -470,7 +470,8 @@ object AppLocalizer {
         t("Argent", "Money", "Dinero", "Деньги", "Geld", "金钱", "所持金"),
         t("Niveau", "Level", "Nivel", "Уровень", "Stufe", "等级", "レベル"),
         t("Experience", "Experience", "Experiencia", "Опыт", "Erfahrung", "经验", "経験値"),
-        t("Securite et historique", "Security and history", "Seguridad e historial", "Безопасность и история", "Sicherheit und Verlauf", "安全与历史", "セキュリティと履歴")
+        t("Securite et historique", "Security and history", "Seguridad e historial", "Безопасность и история", "Sicherheit und Verlauf", "安全与历史", "セキュリティと履歴"),
+        t("Verrouiller en arriere-plan", "Lock when backgrounded", "Bloquear en segundo plano", "Блокировать в фоне", "Im Hintergrund sperren", "切到后台时锁定", "バックグラウンドでロック")
     )
 
     private val translations = AppLanguage.entries.associateWith { language ->

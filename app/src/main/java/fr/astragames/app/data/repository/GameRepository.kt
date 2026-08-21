@@ -298,14 +298,21 @@ class GameRepository(
 
     suspend fun findSaveFolderUri(gameId: String): Uri? {
         val game = dao.getGame(gameId) ?: return null
-        val root = DocumentFile.fromSingleUri(context, Uri.parse(game.documentUri)) ?: return null
-        fun find(folder: DocumentFile, depth: Int): DocumentFile? {
-            if (depth > 6) return null
-            val children = runCatching { folder.listFiles().toList() }.getOrDefault(emptyList())
-            children.firstOrNull { it.isDirectory && it.name.orEmpty().lowercase(Locale.ROOT) in SAVE_FOLDER_NAMES }?.let { return it }
-            return children.asSequence().filter(DocumentFile::isDirectory).mapNotNull { find(it, depth + 1) }.firstOrNull()
+        val root = fr.astragames.app.data.saves.documentDir(context, Uri.parse(game.documentUri)) ?: return null
+        val preferred = when (game.engine) {
+            "RENPY" -> listOf("game/saves", "saves", "save")
+            "RPG_MAKER_MV" -> listOf("www/save", "save")
+            "RPG_MAKER_MZ" -> listOf("save")
+            else -> listOf("Save", "save", "saves")
         }
-        return find(root, 0)?.uri ?: root.uri
+        preferred.forEach { path ->
+            var current: DocumentFile? = root
+            path.split("/").filter(String::isNotBlank).forEach { segment ->
+                current = current?.listFiles()?.firstOrNull { it.isDirectory && it.name.equals(segment, ignoreCase = true) }
+            }
+            current?.let { return it.uri }
+        }
+        return root.uri
     }
 
     private fun removeManagedCover(value: String?) {
