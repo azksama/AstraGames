@@ -1,5 +1,6 @@
 package fr.astragames.app.data.scanner
 
+import fr.astragames.app.core.search.DuplicateDetector
 import fr.astragames.app.data.local.GameEntity
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue

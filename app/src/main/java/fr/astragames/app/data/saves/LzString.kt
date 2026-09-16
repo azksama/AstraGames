@@ -9,13 +9,11 @@ internal fun decodeRpgMakerJson(raw: String): JSONObject {
     val trimmed = raw.trim()
     val text = when {
         trimmed.startsWith("{") -> trimmed
-        trimmed.startsWith("[") -> trimmed
         else -> lzDecompressFromBase64(trimmed)
     }.trim()
 
     return when {
         text.startsWith("{") -> JSONObject(text)
-        text.startsWith("[") -> JSONObject().put("root", JSONArray(text))
         else -> error("Sauvegarde RPG Maker JSON illisible.")
     }
 }
@@ -30,7 +28,7 @@ internal fun encodeRpgMakerJson(json: JSONObject): String {
     }
 }
 
-/** Kotlin port of the lz-string base64 codec used by RPG Maker MV/MZ saves. */
+/** Kotlin port of the lz-string base64 codec used by RPG Maker MV saves. */
 private fun lzCompress(
     uncompressed: String,
     bitsPerChar: Int,

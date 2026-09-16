@@ -122,7 +122,7 @@ class SaveFinder(private val context: Context) {
     private fun isSaveFile(name: String, engine: String): Boolean {
         val lower = name.lowercase(Locale.ROOT)
         return when (engine) {
-            "RPG_MAKER_MV", "RPG_MAKER_MZ" -> lower.endsWith(".rpgsave") || lower.endsWith(".rmmzsave")
+            "RPG_MAKER_MV", "RPG_MAKER_MZ" -> (lower.endsWith(".rpgsave") || lower.endsWith(".rmmzsave")) && lower.substringBeforeLast('.') !in setOf("global", "config")
             "RPG_MAKER_XP" -> lower.endsWith(".rxdata") && lower.startsWith("save", ignoreCase = true)
             "RPG_MAKER_VX" -> lower.endsWith(".rvdata") && lower.startsWith("save", ignoreCase = true)
             "RPG_MAKER_VX_ACE" -> lower.endsWith(".rvdata2") && lower.startsWith("save", ignoreCase = true)

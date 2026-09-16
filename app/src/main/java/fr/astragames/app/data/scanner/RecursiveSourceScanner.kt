@@ -17,6 +17,9 @@ import fr.astragames.app.data.local.GameSourceEntity
 import fr.astragames.app.data.local.ScanHistoryEntity
 import fr.astragames.app.data.local.ScanReportItemEntity
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.ensureActive
 import java.util.Locale
 import kotlinx.coroutines.withContext
@@ -39,10 +42,12 @@ class RecursiveSourceScanner(
     private val dao: AstraDao,
     private val fileAccessResolver: FileAccessResolver
 ) {
+    private val scanLock = Mutex()
+
     suspend fun scan(
         sourceId: String,
         onProgress: (ScanProgressUpdate) -> Unit = {}
-    ): ScanReport = withContext(Dispatchers.IO) {
+    ): ScanReport = scanLock.withLock { withContext(Dispatchers.IO) {
         val source = dao.getSource(sourceId) ?: return@withContext ScanReport(
             UUID.randomUUID().toString(), sourceId, "Source introuvable", 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, listOf("Source introuvable")
@@ -72,7 +77,7 @@ class RecursiveSourceScanner(
         val knownGamesByUri = dao.getGamesForSource(sourceId).associateBy { it.documentUri }
         val exclusions = (dao.getExclusions(sourceId).mapNotNull { it.folderNamePattern } + DEFAULT_EXCLUSIONS)
             .map { it.lowercase(Locale.ROOT) }.toSet()
-        val root = DocumentFile.fromTreeUri(context, source.treeUri.toUri())
+        val root = fr.astragames.app.data.saves.documentDir(context, source.treeUri.toUri())
         if (root == null || !root.exists() || !root.canRead()) {
             val message = "Permission de stockage absente ou expirée"
             val finishedAt = System.currentTimeMillis()
@@ -172,7 +177,7 @@ class RecursiveSourceScanner(
                     }
                 }
                 .firstOrNull()
-            val detection = if (depth == 0) null else EngineSignatureDetector.detect(signatureNames) ?: executable?.let {
+            val detection = EngineSignatureDetector.detect(signatureNames) ?: executable?.let {
                 DetectionResult(GameEngine.UNKNOWN, .25f, listOf("Exécutable détecté"), it.name)
             }
             if (detection != null) {
@@ -191,7 +196,10 @@ class RecursiveSourceScanner(
                     return
                 }
                 val existing = dao.findGameByDocumentUri(directory.uri.toString())
-                    ?: dao.findGameByFingerprint(fingerprint)
+                    ?: dao.findGameByFingerprint(fingerprint)?.takeIf { previous ->
+                        // An accessible copy is a duplicate, not a move of the existing record.
+                        runCatching { fr.astragames.app.data.saves.documentDir(context, previous.documentUri.toUri())?.exists() != true }.getOrDefault(false)
+                    }
                 val now = System.currentTimeMillis()
                 val cover = children.firstOrNull {
                     !it.isDirectory && it.name.orEmpty().lowercase(Locale.ROOT) in COVER_NAMES
@@ -270,6 +278,11 @@ class RecursiveSourceScanner(
         try {
             walk(root, "", 0)
         } catch (error: CancellationException) {
+            withContext(NonCancellable) {
+                dao.upsertSource(source.copy(lastScanStatus = ScanStatus.PARTIAL.name, lastError = "Scan interrompu"))
+                dao.insertScanHistory(ScanHistoryEntity(id = historyId, sourceId = sourceId, startedAt = startedAt,
+                    finishedAt = System.currentTimeMillis(), gamesFound = found, gamesAdded = added, errors = 1))
+            }
             throw error
         } catch (error: Exception) {
             errors += (error.message ?: "Erreur de scan")
@@ -312,6 +325,8 @@ class RecursiveSourceScanner(
             historyId, sourceId, source.displayName, startedAt, finishedAt, visited.size,
             found, added, updated, unchanged, moved, missing, ignored, errors, reportItems
         )
+    }
+
     }
 
     companion object {

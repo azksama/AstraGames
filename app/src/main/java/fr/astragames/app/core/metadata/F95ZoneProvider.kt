@@ -45,7 +45,7 @@ class F95ZoneProvider {
 
     suspend fun findThread(gameTitle: String, searchEngine: SearchEngine = SearchEngine.YANDEX): String? = withContext(Dispatchers.IO) {
         val endpoint = searchUrl(gameTitle, searchEngine)
-        val response = applySession(Jsoup.connect(endpoint))
+        val response = Jsoup.connect(endpoint)
             .userAgent(BROWSER_USER_AGENT)
             .header("Accept-Language", "en-US,en;q=0.9")
             .timeout(20_000)
@@ -71,18 +71,29 @@ class F95ZoneProvider {
     }
 
     private suspend fun fetchDocument(rawUrl: String, maxBodySize: Int = 12 * 1024 * 1024): Document {
-        val document = applySession(Jsoup.connect(rawUrl))
-            .userAgent("Mozilla/5.0 (Android) AstraGames/1.0")
-            .referrer("https://f95zone.to/")
-            .timeout(20_000)
-            .maxBodySize(maxBodySize)
-            .followRedirects(true)
-            .get()
-        validate(document.location())
-        if (session != null && document.title().contains("Log in", ignoreCase = true)) {
-            throw IllegalStateException("Session F95Zone expirée ou invalide — reconnectez-vous.")
+        var url = validate(rawUrl).toString()
+        repeat(6) {
+            val response = applySession(Jsoup.connect(url))
+                .userAgent("Mozilla/5.0 (Android) AstraGames/1.0")
+                .referrer("https://f95zone.to/")
+                .timeout(20_000)
+                .maxBodySize(maxBodySize)
+                .followRedirects(false)
+                .ignoreHttpErrors(true)
+                .execute()
+            if (response.statusCode() in 300..399) {
+                val location = response.header("Location") ?: error("Redirection F95Zone invalide.")
+                url = validate(URI(url).resolve(location).toString()).toString()
+            } else {
+                check(response.statusCode() in 200..299) { "F95Zone inaccessible (${response.statusCode()})." }
+                val document = response.parse()
+                if (session != null && document.title().contains("Log in", ignoreCase = true)) {
+                    error("Session F95Zone expiree ou invalide — reconnectez-vous.")
+                }
+                return document
+            }
         }
-        return document
+        error("Trop de redirections F95Zone.")
     }
 
     internal fun parseHtml(html: String, baseUrl: String): F95ZoneMetadata {

@@ -4,19 +4,14 @@ import android.content.Context
 import android.net.Uri
 import android.provider.DocumentsContract
 import androidx.documentfile.provider.DocumentFile
+import java.io.File
 
-fun documentDir(context: Context, uri: Uri): DocumentFile? {
-    val tree = runCatching { DocumentFile.fromTreeUri(context, uri) }.getOrNull()
-    if (tree != null && tree.isDirectory) return tree
-    val single = DocumentFile.fromSingleUri(context, uri)
-    if (single != null && single.isDirectory) return single
-    if (DocumentsContract.isTreeUri(uri)) {
-        val docId = runCatching { DocumentsContract.getDocumentId(uri) }.getOrNull()
-            ?: runCatching { DocumentsContract.getTreeDocumentId(uri) }.getOrNull()
-        if (docId != null) {
-            val built = DocumentsContract.buildDocumentUriUsingTree(uri, docId)
-            DocumentFile.fromSingleUri(context, built)?.takeIf { it.isDirectory }?.let { return it }
-        }
-    }
-    return single
-}
+fun documentDir(context: Context, uri: Uri): DocumentFile? = when {
+    uri.scheme == "file" -> uri.path?.let { DocumentFile.fromFile(File(it)) }
+    DocumentsContract.isTreeUri(uri) -> DocumentFile.fromTreeUri(context, uri)
+    else -> null // A single-document grant cannot enumerate or create children.
+}?.takeIf { it.isDirectory }
+
+internal fun documentFile(context: Context, uri: Uri): DocumentFile? =
+    if (uri.scheme == "file") uri.path?.let { DocumentFile.fromFile(File(it)) }
+    else DocumentFile.fromSingleUri(context, uri)

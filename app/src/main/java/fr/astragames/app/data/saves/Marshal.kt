@@ -19,7 +19,7 @@ sealed class MarshalValue {
         override fun hashCode() = bytes.contentHashCode()
     }
     data class ArrayValue(val items: MutableList<MarshalValue>) : MarshalValue()
-    data class HashValue(val entries: LinkedHashMap<MarshalValue, MarshalValue>, val defaultValue: MarshalValue? = null) : MarshalValue()
+    data class HashValue(val entries: LinkedHashMap<MarshalValue, MarshalValue>, var defaultValue: MarshalValue? = null) : MarshalValue()
     data class ObjectValue(val className: SymbolValue, val ivars: LinkedHashMap<SymbolValue, MarshalValue>) : MarshalValue()
     data class StructValue(val className: SymbolValue, val members: LinkedHashMap<SymbolValue, MarshalValue>) : MarshalValue()
     /** Objet avec marshal_dump personnalise : conserve brut pour la reecriture. */
@@ -39,11 +39,21 @@ object Marshal {
     private const val MINOR = 8
 
     fun load(data: ByteArray): MarshalValue {
+        val roots = loadAll(data)
+        require(roots.size == 1) { "Plusieurs flux Marshal presents." }
+        return roots.single()
+    }
+
+    fun loadAll(data: ByteArray): List<MarshalValue> {
         val stream = ByteArrayInputStream(data)
-        val major = stream.read()
-        val minor = stream.read()
-        require(major == MAJOR && minor == MINOR) { "En-tete Marshal invalide." }
-        return MarshalReader(stream).readValue()
+        val roots = mutableListOf<MarshalValue>()
+        while (stream.available() > 0) {
+            require(stream.read() == MAJOR && stream.read() == MINOR) { "En-tete Marshal invalide." }
+            roots += MarshalReader(stream).readValue()
+            require(roots.size <= 128) { "Trop de flux Marshal." }
+        }
+        require(roots.isNotEmpty()) { "Sauvegarde Marshal vide." }
+        return roots
     }
 
     fun dump(value: MarshalValue): ByteArray {
@@ -64,7 +74,7 @@ object Marshal {
                 'T'.code -> MarshalValue.Bool(true)
                 'F'.code -> MarshalValue.Bool(false)
                 'i'.code -> MarshalValue.IntValue(long())
-                'f'.code -> MarshalValue.FloatValue(parseFloat(stringBody()))
+                'f'.code -> register(MarshalValue.FloatValue(parseFloat(stringBody())))
                 '"'.code -> register(MarshalValue.StringValue(bodyBytes()))
                 ':'.code -> readSymbol()
                 ';'.code -> MarshalValue.SymbolValue(symbols[long().toInt()])
@@ -109,7 +119,7 @@ object Marshal {
                 }
                 'e'.code -> MarshalValue.ExtendedValue(readValue() as MarshalValue.SymbolValue, readValue())
                 'M'.code -> MarshalValue.ModuleValue(readValue() as MarshalValue.SymbolValue, readValue())
-                'I'.code, 'E'.code, 'C'.code -> {
+                'I'.code -> {
                     val wrapped = readValue()
                     val count = long().toInt()
                     val ivars = LinkedHashMap<String, MarshalValue>()
@@ -117,7 +127,9 @@ object Marshal {
                         val key = readValue() as MarshalValue.SymbolValue
                         ivars[key.name] = readValue()
                     }
-                    if (wrapped is MarshalValue.StringValue) register(wrapped.copy(ivars = ivars)) else wrapped
+                    require(wrapped is MarshalValue.StringValue) { "Attributs Marshal non pris en charge pour cet objet." }
+                    wrapped.ivars.putAll(ivars)
+                    wrapped
                 }
                 else -> error("Type Marshal inconnu : " + type)
             }
@@ -134,7 +146,7 @@ object Marshal {
             }
             if (hasDefault) {
                 val default = readValue()
-                return MarshalValue.HashValue(entries, default).also { registry += it }
+                hash.defaultValue = default
             }
             return hash
         }
@@ -190,7 +202,16 @@ object Marshal {
     }
 
     private class MarshalWriter(private val stream: ByteArrayOutputStream) {
+        private val references = java.util.IdentityHashMap<MarshalValue, Int>()
+
         fun writeValue(value: MarshalValue) {
+            val referenceable = value is MarshalValue.FloatValue || value is MarshalValue.StringValue ||
+                value is MarshalValue.ArrayValue || value is MarshalValue.HashValue || value is MarshalValue.ObjectValue ||
+                value is MarshalValue.StructValue || value is MarshalValue.UserDefined
+            if (referenceable) {
+                references[value]?.let { stream.write('@'.code); writeFixnum(it.toLong()); return }
+                references[value] = references.size
+            }
             when (value) {
                 MarshalValue.NilValue -> stream.write('0'.code)
                 is MarshalValue.Bool -> stream.write(if (value.value) 'T'.code else 'F'.code)
@@ -269,6 +290,7 @@ object Marshal {
         }
 
         private fun writeLong(value: Long) {
+            require(value in Int.MIN_VALUE.toLong()..Int.MAX_VALUE.toLong()) { "Entier RGSS hors limites (32 bits)." }
             stream.write('i'.code)
             writeFixnum(value)
         }
@@ -277,7 +299,7 @@ object Marshal {
             when {
                 value == 0L -> stream.write(0)
                 value in 1..122 -> stream.write((value + 5).toInt())
-                value in -123..-1 -> stream.write((value + 5).toInt() and 0xFF)
+                value in -123..-1 -> stream.write((value - 5).toInt() and 0xFF)
                 value > 0 -> {
                     val bytes = littleEndian(value)
                     stream.write(bytes.size)
@@ -312,4 +334,3 @@ object Marshal {
         }
     }
 }
-

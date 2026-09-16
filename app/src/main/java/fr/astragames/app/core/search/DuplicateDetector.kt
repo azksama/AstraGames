@@ -6,10 +6,13 @@ import java.text.Normalizer
 object DuplicateDetector {
     data class DuplicateGroup(val key: String, val games: List<GameEntity>)
 
+    fun isDuplicate(first: GameEntity, second: GameEntity): Boolean =
+        first.id != second.id && groups(listOf(first, second)).isNotEmpty()
+
     fun groups(games: List<GameEntity>): List<DuplicateGroup> {
         val groupedIds = mutableSetOf<String>()
         val result = mutableListOf<DuplicateGroup>()
-        games.groupBy { it.fingerprint }.filterValues { it.size > 1 }.forEach { (fingerprint, group) ->
+        games.filter { it.fingerprint.isNotBlank() }.groupBy { it.fingerprint }.filterValues { it.size > 1 }.forEach { (fingerprint, group) ->
             result += DuplicateGroup("fingerprint:$fingerprint", group.sortedBy { it.title.lowercase(java.util.Locale.ROOT) })
             groupedIds += group.map { it.id }
         }

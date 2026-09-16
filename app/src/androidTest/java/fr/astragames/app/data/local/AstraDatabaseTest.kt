@@ -30,6 +30,17 @@ class AstraDatabaseTest {
 
     @After fun tearDown() = database.close()
 
+    @Test fun removingAGameCannotDiscardItsInstalledModJournal() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dao = database.dao()
+        dao.upsertGame(game())
+        dao.upsertInstallation(ModInstallationEntity("install", "mod", "g1", 1, null, "OVERLAY", "INSTALLED"))
+        val repository = GameRepository(context, dao, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database))
+        org.junit.Assert.assertTrue(runCatching { repository.deleteGame("g1", false) }.isFailure)
+        org.junit.Assert.assertNotNull(dao.getGame("g1"))
+        assertEquals(1, dao.observeInstallationsForGame("g1").first().size)
+    }
+
     @Test fun gameAndFtsIndexStayInSync() = runTest {
         database.dao().upsertGame(game())
         assertEquals("g1", database.dao().searchGames("wind*").first().single().id)

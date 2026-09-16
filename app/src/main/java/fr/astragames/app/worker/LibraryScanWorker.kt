@@ -1,5 +1,6 @@
 package fr.astragames.app.worker
 
+import fr.astragames.app.core.runCatchingCancellable
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
@@ -10,7 +11,7 @@ import fr.astragames.app.AstraApplication
 import java.util.concurrent.TimeUnit
 
 class LibraryScanWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
-    override suspend fun doWork(): Result = runCatching {
+    override suspend fun doWork(): Result = runCatchingCancellable {
         val app = applicationContext as AstraApplication
         app.container.repository.scanAll()
     }.fold(onSuccess = { Result.success() }, onFailure = { Result.retry() })

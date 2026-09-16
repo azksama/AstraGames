@@ -22,6 +22,10 @@ class DuplicateDetectorTest {
         assertTrue(DuplicateDetector.groups(listOf(game("1", "Alpha", "one"), game("2", "Beta", "two"))).isEmpty())
     }
 
+    @Test fun emptyFingerprintsDoNotMatchUnrelatedGames() {
+        assertTrue(DuplicateDetector.groups(listOf(game("1", "Alpha", ""), game("2", "Beta", ""))).isEmpty())
+    }
+
     private fun game(id: String, title: String, fingerprint: String) = GameEntity(
         id = id, title = title, documentUri = "content://$id", physicalPath = null,
         executableName = "Game.exe", engine = "RPG_MAKER_MV", launcher = "JOIPLAY", sourceId = "s1",

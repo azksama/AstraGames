@@ -41,7 +41,7 @@ class AstraApplication : Application() {
             dao = database.dao()
         )
         JoiPlayUpdateWorker.schedule(this)
-        GameUpdatesWorker.schedule(this)
+
     }
 }
 

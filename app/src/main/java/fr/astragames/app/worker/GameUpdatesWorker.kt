@@ -1,16 +1,7 @@
 package fr.astragames.app.worker
 
-import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
+import fr.astragames.app.core.runCatchingCancellable
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -19,7 +10,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import fr.astragames.app.AstraApplication
-import fr.astragames.app.MainActivity
 import fr.astragames.app.core.metadata.F95Session
 import fr.astragames.app.data.local.GameEntity
 import kotlinx.coroutines.delay
@@ -31,17 +21,23 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
     override suspend fun doWork(): Result {
         val app = applicationContext as AstraApplication
         val settings = app.container.settings.settings.first()
-        settings.f95SessionXfUser?.let { user ->
-            settings.f95SessionXfSession?.let { session ->
-                app.container.f95Zone.setSession(F95Session(settings.f95SessionUser, user, session))
-            }
-        }
+        app.container.f95Zone.setSession(
+            if (settings.f95SessionXfUser != null && settings.f95SessionXfSession != null)
+                F95Session(settings.f95SessionUser, settings.f95SessionXfUser, settings.f95SessionXfSession)
+            else null
+        )
         val games = app.container.repository.games.first().filter { !it.f95Url.isNullOrBlank() && it.version != null }
         val found = mutableListOf<Pair<GameEntity, String>>()
-        val latest = mutableMapOf<String, String>()
+        val latest = settings.f95LatestVersions.split('|').mapNotNull { entry ->
+            val id = entry.substringBefore(':')
+            val version = entry.substringAfter(':', "")
+            if (id in games.map { it.id } && version.isNotBlank()) id to version else null
+        }.toMap().toMutableMap()
+        var failures = 0
         games.forEach { game ->
             val url = game.f95Url ?: return@forEach
-            val version = runCatching { app.container.f95Zone.fetchVersion(url) }.getOrNull()
+            val version = runCatchingCancellable { app.container.f95Zone.fetchVersion(url) }.getOrNull()
+            if (version == null) failures++ else latest.remove(game.id)
             if (version != null && version != game.version) {
                 latest[game.id] = version
                 found += game to version
@@ -50,7 +46,7 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
         }
         if (latest.isEmpty()) {
             app.container.settings.setF95LatestVersions("")
-            return Result.success()
+            return if (failures > 0) Result.retry() else Result.success()
         }
         app.container.settings.setF95LatestVersions(latest.entries.joinToString("|") { "${it.key}:${it.value}" })
         val notified = settings.f95NotifiedUpdates.split("|").filter(String::isNotBlank).toSet()
@@ -61,34 +57,12 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
                 app.container.settings.setF95NotifiedUpdates((notified + fingerprint).joinToString("|"))
             }
         }
-        return Result.success()
+        return if (failures > 0) Result.retry() else Result.success()
     }
 
     private fun notifyUpdates(items: List<Pair<String, String>>): Boolean {
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
-        val manager = NotificationManagerCompat.from(applicationContext)
-        if (!manager.areNotificationsEnabled()) return false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            (applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Mises à jour de jeux", NotificationManager.IMPORTANCE_DEFAULT)
-            )
-        }
-        val intent = Intent(applicationContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        val pendingIntent = PendingIntent.getActivity(
-            applicationContext, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
         val detail = items.take(3).joinToString(", ") { "${it.first} (${it.second})" } + if (items.size > 3) " +${items.size - 3}" else ""
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("Nouvelle version disponible")
-            .setContentText(detail)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(detail))
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            .build()
-        manager.notify(NOTIFICATION_ID, notification)
-        return true
+        return showUpdateNotification(applicationContext, CHANNEL_ID, "Mises à jour de jeux", NOTIFICATION_ID, "Nouvelle version disponible", detail)
     }
 
     companion object {
@@ -103,10 +77,11 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
                 manager.enqueueUniqueWork(
                     "$UNIQUE_NAME-launch",
                     ExistingWorkPolicy.REPLACE,
-                    OneTimeWorkRequestBuilder<GameUpdatesWorker>().build()
+                    OneTimeWorkRequestBuilder<GameUpdatesWorker>().setConstraints(networkConstraints()).build()
                 )
                 return
             }
+            manager.cancelUniqueWork("$UNIQUE_NAME-launch")
             val days = when (interval) {
                 "DAY_1" -> 1L
                 "DAY_3" -> 3L
@@ -117,7 +92,7 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
             manager.enqueueUniquePeriodicWork(
                 UNIQUE_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
-                PeriodicWorkRequestBuilder<GameUpdatesWorker>(days, TimeUnit.DAYS).build()
+                PeriodicWorkRequestBuilder<GameUpdatesWorker>(days, TimeUnit.DAYS).setConstraints(networkConstraints()).build()
             )
         }
     }

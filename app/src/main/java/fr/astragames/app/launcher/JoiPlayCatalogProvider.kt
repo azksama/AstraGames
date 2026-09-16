@@ -25,8 +25,10 @@ class JoiPlayCatalogProvider {
             setRequestProperty("Accept", "application/json")
             setRequestProperty("User-Agent", "AstraGames/1.0 (Android; JoiPlay update check)")
         }
+        try {
         check(connection.responseCode in 200..299) { "Catalogue JoiPlay inaccessible (${connection.responseCode})." }
-        connection.inputStream.bufferedReader().use { it.readText() }.also(::parse)
+        connection.inputStream.bufferedReader().use { it.readText() }.also { require(parse(it).isNotEmpty()) { "Catalogue JoiPlay vide ou invalide." } }
+        } finally { connection.disconnect() }
     }
 
     fun parse(raw: String): List<JoiPlayCatalogEntry> {

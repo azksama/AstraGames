@@ -1,5 +1,7 @@
 package fr.astragames.app.ui
 
+import fr.astragames.app.core.search.levenshtein
+import fr.astragames.app.core.runCatchingCancellable
 import android.app.Application
 import android.net.Uri
 import android.provider.DocumentsContract
@@ -18,10 +20,8 @@ import fr.astragames.app.core.model.ThemeMode
 import fr.astragames.app.core.model.ScanReport
 import fr.astragames.app.core.metadata.CoverCandidate
 import fr.astragames.app.core.metadata.F95Session
-import fr.astragames.app.core.metadata.F95ZoneMetadata
 import fr.astragames.app.core.search.TagMatcher
 import fr.astragames.app.core.search.DuplicateDetector
-import fr.astragames.app.core.search.DuplicateDetector.DuplicateGroup
 import fr.astragames.app.core.collections.SmartCollectionEvaluator
 import fr.astragames.app.data.local.AuditEventEntity
 import fr.astragames.app.data.local.DeletedGameEntity
@@ -70,117 +70,11 @@ import kotlin.coroutines.cancellation.CancellationException
 
 private const val VNDB_REQUEST_INTERVAL_MS = 1_550L
 
-data class LibraryFilters(
-    val query: String = "",
-    val sourceId: String? = null,
-    val folderId: String? = null,
-    val collectionId: String? = null,
-    val systemFolderId: String? = null,
-    val engine: GameEngine? = null,
-    val tagIds: Set<String> = emptySet(),
-    val excludedTagIds: Set<String> = emptySet(),
-    val tagMode: TagMatchMode = TagMatchMode.ALL,
-    val favoritesOnly: Boolean = false,
-    val missingOnly: Boolean = false,
-    val sort: LibrarySort = LibrarySort.TITLE
-)
-
-data class SystemFolderFilter(
-    val id: String,
-    val sourceId: String,
-    val label: String,
-    val depth: Int,
-    val gameIds: Set<String>
-)
-
-enum class LibrarySort { TITLE, RECENTLY_ADDED, LAST_PLAYED, MOST_PLAYED, NEVER_PLAYED, UPDATE_AVAILABLE }
-
-data class AstraUiState(
-    val games: List<GameEntity> = emptyList(),
-    val filteredGames: List<GameEntity> = emptyList(),
-    val sources: List<GameSourceEntity> = emptyList(),
-    val tags: List<TagEntity> = emptyList(),
-    val tagCategories: List<TagCategoryEntity> = emptyList(),
-    val folders: List<LibraryFolderEntity> = emptyList(),
-    val systemFolders: List<SystemFolderFilter> = emptyList(),
-    val deletedGames: List<DeletedGameEntity> = emptyList(),
-    val duplicateGroups: List<DuplicateGroup> = emptyList(),
-    val collections: List<CollectionEntity> = emptyList(),
-    val collectionRules: List<CollectionRuleEntity> = emptyList(),
-    val customCollectionGames: Map<String, List<GameEntity>> = emptyMap(),
-    val playStats: Map<String, GamePlayStat> = emptyMap(),
-    val runtimes: List<JoiPlayRuntimeInfo> = emptyList(),
-    val settings: AstraSettings = AstraSettings(),
-    val settingsLoaded: Boolean = false,
-    val filters: LibraryFilters = LibraryFilters(),
-    val scanning: Boolean = false,
-    val scanProgress: ScanProgressState = ScanProgressState(),
-    val metadataRefresh: MetadataRefreshState = MetadataRefreshState(),
-    val joiPlayInstalled: Boolean = false,
-    val setupQueue: List<GameEntity> = emptyList()
-)
-
-data class MetadataRefreshState(
-    val running: Boolean = false,
-    val completed: Int = 0,
-    val total: Int = 0
-)
-
-data class ScanProgressState(
-    val active: Boolean = false,
-    val sourceName: String = "",
-    val phase: String = "",
-    val currentPath: String = "",
-    val depth: Int = 0,
-    val visitedFolders: Int = 0,
-    val foundGames: Int = 0
-)
-
-data class CoverSearchState(
-    val gameId: String? = null,
-    val loading: Boolean = false,
-    val downloading: Boolean = false,
-    val results: List<CoverCandidate> = emptyList(),
-    val error: String? = null,
-    val configured: Boolean = false,
-    val browserUrl: String? = null,
-    val searchEngine: SearchEngine = SearchEngine.YANDEX
-)
-
-data class CropRequest(val gameId: String, val source: Uri)
-
-data class F95ImportState(
-    val gameId: String? = null,
-    val loading: Boolean = false,
-    val metadata: F95ZoneMetadata? = null,
-    val error: String? = null,
-    val browserUrl: String? = null,
-    val searchEngine: SearchEngine = SearchEngine.YANDEX
-)
-
-data class GameUpdateInfo(
-    val game: GameEntity,
-    val currentVersion: String?,
-    val latestVersion: String
-)
-
-data class TagMergeSuggestion(
-    val first: TagEntity,
-    val second: TagEntity,
-    val similarity: Float
-)
-
-sealed interface UiEvent {
-    data class Message(val text: String) : UiEvent
-}
-
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class AstraViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as AstraApplication
     private val repository = app.container.repository
     private val settingsRepository = app.container.settings
-    private val saveManager = app.container.saveManager
-    private val modsManager = app.container.modsManager
     private val dao = app.container.dao
     private val filters = MutableStateFlow(LibraryFilters())
     private val scanning = MutableStateFlow(false)
@@ -192,6 +86,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val compatibility: StateFlow<Map<String, GameCompatibilityReport>> = mutableCompatibility
     private val compatibilityDiagnostic = CompatibilityDiagnostic(app.container.launcher)
     val events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 8)
+    val tools = GameToolsController(app, viewModelScope, events) { ignoreNextRelock = true }
     private val mutableCoverSearch = MutableStateFlow(
         CoverSearchState(configured = app.container.covers.configured)
     )
@@ -203,21 +98,11 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val duplicatePreview: StateFlow<DuplicateMergePreview?> = mutableDuplicatePreview
     val openFolderRequests = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
     val notificationPermissionRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val pickSaveFolderRequests = MutableSharedFlow<String>(extraBufferCapacity = 1)
-    val pickModsRootRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    val pickModZipRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val biometricUnlockRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private val locked = MutableStateFlow(false)
     val isLocked: StateFlow<Boolean> = locked
     private val playHistory = dao.observePlayHistory(200)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    private val mutableSaves = MutableStateFlow<List<fr.astragames.app.data.saves.GameSave>>(emptyList())
-    val gameSaves: StateFlow<List<fr.astragames.app.data.saves.GameSave>> = mutableSaves
-    private val mutableSaveEntries = MutableStateFlow<List<fr.astragames.app.data.saves.SaveEntry>>(emptyList())
-    val saveEntries: StateFlow<List<fr.astragames.app.data.saves.SaveEntry>> = mutableSaveEntries
-    private val mutableMods = MutableStateFlow<List<fr.astragames.app.data.mods.ModCatalogItem>>(emptyList())
-    val modsCatalog: StateFlow<List<fr.astragames.app.data.mods.ModCatalogItem>> = mutableMods
-    private val pendingSaveFolderGameId = MutableStateFlow<String?>(null)
     private var backgrounded = false
     private var ignoreNextRelock = false
     private val runtimeManager = JoiPlayRuntimeManager()
@@ -303,7 +188,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     private val runtimeRefresh = MutableStateFlow(0)
     private val runtimeState = combine(
         repository.games
-            .map { games -> games.mapNotNull { runCatching { GameEngine.valueOf(it.engine) }.getOrNull() }.toSet() }
+            .map { games -> games.mapNotNull { runCatchingCancellable { GameEngine.valueOf(it.engine) }.getOrNull() }.toSet() }
             .distinctUntilChanged(),
         settingsRepository.settings.map { it.joiPlayCatalogJson }.distinctUntilChanged(),
         runtimeRefresh
@@ -412,11 +297,10 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             val libraryGames = repository.games.first()
             mutableGameUpdates.value = libraryGames.mapNotNull { game ->
                 val latest = latestParsed[game.id] ?: return@mapNotNull null
-                if (latest != null && game.version != null && latest != game.version)
+                if (game.version != null && latest != game.version)
                     GameUpdateInfo(game, game.version, latest)
                 else null
             }
-            GameUpdatesWorker.schedule(app, settings.updateCheckInterval)
             GameUpdatesWorker.schedule(app, settings.updateCheckInterval)
             settings.f95SessionXfUser?.let { xfUser ->
                 settings.f95SessionXfSession?.let { xfSession ->
@@ -470,10 +354,10 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
         val folders = linkedMapOf<String, MutableFolder>()
         sources.forEach { source ->
-            val treeId = runCatching { DocumentsContract.getTreeDocumentId(Uri.parse(source.treeUri)) }.getOrNull()
+            val treeId = runCatchingCancellable { DocumentsContract.getTreeDocumentId(Uri.parse(source.treeUri)) }.getOrNull()
                 ?: return@forEach
             games.asSequence().filter { it.sourceId == source.id }.forEach { game ->
-                val documentId = runCatching { DocumentsContract.getDocumentId(Uri.parse(game.documentUri)) }.getOrNull()
+                val documentId = runCatchingCancellable { DocumentsContract.getDocumentId(Uri.parse(game.documentUri)) }.getOrNull()
                     ?: return@forEach
                 val relative = when {
                     documentId == treeId -> ""
@@ -498,7 +382,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun addSource(uri: Uri) = viewModelScope.launch {
-        runCatching { repository.addSource(uri) }
+        runCatchingCancellable { repository.addSource(uri) }
             .onSuccess { events.emit(UiEvent.Message("Source ajoutée")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Impossible d'ajouter la source")) }
     }
@@ -564,7 +448,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun dismissScanReports() { mutableScanReports.value = emptyList() }
 
     fun importTags(uri: Uri) = viewModelScope.launch {
-        runCatching { repository.importTags(uri) }
+        runCatchingCancellable { repository.importTags(uri) }
             .onSuccess { events.emit(UiEvent.Message("$it tags importés")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Import des tags impossible")) }
     }
@@ -594,7 +478,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         events.emit(UiEvent.Message("${ids.size} jeu(x) retiré(s) de la bibliothèque"))
     }
     fun saveCollection(id: String?, name: String, matchMode: String, rules: List<CollectionRuleDraft>) = viewModelScope.launch {
-        runCatching { repository.createOrUpdateCollection(id, name, matchMode, rules) }
+        runCatchingCancellable { repository.createOrUpdateCollection(id, name, matchMode, rules) }
             .onSuccess { events.emit(UiEvent.Message("Collection intelligente enregistrée")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Collection invalide")) }
     }
@@ -607,7 +491,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         events.emit(UiEvent.Message("Ce groupe de doublons sera désormais ignoré"))
     }
     fun previewDuplicateMerge(primaryId: String, secondaryId: String) = viewModelScope.launch {
-        runCatching { repository.previewDuplicateMerge(primaryId, secondaryId) }
+        runCatchingCancellable { repository.previewDuplicateMerge(primaryId, secondaryId) }
             .onSuccess { mutableDuplicatePreview.value = it }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Comparaison impossible")) }
     }
@@ -616,7 +500,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         primaryId: String, secondaryId: String, migrateSaves: Boolean,
         strategy: SaveConflictStrategy, deleteSecondaryFiles: Boolean, onDone: () -> Unit
     ) = viewModelScope.launch {
-        runCatching { repository.mergeDuplicate(primaryId, secondaryId, migrateSaves, strategy, deleteSecondaryFiles) }
+        runCatchingCancellable { repository.mergeDuplicate(primaryId, secondaryId, migrateSaves, strategy, deleteSecondaryFiles) }
             .onSuccess { result ->
                 mutableDuplicatePreview.value = null
                 onDone()
@@ -625,7 +509,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Fusion impossible")) }
     }
     fun deleteGame(id: String, deleteFiles: Boolean, onDeleted: () -> Unit = {}) = viewModelScope.launch {
-        runCatching { repository.deleteGame(id, deleteFiles) }
+        runCatchingCancellable { repository.deleteGame(id, deleteFiles) }
             .onSuccess {
                 onDeleted()
                 events.emit(UiEvent.Message(if (deleteFiles) "Jeu et fichiers supprimés" else "Jeu retiré de la bibliothèque"))
@@ -695,7 +579,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         events.emit(UiEvent.Message("Jeu configuré"))
     }
     fun setCover(gameId: String, uri: Uri) = viewModelScope.launch {
-        runCatching { repository.setCover(gameId, uri) }
+        runCatchingCancellable { repository.setCover(gameId, uri) }
             .onSuccess {
                 mutableCoverSearch.value = CoverSearchState(configured = app.container.covers.configured)
                 events.emit(UiEvent.Message("Jaquette enregistrée"))
@@ -715,7 +599,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             browserUrl = app.container.covers.searchUrl(game, searchEngine),
             searchEngine = searchEngine
         )
-        runCatching { app.container.covers.search(game, searchEngine) }
+        runCatchingCancellable { app.container.covers.search(game, searchEngine) }
             .onSuccess { results ->
                 mutableCoverSearch.value = mutableCoverSearch.value.copy(
                     loading = false,
@@ -740,7 +624,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             browserUrl = app.container.covers.searchUrl(game, searchEngine),
             searchEngine = searchEngine
         )
-        runCatching { app.container.covers.search(game, searchEngine) }
+        runCatchingCancellable { app.container.covers.search(game, searchEngine) }
             .onSuccess { results ->
                 mutableCoverSearch.value = mutableCoverSearch.value.copy(
                     loading = false,
@@ -758,7 +642,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     fun chooseRemoteCover(gameId: String, candidate: CoverCandidate) = viewModelScope.launch {
         mutableCoverSearch.value = mutableCoverSearch.value.copy(downloading = true, error = null)
-        runCatching { app.container.covers.download(candidate) }
+        runCatchingCancellable { app.container.covers.download(candidate) }
             .onSuccess { uri ->
                 mutableCoverSearch.value = mutableCoverSearch.value.copy(downloading = false)
                 cropRequests.emit(CropRequest(gameId, uri))
@@ -775,7 +659,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     }
     fun fetchF95Metadata(gameId: String, url: String) = viewModelScope.launch {
         mutableF95Import.value = mutableF95Import.value.copy(gameId = gameId, loading = true, metadata = null, error = null)
-        val result = runCatching { app.container.f95Zone.fetch(url) }
+        val result = runCatchingCancellable { app.container.f95Zone.fetch(url) }
         result.onSuccess { metadata ->
             repository.setF95Url(gameId, metadata.sourceUrl)
             repository.applyAutomaticMetadata(
@@ -963,37 +847,38 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             return@launch
         }
         mutableUpdatesChecking.value = true
-        mutableGameUpdates.value = emptyList()
-        val updates = mutableListOf<GameUpdateInfo>()
-        val latestVersionByGame = mutableMapOf<String, String>()
-        candidates.forEachIndexed { index, game ->
-            val url = game.f95Url ?: return@forEachIndexed
-            val latest = try {
-                app.container.f95Zone.fetchVersion(url)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                Log.w("AstraMetadata", "Version introuvable pour « ${game.title} »", error)
-                null
+        try {
+            val latestVersionByGame = mutableLatestVersions.value.filterKeys { id -> candidates.any { it.id == id } }.toMutableMap()
+            var failures = 0
+            candidates.forEachIndexed { index, game ->
+                val url = game.f95Url ?: return@forEachIndexed
+                val latest = try {
+                    app.container.f95Zone.fetchVersion(url)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Log.w("AstraMetadata", "Version introuvable pour « ${game.title} »", error)
+                    null
+                }
+                if (latest != null) latestVersionByGame[game.id] = latest
+                if (latest == null) failures++
+                if (index < candidates.lastIndex) delay(VNDB_REQUEST_INTERVAL_MS)
             }
-            if (latest != null) latestVersionByGame[game.id] = latest
-            if (latest != null && game.version != null && latest != game.version) {
-                updates += GameUpdateInfo(game, game.version, latest)
-            }
-            mutableGameUpdates.value = updates.toList()
-            if (index < candidates.lastIndex) delay(VNDB_REQUEST_INTERVAL_MS)
-        }
-        mutableLatestVersions.value = latestVersionByGame
-        settingsRepository.setF95LatestVersions(
-            latestVersionByGame.entries.joinToString("|") { "${it.key}:${it.value}" }
-        )
-        mutableUpdatesChecking.value = false
-        events.emit(
-            UiEvent.Message(
-                if (updates.isEmpty()) "Aucune mise à jour disponible"
-                else "${updates.size} mise(s) à jour trouvée(s)"
+            mutableLatestVersions.value = latestVersionByGame
+            settingsRepository.setF95LatestVersions(
+                latestVersionByGame.entries.joinToString("|") { "${it.key}:${it.value}" }
             )
-        )
+            val updates = candidates.mapNotNull { game ->
+                val latest = latestVersionByGame[game.id]
+                if (latest != null && game.version != null && latest != game.version) GameUpdateInfo(game, game.version, latest) else null
+            }
+            mutableGameUpdates.value = updates
+            events.emit(UiEvent.Message(
+                if (failures > 0) "Vérification incomplète : $failures jeu(x) inaccessible(s). Résultats précédents conservés."
+                else if (updates.isEmpty()) "Aucune mise à jour disponible"
+                else "${updates.size} mise(s) à jour trouvée(s)"
+            ))
+        } finally { mutableUpdatesChecking.value = false }
     }
 
     fun refreshTagMerges() = viewModelScope.launch {
@@ -1121,145 +1006,6 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         events.emit(UiEvent.Message("Historique efface"))
     }
 
-    fun observeSaveLocations(gameId: String) = saveManager.observeLocations(gameId)
-
-    fun observeSaveBackups(gameId: String) = saveManager.observeBackups(gameId)
-
-    fun detectSaveLocations(gameId: String) = viewModelScope.launch {
-        val game = repository.getGame(gameId) ?: return@launch
-        runCatching { withContext(Dispatchers.IO) { saveManager.detectLocations(game) } }
-            .onSuccess { events.emit(UiEvent.Message(it.size.toString() + " emplacement(s) de sauvegarde")) }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Detection impossible")) }
-    }
-
-    fun requestSaveFolder(gameId: String) {
-        pendingSaveFolderGameId.value = gameId
-        ignoreNextRelock = true
-        pickSaveFolderRequests.tryEmit(gameId)
-    }
-
-    fun addSaveLocation(uri: Uri) = viewModelScope.launch {
-        val gameId = pendingSaveFolderGameId.value ?: return@launch
-        val game = repository.getGame(gameId) ?: return@launch
-        runCatching { withContext(Dispatchers.IO) { saveManager.addLocation(game, uri, uri.lastPathSegment.orEmpty()) } }
-            .onSuccess { events.emit(UiEvent.Message("Dossier de sauvegarde ajoute")) }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Ajout impossible")) }
-    }
-
-    fun removeSaveLocation(id: String) = viewModelScope.launch { saveManager.removeLocation(id) }
-
-    fun loadSaves(gameId: String) = viewModelScope.launch {
-        val game = repository.getGame(gameId) ?: return@launch
-        mutableSaves.value = emptyList()
-        runCatching { withContext(Dispatchers.IO) { saveManager.listSaves(game) } }
-            .onSuccess { mutableSaves.value = it }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Lecture des sauvegardes impossible")) }
-    }
-
-    fun loadSaveEntries(gameId: String, save: fr.astragames.app.data.saves.GameSave) = viewModelScope.launch {
-        val game = repository.getGame(gameId) ?: return@launch
-        mutableSaveEntries.value = emptyList()
-        runCatching { withContext(Dispatchers.IO) { saveManager.readSave(game, save).second } }
-            .onSuccess { mutableSaveEntries.value = it }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Lecture de la sauvegarde impossible")) }
-    }
-
-    fun applySaveEdits(gameId: String, save: fr.astragames.app.data.saves.GameSave, edits: List<fr.astragames.app.data.saves.SaveEdit>) = viewModelScope.launch {
-        val game = repository.getGame(gameId) ?: return@launch
-        runCatching { withContext(Dispatchers.IO) { saveManager.writeSave(game, save, edits) } }
-            .onSuccess {
-                events.emit(UiEvent.Message("Sauvegarde enregistree avec backup"))
-                loadSaveEntries(gameId, save)
-            }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Ecriture impossible")) }
-    }
-
-    fun restoreSaveBackup(backup: fr.astragames.app.data.local.SaveBackupEntity) = viewModelScope.launch {
-        runCatching { withContext(Dispatchers.IO) { saveManager.restoreBackup(backup) } }
-            .onSuccess { events.emit(UiEvent.Message("Backup restaure")) }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Restauration impossible")) }
-    }
-
-    fun deleteSaveBackup(backup: fr.astragames.app.data.local.SaveBackupEntity) = viewModelScope.launch {
-        runCatching { withContext(Dispatchers.IO) { saveManager.deleteBackup(backup) } }
-            .onSuccess { events.emit(UiEvent.Message("Backup supprime")) }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Suppression impossible")) }
-    }
-
-    fun setSaveEditorFavorites(value: String) = viewModelScope.launch { settingsRepository.setSaveEditorFavorites(value) }
-
-    fun requestModsRoot() {
-        ignoreNextRelock = true
-        pickModsRootRequests.tryEmit(Unit)
-    }
-
-    fun setModsRoot(uri: Uri) = viewModelScope.launch {
-        settingsRepository.setModsRoot(uri.toString())
-        runCatching { modsManager.scanRepository(uri.toString()) }
-            .onSuccess { events.emit(UiEvent.Message(it.toString() + " mod(s) detecte(s)")) }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Scan des mods impossible")) }
-    }
-
-    fun scanMods() = viewModelScope.launch {
-        val root = settingsRepository.settings.first().modsRootUri
-        if (root == null) {
-            events.emit(UiEvent.Message("Choisissez d abord le dossier Astra/Mods"))
-            return@launch
-        }
-        runCatching { modsManager.scanRepository(root) }
-            .onSuccess { events.emit(UiEvent.Message(it.toString() + " mod(s) detecte(s)")) }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Scan des mods impossible")) }
-    }
-
-    fun loadMods(gameId: String) = viewModelScope.launch {
-        val game = repository.getGame(gameId) ?: return@launch
-        val root = settingsRepository.settings.first().modsRootUri
-        if (root != null) runCatching { modsManager.scanRepository(root) }
-        runCatching { modsManager.catalogFor(game) }
-            .onSuccess { mutableMods.value = it }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Catalogue de mods illisible")) }
-    }
-
-    fun requestModZipImport() {
-        ignoreNextRelock = true
-        pickModZipRequests.tryEmit(Unit)
-    }
-
-    fun importModZip(uri: Uri, engine: String?, replaceExisting: Boolean) = viewModelScope.launch {
-        val root = settingsRepository.settings.first().modsRootUri
-        if (root == null) {
-            events.emit(UiEvent.Message("Choisissez d abord le dossier Astra/Mods"))
-            return@launch
-        }
-        runCatching { modsManager.importZip(uri, root, engine, replaceExisting) }
-            .onSuccess { events.emit(UiEvent.Message("Mod importe : " + it.name)) }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Import impossible")) }
-    }
-
-    fun installMod(gameId: String, modId: String) = viewModelScope.launch {
-        val game = repository.getGame(gameId) ?: return@launch
-        val mod = dao.getMods().firstOrNull { it.id == modId } ?: return@launch
-        runCatching { modsManager.install(game, mod) }
-            .onSuccess {
-                events.emit(UiEvent.Message("Mod installe"))
-                loadMods(gameId)
-            }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Installation impossible")) }
-    }
-
-    fun uninstallMod(gameId: String, installationId: String, force: Boolean = false) = viewModelScope.launch {
-        val installation = dao.observeInstallationsForGame(gameId).first().firstOrNull { it.id == installationId } ?: return@launch
-        runCatching { modsManager.uninstall(installation, force) }
-            .onSuccess { warnings ->
-                if (warnings.isNotEmpty()) events.emit(UiEvent.Message("Des fichiers ont change depuis l installation"))
-                else {
-                    events.emit(UiEvent.Message("Mod desinstalle"))
-                    loadMods(gameId)
-                }
-            }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Desinstallation impossible")) }
-    }
-
     fun openGameFolder(gameId: String) = viewModelScope.launch {
         val game = repository.getGame(gameId) ?: return@launch
         openFolderRequests.emit(Uri.parse(game.documentUri))
@@ -1285,25 +1031,10 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         return 1f - distance.toFloat() / maxOf(left.length, right.length, 1)
     }
 
-    private fun levenshtein(left: String, right: String): Int {
-        var previous = IntArray(right.length + 1) { it }
-        left.forEachIndexed { leftIndex, leftChar ->
-            val current = IntArray(right.length + 1)
-            current[0] = leftIndex + 1
-            right.forEachIndexed { rightIndex, rightChar ->
-                current[rightIndex + 1] = minOf(
-                    current[rightIndex] + 1,
-                    previous[rightIndex + 1] + 1,
-                    previous[rightIndex] + if (leftChar == rightChar) 0 else 1
-                )
-            }
-            previous = current
-        }
-        return previous.last()
-    }
+
     fun requestNotificationPermission() { notificationPermissionRequests.tryEmit(Unit) }
     fun configureBackupFolder(uri: Uri) = viewModelScope.launch {
-        runCatching {
+        runCatchingCancellable {
             getApplication<Application>().contentResolver.takePersistableUriPermission(
                 uri, android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
             )
@@ -1315,12 +1046,12 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun createBackup() = viewModelScope.launch {
         val uri = settingsRepository.settings.first().backupFolderUri?.let(Uri::parse)
         if (uri == null) events.emit(UiEvent.Message("Choisissez d’abord un dossier de sauvegarde"))
-        else runCatching { repository.createBackup(uri) }
+        else runCatchingCancellable { repository.createBackup(uri) }
             .onSuccess { events.emit(UiEvent.Message("Sauvegarde créée : $it")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Sauvegarde impossible")) }
     }
     fun restoreBackup(uri: Uri) = viewModelScope.launch {
-        runCatching { repository.restoreBackup(uri) }
+        runCatchingCancellable { repository.restoreBackup(uri) }
             .onSuccess { events.emit(UiEvent.Message("Sauvegarde restaurée")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Restauration impossible")) }
     }
@@ -1328,7 +1059,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun diagnoseGame(id: String) = viewModelScope.launch {
         val game = repository.getGame(id) ?: return@launch
         val profile = repository.getLaunchProfile(id)
-        val report = compatibilityDiagnostic.inspect(getApplication(), game, profile)
+        val report = withContext(Dispatchers.IO) { compatibilityDiagnostic.inspect(getApplication(), game, profile) }
         mutableCompatibility.value = mutableCompatibility.value + (id to report)
     }
 
@@ -1347,7 +1078,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun testLaunchProfile(profile: LaunchProfileEntity) = viewModelScope.launch {
         repository.saveLaunchProfile(profile)
         val game = repository.getGame(profile.gameId) ?: return@launch
-        val diagnostic = compatibilityDiagnostic.inspect(getApplication(), game, profile)
+        val diagnostic = withContext(Dispatchers.IO) { compatibilityDiagnostic.inspect(getApplication(), game, profile) }
         mutableCompatibility.value = mutableCompatibility.value + (game.id to diagnostic)
         if (!diagnostic.canLaunch) {
             events.emit(UiEvent.Message(diagnostic.summary))
@@ -1374,7 +1105,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun launchGame(id: String) = viewModelScope.launch {
         val game = repository.getGame(id) ?: return@launch
         val profile = repository.getLaunchProfile(id)
-        val diagnostic = compatibilityDiagnostic.inspect(getApplication(), game, profile)
+        val diagnostic = withContext(Dispatchers.IO) { compatibilityDiagnostic.inspect(getApplication(), game, profile) }
         mutableCompatibility.value = mutableCompatibility.value + (id to diagnostic)
         if (!diagnostic.canLaunch) {
             events.emit(UiEvent.Message(diagnostic.summary))

@@ -29,6 +29,7 @@ object KeystoreCrypto {
         return cipher.doFinal(data, IV_LENGTH, data.size - IV_LENGTH)
     }
 
+    @Synchronized
     private fun key(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }
         (keyStore.getKey(KEY_ALIAS, null) as? SecretKey)?.let { return it }

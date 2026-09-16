@@ -25,7 +25,7 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - suivi du temps de jeu par sessions et affichage de la durée cumulée ;
 - gestionnaire de runtimes JoiPlay avec détection dynamique des variantes installées, catalogue officiel mis en cache sept jours et notification des mises à jour ;
 - suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
-- sauvegarde et restauration ZIP du catalogue, des profils et des jaquettes, avec raccourci vers le dossier choisi ;
+- sauvegarde et restauration chiffrée du catalogue, des profils, des jaquettes et des journaux de sauvegardes/mods, avec raccourci vers le dossier choisi ;
 - choix automatique et manuel de jaquettes dans le moteur sélectionné (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), sans filtre de contenu ajouté par Astra, sélection de l’image affichée, ouverture navigateur, choix local et recadrage libre ;
 - enrichissement silencieux des nouveaux jeux via VNDB (sans importer ses tags), puis recherche du thread F95Zone avec le moteur sélectionné et URL canonique conservée dans la fiche ;
 - import F95Zone pendant l'ajout ou l'édition : lien conservé dans la fiche, sélection des tags puis choix d'une image recadrable ;
@@ -54,10 +54,13 @@ core/        modèles, accès fichiers, recherche, métadonnées
 data/local  Room, DAO et entités
 data/scanner détection, normalisation, fingerprint et scan SAF
 data/repository orchestration des données
+data/saves   codecs, découverte SAF, écriture vérifiée et backups
+data/mods    import ZIP, installation et restauration journalisées
+data/backup  archives chiffrées du catalogue
 launcher/    JoiPlay et futur MTool
 settings/    DataStore
 worker/      WorkManager
-ui/          ViewModel, navigation et écrans Compose
+ui/          navigation, écrans par domaine, état et contrôleur des outils
 ```
 
 L'injection est volontairement explicite via `AppContainer` : elle garde le démarrage lisible et permet de remplacer les dépendances dans les tests sans framework supplémentaire.
@@ -80,7 +83,7 @@ Les tests locaux couvrent la normalisation, les signatures moteur imbriquées, l
 .\gradlew.bat :app:testDebugUnitTest
 ```
 
-Le test instrumenté Room vérifie SQLite et la synchronisation de l'index FTS sur un appareil ou un émulateur :
+Les tests instrumentés vérifient Room/FTS, les archives du catalogue, les sauvegardes et les mods, sur fichiers locaux et URI SAF imbriquées :
 
 ```powershell
 .\gradlew.bat :app:connectedDebugAndroidTest
@@ -93,6 +96,38 @@ Le module Baseline Profile se compile sans lancer de test sur l’appareil :
 ```
 
 La génération réelle reste volontairement explicite avec `:app:generateBaselineProfile`, car elle nécessite un appareil Android 13+ compatible ou un appareil géré dédié.
+
+## Sauvegardes de jeux et mods
+
+L’éditeur reconnaît les sauvegardes Ren’Py ZIP contenant `log` (pickle), les anciens conteneurs bruts/zlib, RPG Maker MV (LZ-String), MZ (base64/zlib) et RGSS XP/VX/VX Ace (Marshal, y compris plusieurs flux). Il conserve le conteneur d’origine, crée une copie de sécurité avant écriture et relit le résultat. Une sauvegarde modifiée depuis l’ouverture de l’éditeur doit être rechargée. Les structures non prises en charge sont refusées avant écriture ; la compatibilité n’est pas universelle pour les jeux utilisant un format personnalisé.
+
+Après modification, Ren’Py peut demander d’autoriser le chargement de la sauvegarde. Les métadonnées et la capture restent dans l’archive ; la signature du contenu original n’est pas réutilisée. Les tests utilisent des fixtures synthétiques générées par CPython, avec des références partagées, des cycles et des caractères Unicode. Vérification indépendante après les tests Gradle :
+
+```powershell
+python -X utf8 scripts/verify-renpy-fixtures.py
+```
+
+Depuis **Outils → Mods**, sélectionner un dépôt, importer le ZIP puis installer le mod du moteur concerné. Le dépôt contient des sous-dossiers `RenPy`, `RPGMakerMV`, `RPGMakerMZ`, etc. Une archive peut fournir ce manifeste à sa racine :
+
+```json
+{
+  "formatVersion": 1,
+  "id": "example.mod",
+  "name": "Example mod",
+  "engines": ["RenPy"],
+  "installMode": "OVERLAY",
+  "target": "game",
+  "filesRoot": "files"
+}
+```
+
+`files/` contient les fichiers à installer, relativement à `target`. `COPY` accepte uniquement les nouveaux fichiers ; `OVERLAY` ajoute ou remplace avec backup (`REPLACE` reste un alias historique). Sans manifeste, le moteur du jeu sélectionné et l’arborescence du ZIP déterminent la destination. Un dossier d’emballage est retiré sans écraser les niveaux significatifs `game`, `www` ou `js`.
+
+L’import ZIP est limité à 4 000 entrées et 200 Mio décompressés. La désinstallation vérifie les fichiers avant de restaurer les originaux. Un conflit avec une modification ultérieure est signalé ; une installation interrompue conserve son journal et propose **Restaurer**. Les mods RPG Maker doivent inclure leur configuration d’activation lorsque nécessaire : copier un plugin JavaScript isolé ne le déclare pas automatiquement dans `js/plugins.js`.
+
+Les archives du catalogue `.astra` utilisent la clé Android Keystore de l’installation actuelle. Elles ne constituent pas une migration vers un autre téléphone ou après désinstallation de l’app. Les anciens ZIP non chiffrés restent importables (schémas 5 à 8). Les jeux et leurs permissions SAF ne sont pas embarqués dans ces archives.
+
+Le bilan de la revue globale et les limites des vérifications figurent dans [docs/AUDIT_2026-09-16.md](docs/AUDIT_2026-09-16.md).
 
 ## Limites de preuve
 
