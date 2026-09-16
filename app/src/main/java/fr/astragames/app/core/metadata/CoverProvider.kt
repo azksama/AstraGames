@@ -171,6 +171,8 @@ class SearchCoverProvider(
             setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
             candidate.contextUrl?.takeIf { it.startsWith("https://") }?.let { setRequestProperty("Referer", it) }
         }
+        var partialFile: File? = null
+        try {
         val status = connection.responseCode
         check(status in 200..299) { "L'image sélectionnée est inaccessible ($status)." }
         val type = connection.contentType.orEmpty().substringBefore(';')
@@ -185,6 +187,7 @@ class SearchCoverProvider(
             else -> "jpg"
         }
         val output = File(directory, "${UUID.randomUUID()}.$extension")
+        partialFile = output
         connection.inputStream.use { input ->
             output.outputStream().use { stream ->
                 val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
@@ -199,6 +202,10 @@ class SearchCoverProvider(
             }
         }
         FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", output)
+        } catch (error: Exception) {
+            partialFile?.delete()
+            throw error
+        } finally { connection.disconnect() }
     }
 
     private fun hostOf(value: String): String = runCatching { URI(value).host?.removePrefix("www.") }.getOrNull().orEmpty()

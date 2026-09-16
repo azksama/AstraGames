@@ -1,16 +1,7 @@
 package fr.astragames.app.worker
 
-import android.Manifest
-import android.app.NotificationChannel
-import android.app.NotificationManager
-import android.app.PendingIntent
+import fr.astragames.app.core.runCatchingCancellable
 import android.content.Context
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.os.Build
-import androidx.core.app.NotificationCompat
-import androidx.core.app.NotificationManagerCompat
-import androidx.core.content.ContextCompat
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
@@ -19,7 +10,6 @@ import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import fr.astragames.app.AstraApplication
-import fr.astragames.app.MainActivity
 import fr.astragames.app.launcher.JoiPlayCatalogProvider
 import fr.astragames.app.launcher.JoiPlayRuntimeManager
 import kotlinx.coroutines.flow.first
@@ -32,7 +22,7 @@ class JoiPlayUpdateWorker(appContext: Context, params: WorkerParameters) : Corou
         var raw = settings.joiPlayCatalogJson
         val stale = raw.isBlank() || System.currentTimeMillis() - settings.joiPlayCatalogFetchedAt >= JoiPlayCatalogProvider.CACHE_DURATION_MS
         if (stale) {
-            val fetched = runCatching { app.container.joiPlayCatalog.fetchRaw() }
+            val fetched = runCatchingCancellable { app.container.joiPlayCatalog.fetchRaw() }
             if (fetched.isSuccess) {
                 raw = fetched.getOrThrow()
                 app.container.settings.cacheJoiPlayCatalog(raw)
@@ -56,30 +46,8 @@ class JoiPlayUpdateWorker(appContext: Context, params: WorkerParameters) : Corou
     }
 
     private fun notifyUpdates(names: List<String>): Boolean {
-        if (Build.VERSION.SDK_INT >= 33 && ContextCompat.checkSelfPermission(applicationContext, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return false
-        val manager = NotificationManagerCompat.from(applicationContext)
-        if (!manager.areNotificationsEnabled()) return false
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            (applicationContext.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager).createNotificationChannel(
-                NotificationChannel(CHANNEL_ID, "Mises à jour JoiPlay", NotificationManager.IMPORTANCE_DEFAULT)
-            )
-        }
-        val intent = Intent(applicationContext, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        val pendingIntent = PendingIntent.getActivity(
-            applicationContext, 0, intent,
-            PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-        )
         val detail = names.take(3).joinToString(", ") + if (names.size > 3) " +${names.size - 3}" else ""
-        val notification = NotificationCompat.Builder(applicationContext, CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_sys_download_done)
-            .setContentTitle("Mise à jour JoiPlay disponible")
-            .setContentText(detail)
-            .setStyle(NotificationCompat.BigTextStyle().bigText("Nouvelles versions disponibles : $detail"))
-            .setContentIntent(pendingIntent)
-            .setAutoCancel(true)
-            .build()
-        manager.notify(NOTIFICATION_ID, notification)
-        return true
+        return showUpdateNotification(applicationContext, CHANNEL_ID, "Mises à jour JoiPlay", NOTIFICATION_ID, "Mise à jour JoiPlay disponible", detail)
     }
 
     companion object {
@@ -92,12 +60,12 @@ class JoiPlayUpdateWorker(appContext: Context, params: WorkerParameters) : Corou
             manager.enqueueUniquePeriodicWork(
                 UNIQUE_NAME,
                 ExistingPeriodicWorkPolicy.UPDATE,
-                PeriodicWorkRequestBuilder<JoiPlayUpdateWorker>(1, TimeUnit.DAYS).build()
+                PeriodicWorkRequestBuilder<JoiPlayUpdateWorker>(1, TimeUnit.DAYS).setConstraints(networkConstraints()).build()
             )
             manager.enqueueUniqueWork(
                 "$UNIQUE_NAME-initial",
                 ExistingWorkPolicy.KEEP,
-                OneTimeWorkRequestBuilder<JoiPlayUpdateWorker>().build()
+                OneTimeWorkRequestBuilder<JoiPlayUpdateWorker>().setConstraints(networkConstraints()).build()
             )
         }
     }

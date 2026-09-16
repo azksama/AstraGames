@@ -46,13 +46,13 @@ class MainActivity : FragmentActivity() {
         uri?.let(viewModel::restoreBackup)
     }
     private val saveFolderPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        uri?.let(viewModel::addSaveLocation)
+        uri?.let(viewModel.tools::addSaveLocation)
     }
     private val modsRootPicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
-        uri?.let(viewModel::setModsRoot)
+        uri?.let(viewModel.tools::setModsRoot)
     }
     private val modZipPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        uri?.let { viewModel.importModZip(it, null, false) }
+        uri?.let { viewModel.tools.importModZip(it, null, false) }
     }
     private val coverCropper = registerForActivityResult(CropImageContract()) { result ->
         val gameId = coverGameId
@@ -85,17 +85,17 @@ class MainActivity : FragmentActivity() {
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.pickSaveFolderRequests.collect { saveFolderPicker.launch(null) }
+                viewModel.tools.pickSaveFolderRequests.collect { saveFolderPicker.launch(null) }
             }
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.pickModsRootRequests.collect { modsRootPicker.launch(null) }
+                viewModel.tools.pickModsRootRequests.collect { modsRootPicker.launch(null) }
             }
         }
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.pickModZipRequests.collect {
+                viewModel.tools.pickModZipRequests.collect {
                     modZipPicker.launch(arrayOf("application/zip", "application/octet-stream"))
                 }
             }

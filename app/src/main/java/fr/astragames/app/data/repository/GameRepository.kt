@@ -27,7 +27,10 @@ import fr.astragames.app.core.model.ScanReportItem
 import fr.astragames.app.core.model.ScanReportItemStatus
 import fr.astragames.app.core.search.parseTextTagList
 import fr.astragames.app.core.metadata.canonicalF95ThreadUrl
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.first
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -58,13 +61,15 @@ class GameRepository(
     val ignoredDuplicateGroups = dao.observeIgnoredDuplicateGroups()
     val auditEvents: Flow<List<AuditEventEntity>> = dao.observeAuditEvents()
     fun gameTagRefs() = dao.observeGameTagRefs()
-    fun search(query: String) = dao.searchGames(fr.astragames.app.core.search.SearchParser.toFtsQuery(query))
+    fun search(query: String) = if (fr.astragames.app.core.search.SearchParser.terms(query).isEmpty()) games
+        else dao.searchGames(fr.astragames.app.core.search.SearchParser.toFtsQuery(query))
 
     fun game(id: String) = dao.observeGame(id)
     fun gameTags(id: String) = dao.observeTagsForGame(id)
     fun launchProfile(id: String) = dao.observeLaunchProfile(id)
 
     suspend fun addSource(uri: Uri) {
+        if (dao.observeSources().first().any { it.treeUri == uri.toString() }) return
         context.contentResolver.takePersistableUriPermission(
             uri,
             android.content.Intent.FLAG_GRANT_READ_URI_PERMISSION or android.content.Intent.FLAG_GRANT_WRITE_URI_PERMISSION
@@ -84,6 +89,7 @@ class GameRepository(
             return
         }
         val games = dao.getGamesForSource(id)
+        games.forEach { requireNoInstalledMods(it.id) }
         dao.deleteSourceAndGames(id)
         games.forEach { game -> removeManagedCover(game.coverUri) }
     }
@@ -116,9 +122,8 @@ class GameRepository(
     suspend fun getGame(id: String) = dao.getGame(id)
     suspend fun getGameIds(): Set<String> = dao.getGameIds().toSet()
     suspend fun recordLaunch(id: String) = dao.recordLaunch(id, System.currentTimeMillis())
-    suspend fun verifyGamePresence(id: String): Boolean {
-        val game = dao.getGame(id) ?: return false
-        if (!game.missing) return true
+    suspend fun verifyGamePresence(id: String): Boolean = withContext(Dispatchers.IO) {
+        val game = dao.getGame(id) ?: return@withContext false
         val uri = runCatching { Uri.parse(game.documentUri) }.getOrNull()
         val exists = when (uri?.scheme) {
             "file" -> uri.path?.let(::File)?.exists() == true
@@ -126,11 +131,11 @@ class GameRepository(
             else -> game.physicalPath?.let(::File)?.exists() == true
         }
         if (exists) dao.markGameFound(id)
-        return exists
+        return@withContext exists
     }
     suspend fun setGameVersion(id: String, version: String) = dao.setGameVersion(id, version)
 
-    suspend fun setCover(id: String, uri: Uri) {
+    suspend fun setCover(id: String, uri: Uri) = withContext(Dispatchers.IO) {
         val directory = File(context.filesDir, "covers").apply { mkdirs() }
         val previous = dao.getGame(id)?.coverUri?.let(Uri::parse)
         val destination = File(directory, "$id-${System.currentTimeMillis()}.jpg")
@@ -148,7 +153,7 @@ class GameRepository(
         previous?.path?.let(::File)?.takeIf { it.parentFile == directory && it != destination }?.delete()
     }
 
-    suspend fun removeCover(id: String) {
+    suspend fun removeCover(id: String) = withContext(Dispatchers.IO) {
         dao.getGame(id)?.coverUri?.let(Uri::parse)?.path?.let(::File)
             ?.takeIf { it.parentFile == File(context.filesDir, "covers") }
             ?.let { runCatching { it.delete() } }
@@ -201,13 +206,14 @@ class GameRepository(
     suspend fun ignoreDuplicateGroup(groupKey: String) =
         dao.ignoreDuplicateGroup(IgnoredDuplicateGroupEntity(groupKey, System.currentTimeMillis()))
 
-    suspend fun previewDuplicateMerge(primaryId: String, secondaryId: String): DuplicateMergePreview {
+    suspend fun previewDuplicateMerge(primaryId: String, secondaryId: String, includeSaves: Boolean = true): DuplicateMergePreview = withContext(Dispatchers.IO) {
+        require(primaryId != secondaryId) { "Selectionnez deux jeux differents." }
         val primary = dao.getGame(primaryId) ?: error("Jeu principal introuvable.")
         val secondary = dao.getGame(secondaryId) ?: error("Jeu secondaire introuvable.")
-        val primarySaves = findSaveFiles(primary)
-        val secondarySaves = findSaveFiles(secondary)
+        val primarySaves = if (includeSaves) findSaveFiles(primary) else emptyList()
+        val secondarySaves = if (includeSaves) findSaveFiles(secondary) else emptyList()
         val primaryPaths = primarySaves.associateBy { it.relativePath.lowercase(Locale.ROOT) }
-        return DuplicateMergePreview(
+        return@withContext DuplicateMergePreview(
             primary, secondary, primarySaves, secondarySaves,
             secondarySaves.filter { it.relativePath.lowercase(Locale.ROOT) in primaryPaths }
         )
@@ -219,8 +225,9 @@ class GameRepository(
         migrateSaves: Boolean,
         saveStrategy: SaveConflictStrategy,
         deleteSecondaryFiles: Boolean
-    ): DuplicateMergeResult {
-        val preview = previewDuplicateMerge(primaryId, secondaryId)
+    ): DuplicateMergeResult = withContext(Dispatchers.IO) {
+        if (!deleteSecondaryFiles) requireNoInstalledMods(secondaryId)
+        val preview = previewDuplicateMerge(primaryId, secondaryId, includeSaves = migrateSaves)
         if (migrateSaves) migrateSaveFiles(preview, saveStrategy)
         if (deleteSecondaryFiles) deleteGameFolder(preview.secondary)
 
@@ -263,11 +270,12 @@ class GameRepository(
         }
         dao.deleteGameCompletely(secondary.id)
         dao.getGame(primary.id)?.let { merged -> dao.upsertGame(merged) }
-        return DuplicateMergeResult(preview.secondarySaves.size, preview.conflictingSaves.size)
+        return@withContext DuplicateMergeResult(preview.secondarySaves.size, preview.conflictingSaves.size)
     }
 
-    suspend fun deleteGame(id: String, deleteAssociatedFiles: Boolean) {
-        val game = dao.getGame(id) ?: return
+    suspend fun deleteGame(id: String, deleteAssociatedFiles: Boolean) = withContext(Dispatchers.IO) {
+        val game = dao.getGame(id) ?: return@withContext
+        if (!deleteAssociatedFiles) requireNoInstalledMods(id)
         if (deleteAssociatedFiles) {
             val uri = Uri.parse(game.documentUri)
             require(uri.scheme == "content") {
@@ -291,14 +299,20 @@ class GameRepository(
         recordAudit("GAME_DELETED", "Jeu supprimé : ${game.title}${if (deleteAssociatedFiles) " (fichiers inclus)" else ""}")
     }
 
+    private suspend fun requireNoInstalledMods(gameId: String) {
+        require(dao.observeInstallationsForGame(gameId).first().isEmpty()) {
+            "Désinstallez ou restaurez les mods de ce jeu avant de retirer sa fiche."
+        }
+    }
+
     suspend fun restoreDeletedGame(id: String) = dao.restoreDeletedGame(id)
 
     suspend fun createBackup(treeUri: Uri): String = backupManager.create(treeUri)
     suspend fun restoreBackup(uri: Uri) = backupManager.restore(uri)
 
-    suspend fun findSaveFolderUri(gameId: String): Uri? {
-        val game = dao.getGame(gameId) ?: return null
-        val root = fr.astragames.app.data.saves.documentDir(context, Uri.parse(game.documentUri)) ?: return null
+    suspend fun findSaveFolderUri(gameId: String): Uri? = withContext(Dispatchers.IO) {
+        val game = dao.getGame(gameId) ?: return@withContext null
+        val root = fr.astragames.app.data.saves.documentDir(context, Uri.parse(game.documentUri)) ?: return@withContext null
         val preferred = when (game.engine) {
             "RENPY" -> listOf("game/saves", "saves", "save")
             "RPG_MAKER_MV" -> listOf("www/save", "save")
@@ -310,9 +324,9 @@ class GameRepository(
             path.split("/").filter(String::isNotBlank).forEach { segment ->
                 current = current?.listFiles()?.firstOrNull { it.isDirectory && it.name.equals(segment, ignoreCase = true) }
             }
-            current?.let { return it.uri }
+            current?.let { return@withContext it.uri }
         }
-        return root.uri
+        return@withContext root.uri
     }
 
     private fun removeManagedCover(value: String?) {
@@ -330,7 +344,7 @@ class GameRepository(
     }
 
     private fun findSaveFiles(game: GameEntity): List<SaveFileDescriptor> {
-        val root = DocumentFile.fromSingleUri(context, Uri.parse(game.documentUri)) ?: return emptyList()
+        val root = fr.astragames.app.data.saves.documentDir(context, Uri.parse(game.documentUri)) ?: error("Dossier du jeu inaccessible.")
         val result = mutableListOf<SaveFileDescriptor>()
         fun walk(folder: DocumentFile, path: String, insideSaveFolder: Boolean, depth: Int) {
             if (depth > 7 || result.size >= 1_000) return
@@ -344,12 +358,12 @@ class GameRepository(
                 }
             }
         }
-        runCatching { walk(root, "", false, 0) }
+        walk(root, "", false, 0)
         return result
     }
 
     private fun migrateSaveFiles(preview: DuplicateMergePreview, strategy: SaveConflictStrategy) {
-        val primaryRoot = DocumentFile.fromSingleUri(context, Uri.parse(preview.primary.documentUri))
+        val primaryRoot = fr.astragames.app.data.saves.documentDir(context, Uri.parse(preview.primary.documentUri))
             ?: error("Le dossier du jeu principal est inaccessible.")
         preview.secondarySaves.forEach { save ->
             val source = DocumentFile.fromSingleUri(context, Uri.parse(save.documentUri)) ?: return@forEach
@@ -511,7 +525,7 @@ class GameRepository(
         associateTagNames(gameId, parseTextTagList(raw), categoryName = null)
 
     private suspend fun associateTagNames(gameId: String, tagNames: Collection<String>, categoryName: String?): Int {
-        val selectedNames = tagNames.flatMap(::parseTagNames).distinctBy(::normalize)
+        val selectedNames = tagNames.map(String::trim).filter(String::isNotBlank).distinctBy(::normalize)
         if (categoryName != null && selectedNames.isNotEmpty() && dao.getTagCategories().none { normalize(it.name) == normalize(categoryName) }) {
             createTagCategory(categoryName)
         }
@@ -546,13 +560,13 @@ class GameRepository(
         dao.deleteFolder(folder.id)
     }
 
-    suspend fun importTags(uri: Uri): Int {
+    suspend fun importTags(uri: Uri): Int = withContext(Dispatchers.IO) {
         val text = context.contentResolver.openInputStream(uri)
             ?.bufferedReader(Charsets.UTF_8)
             ?.use { it.readText() }
             ?: error("Impossible de lire le fichier de tags.")
         val content = text.removePrefix("\uFEFF")
-        if (content.isBlank()) return 0
+        if (content.isBlank()) return@withContext 0
 
         val mimeType = context.contentResolver.getType(uri).orEmpty().lowercase(Locale.ROOT)
         val extension = uri.lastPathSegment
@@ -570,7 +584,7 @@ class GameRepository(
             .filter { it.name.isNotBlank() }
             .distinctBy { normalize(it.name) }
 
-        if (imported.isEmpty()) return 0
+        if (imported.isEmpty()) return@withContext 0
 
         val categories = dao.getTagCategories().associateBy { normalize(it.name) }.toMutableMap()
         val canonicalNames = categories.mapValues { (_, category) -> category.name }.toMutableMap()
@@ -596,7 +610,7 @@ class GameRepository(
                 tag.groupName?.let(::normalize)?.let(canonicalNames::get)
             )
         }
-        return dao.insertTags(newTags).count { it != -1L }
+        return@withContext dao.insertTags(newTags).count { it != -1L }
     }
 
     private fun parseJsonTags(raw: String): List<ImportedTag> {

@@ -9,8 +9,11 @@ import java.io.File
 class FileAccessResolver(private val context: Context) {
     fun physicalPath(treeUri: Uri, relativePath: String = ""): String? {
         if (treeUri.scheme == "file") return treeUri.path?.let { File(it, relativePath).path }
-        if (!DocumentsContract.isTreeUri(treeUri)) return null
-        val documentId = runCatching { DocumentsContract.getTreeDocumentId(treeUri) }.getOrNull() ?: return null
+        if (treeUri.authority != "com.android.externalstorage.documents" || !DocumentsContract.isTreeUri(treeUri)) return null
+        val documentId = runCatching {
+            if (DocumentsContract.isDocumentUri(context, treeUri)) DocumentsContract.getDocumentId(treeUri)
+            else DocumentsContract.getTreeDocumentId(treeUri)
+        }.getOrNull() ?: return null
         val parts = documentId.split(':', limit = 2)
         if (parts.size != 2) return null
         val volume = parts[0]
