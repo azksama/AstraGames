@@ -18,7 +18,6 @@ import fr.astragames.app.data.local.TagCategoryEntity
 import fr.astragames.app.launcher.JoiPlayRuntimeInfo
 import fr.astragames.app.settings.AstraSettings
 import fr.astragames.app.settings.SearchEngine
-import kotlinx.coroutines.flow.first
 
 data class LibraryFilters(
     val query: String = "",
@@ -62,6 +61,7 @@ data class AstraUiState(
     val runtimes: List<JoiPlayRuntimeInfo> = emptyList(),
     val settings: AstraSettings = AstraSettings(),
     val settingsLoaded: Boolean = false,
+    val searching: Boolean = false,
     val filters: LibraryFilters = LibraryFilters(),
     val scanning: Boolean = false,
     val scanProgress: ScanProgressState = ScanProgressState(),

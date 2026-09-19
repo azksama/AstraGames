@@ -1,122 +1,127 @@
 package fr.astragames.app.ui
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.text.KeyboardActions
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
-import androidx.navigation.compose.*
-import fr.astragames.app.core.model.*
+import fr.astragames.app.core.model.GameEngine
+import fr.astragames.app.core.model.LibraryViewMode
 
 @Composable
 internal fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit, onBack: () -> Unit) {
     var engineMenu by remember { mutableStateOf(false) }
     var tagsMenu by remember { mutableStateOf(false) }
     var systemFolderMenu by remember { mutableStateOf(false) }
+    val focusRequester = remember { FocusRequester() }
+    val keyboard = LocalSoftwareKeyboardController.current
+    var focusRequested by rememberSaveable { mutableStateOf(false) }
     val availableEngines = remember(state.games) {
-        state.games.mapNotNull { runCatching { GameEngine.valueOf(it.engine) }.getOrNull() }.distinct()
+        state.games.mapNotNull { runCatching { GameEngine.valueOf(it.engine) }.getOrNull() }.distinct().sortedBy { it.name }
     }
-    DisposableEffect(Unit) { onDispose { vm.updateQuery("") } }
+    LaunchedEffect(Unit) {
+        if (!focusRequested) {
+            focusRequester.requestFocus()
+            focusRequested = true
+        }
+    }
     Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Recherche", onBack = onBack) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
             OutlinedTextField(
-                state.filters.query, vm::updateQuery, Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp),
-                singleLine = true, leadingIcon = { Icon(Icons.Default.Search, null) },
+                value = state.filters.query,
+                onValueChange = vm::updateQuery,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).focusRequester(focusRequester),
+                singleLine = true,
+                leadingIcon = { Icon(Icons.Default.Search, null) },
                 trailingIcon = {
-                    if (state.filters.query.isNotBlank()) IconButton(onClick = { vm.updateQuery("") }) { Icon(Icons.Default.Close, "Effacer la sélection") }
+                    if (state.filters.query.isNotEmpty()) IconButton(onClick = { vm.updateQuery("") }) {
+                        Icon(Icons.Default.Close, AppLocalizer.text("Effacer la recherche"))
+                    }
                 },
-                placeholder = { Text("Titre, moteur, développeur…") }
+                label = { Text("Rechercher") },
+                placeholder = { Text("Titre, moteur, développeur…") },
+                keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
+                keyboardActions = KeyboardActions(onSearch = { keyboard?.hide() })
             )
-            Row(
-                Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp),
+            LazyRow(
+                Modifier.fillMaxWidth(),
+                contentPadding = PaddingValues(horizontal = 16.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Box(Modifier.weight(1f)) {
-                    OutlinedButton(onClick = { engineMenu = true }, Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Extension, null); Spacer(Modifier.width(6.dp))
-                        Text(state.filters.engine?.name?.readableEngine() ?: "Tous les moteurs", Modifier.weight(1f), maxLines = 1)
-                        Icon(Icons.Default.ArrowDropDown, null)
-                    }
-                    DropdownMenu(engineMenu, { engineMenu = false }) {
-                        DropdownMenuItem(
-                            text = { Text("Tous les moteurs") },
-                            leadingIcon = { if (state.filters.engine == null) Icon(Icons.Default.Check, null) },
-                            onClick = { vm.filterEngine(null); engineMenu = false }
+                item {
+                    Box {
+                        FilterChip(
+                            selected = state.filters.engine != null,
+                            onClick = { keyboard?.hide(); engineMenu = true },
+                            label = { Text(state.filters.engine?.name?.readableEngine() ?: "Tous les moteurs") },
+                            trailingIcon = { Icon(Icons.Default.ArrowDropDown, null) }
                         )
-                        availableEngines.forEach { engine ->
-                            DropdownMenuItem(
-                                text = { Text(engine.name.readableEngine()) },
-                                leadingIcon = { if (state.filters.engine == engine) Icon(Icons.Default.Check, null) },
-                                onClick = { vm.filterEngine(engine); engineMenu = false }
-                            )
+                        DropdownMenu(engineMenu, { engineMenu = false }) {
+                            DropdownMenuItem(text = { Text("Tous les moteurs") }, onClick = { vm.filterEngine(null); engineMenu = false })
+                            availableEngines.forEach { engine ->
+                                DropdownMenuItem(
+                                    text = { Text(engine.name.readableEngine()) },
+                                    leadingIcon = { if (state.filters.engine == engine) Icon(Icons.Default.Check, null) },
+                                    onClick = { vm.filterEngine(engine); engineMenu = false }
+                                )
+                            }
                         }
                     }
                 }
-                Box(Modifier.weight(1f)) {
-                    OutlinedButton(onClick = { tagsMenu = true }, Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Style, null); Spacer(Modifier.width(6.dp))
-                        Text(
-                            if (state.filters.tagIds.isEmpty()) "Tous les tags" else "${state.filters.tagIds.size} tag(s)",
-                            Modifier.weight(1f), maxLines = 1
+                item {
+                    val tagCount = state.filters.tagIds.size + state.filters.excludedTagIds.size
+                    FilterChip(
+                        selected = tagCount > 0,
+                        onClick = { keyboard?.hide(); tagsMenu = true },
+                        label = { Text(if (tagCount == 0) "Tous les tags" else "Tags ($tagCount)") },
+                        leadingIcon = { Icon(Icons.Default.Style, null) }
+                    )
+                }
+                item {
+                    Box {
+                        val selectedFolder = state.systemFolders.firstOrNull { it.id == state.filters.systemFolderId }
+                        FilterChip(
+                            selected = selectedFolder != null,
+                            onClick = { keyboard?.hide(); systemFolderMenu = true },
+                            label = { Text(selectedFolder?.label ?: "Tous les dossiers système", maxLines = 1) },
+                            leadingIcon = { Icon(Icons.Default.FolderOpen, null) }
                         )
-                        Icon(Icons.Default.ArrowDropDown, null)
-                    }
-                    DropdownMenu(
-                        expanded = tagsMenu,
-                        onDismissRequest = { tagsMenu = false },
-                        modifier = Modifier.heightIn(max = 480.dp)
-                    ) {
-                        if (state.filters.tagIds.isNotEmpty()) DropdownMenuItem(
-                            text = { Text("Effacer la sélection") },
-                            leadingIcon = { Icon(Icons.Default.Clear, null) },
-                            onClick = { state.filters.tagIds.forEach(vm::toggleTagFilter) }
-                        )
-                        val categoryNames = state.tagCategories.map { it.name }
-                        val grouped = state.tags.groupBy { it.groupName }
-                        (categoryNames.map { it as String? } + listOf(null)).distinct().forEach { category ->
-                            val tags = grouped[category].orEmpty()
-                            if (tags.isNotEmpty()) {
-                                DropdownMenuItem(
-                                    text = { Text(category ?: "Sans collection", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary) },
-                                    enabled = false,
-                                    onClick = {}
-                                )
-                                tags.forEach { tag ->
-                                    DropdownMenuItem(
-                                        text = { Text(tag.name) },
-                                        leadingIcon = { Checkbox(tag.id in state.filters.tagIds, null) },
-                                        onClick = { vm.toggleTagFilter(tag.id) }
-                                    )
-                                }
+                        DropdownMenu(systemFolderMenu, { systemFolderMenu = false }, Modifier.heightIn(max = 480.dp)) {
+                            DropdownMenuItem(text = { Text("Tous les dossiers système") }, onClick = { vm.filterSystemFolder(null); systemFolderMenu = false })
+                            state.systemFolders.forEach { folder ->
+                                DropdownMenuItem(text = { Text(folder.label, maxLines = 2) }, onClick = { vm.filterSystemFolder(folder.id); systemFolderMenu = false })
                             }
                         }
                     }
                 }
             }
-            Box(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)) {
-                val selectedFolder = state.systemFolders.firstOrNull { it.id == state.filters.systemFolderId }
-                OutlinedButton(onClick = { systemFolderMenu = true }, Modifier.fillMaxWidth()) {
-                    Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(6.dp))
-                    Text(selectedFolder?.label ?: "Tous les dossiers système", Modifier.weight(1f), maxLines = 1)
-                    Icon(Icons.Default.ArrowDropDown, null)
-                }
-                DropdownMenu(systemFolderMenu, { systemFolderMenu = false }, Modifier.heightIn(max = 520.dp)) {
-                    DropdownMenuItem(
-                        text = { Text("Tous les dossiers système") },
-                        leadingIcon = { if (state.filters.systemFolderId == null) Icon(Icons.Default.Check, null) },
-                        onClick = { vm.filterSystemFolder(null); systemFolderMenu = false }
-                    )
-                    state.systemFolders.forEach { folder -> DropdownMenuItem(
-                        text = { Text(folder.label, maxLines = 2) },
-                        leadingIcon = { if (state.filters.systemFolderId == folder.id) Icon(Icons.Default.Check, null) },
-                        onClick = { vm.filterSystemFolder(folder.id); systemFolderMenu = false }
-                    ) }
-                }
+            Row(Modifier.fillMaxWidth().padding(start = 16.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(if (state.searching) "Recherche en cours…" else "${state.filteredGames.size} jeux", Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (state.filters != LibraryFilters()) TextButton(onClick = vm::clearFilters) { Text("Réinitialiser") }
             }
-            GameCollection(state.filteredGames, LibraryViewMode.LIST, state.settings.gridColumns, onGame, vm::toggleFavorite)
+            Box(Modifier.weight(1f)) {
+                if (state.searching) CenterMessage("Recherche en cours…", Modifier.fillMaxSize(), loading = true)
+                else GameCollection(state.filteredGames, LibraryViewMode.LIST, state.settings.gridColumns, onGame, vm::toggleFavorite, onResetFilters = vm::clearFilters)
+            }
         }
     }
+    if (tagsMenu) GameTagPickerSheet(
+        state.tags, state.tagCategories, state.filters.tagIds,
+        { vm.setTagFilters(it); tagsMenu = false },
+        { tagsMenu = false },
+        initialExcluded = state.filters.excludedTagIds,
+        onSaveExcluded = vm::setExcludedTagFilters,
+        title = "Filtrer les tags"
+    )
 }

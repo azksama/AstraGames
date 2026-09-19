@@ -9,6 +9,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import fr.astragames.app.data.backup.BackupManager
 import fr.astragames.app.data.mods.ModsManager
 import fr.astragames.app.data.saves.*
+import fr.astragames.app.core.filesystem.FileAccessResolver
+import fr.astragames.app.data.scanner.RecursiveSourceScanner
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.*
@@ -18,6 +20,7 @@ import java.io.File
 import java.util.UUID
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
+import kotlin.coroutines.cancellation.CancellationException
 
 @RunWith(AndroidJUnit4::class)
 class StorageWorkflowsTest {
@@ -47,6 +50,31 @@ class StorageWorkflowsTest {
         id = "test-game", title = "Test", documentUri = Uri.fromFile(folder).toString(), physicalPath = folder.path,
         engine = "RENPY", launcher = "JOIPLAY", sourceId = "test-source", dateAdded = 1, lastModified = 1, executableName = "Game.exe", fingerprint = "test"
     )
+
+    @Test fun cancellationDuringScanReconciliationFinishesTheSourceAndHistory() = runTest {
+        val folder = File(root, "scan-root").apply { mkdirs() }
+        val dao = database.dao()
+        val game = game(folder)
+        dao.upsertGame(game)
+        dao.upsertSource(GameSourceEntity(game.sourceId, "Test", Uri.fromFile(folder).toString()))
+        val scanner = RecursiveSourceScanner(context, dao, FileAccessResolver(context))
+
+        val failure = runCatching {
+            scanner.scan(game.sourceId) { progress ->
+                if (progress.phase == "Vérification des jeux déplacés ou supprimés") throw CancellationException("Cancelled after traversal")
+            }
+        }.exceptionOrNull()
+
+        assertTrue(failure is CancellationException)
+        val source = dao.getSource(game.sourceId)!!
+        assertEquals("PARTIAL", source.lastScanStatus)
+        assertEquals("Scan interrompu", source.lastError)
+        assertNotNull(source.lastScanAt)
+        assertEquals(false, dao.getGame(game.id)?.missing)
+        val history = dao.getLatestScanHistory(game.sourceId)!!
+        assertNotNull(history.finishedAt)
+        assertEquals(1, history.gamesFound)
+    }
 
     @Test fun importInstallConflictAndUninstallRestoreOriginalFiles() = runTest {
         val folder = File(root, "game-root/game").apply { mkdirs() }

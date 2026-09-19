@@ -30,10 +30,18 @@ class GameToolsController(
     val pickModZipRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     private val mutableSaves = MutableStateFlow<List<GameSave>>(emptyList())
     val gameSaves: StateFlow<List<GameSave>> = mutableSaves
+    private val mutableSavesLoading = MutableStateFlow(false)
+    val savesLoading = mutableSavesLoading.asStateFlow()
+    private val mutableSavesError = MutableStateFlow<String?>(null)
+    val savesError = mutableSavesError.asStateFlow()
     private val mutableSaveEntries = MutableStateFlow<List<SaveEntry>>(emptyList())
     val saveEntries: StateFlow<List<SaveEntry>> = mutableSaveEntries
     private val mutableMods = MutableStateFlow<List<ModCatalogItem>>(emptyList())
     val modsCatalog: StateFlow<List<ModCatalogItem>> = mutableMods
+    private val mutableModsLoading = MutableStateFlow(false)
+    val modsLoading = mutableModsLoading.asStateFlow()
+    private val mutableModsError = MutableStateFlow<String?>(null)
+    val modsError = mutableModsError.asStateFlow()
     private val mutableToolsBusy = MutableStateFlow(false)
     val toolsBusy: StateFlow<Boolean> = mutableToolsBusy
     private val mutableToolsError = MutableStateFlow<String?>(null)
@@ -41,6 +49,8 @@ class GameToolsController(
     private var loadedSaveHash: Pair<String, String>? = null
     private var activeModsGameId: String? = null
     private var saveLoadJob: Job? = null
+    private var savesListJob: Job? = null
+    private var modsListJob: Job? = null
     private var saveLoadGeneration = 0
     private var savesGeneration = 0
     private var modsGeneration = 0
@@ -73,13 +83,24 @@ class GameToolsController(
 
     fun removeSaveLocation(id: String) = scope.launch { saveManager.removeLocation(id) }
 
-    fun loadSaves(gameId: String) = scope.launch {
+    fun loadSaves(gameId: String) {
         val generation = ++savesGeneration
-        val game = repository.getGame(gameId) ?: return@launch
+        savesListJob?.cancel()
         mutableSaves.value = emptyList()
-        runCatchingCancellable { withContext(Dispatchers.IO) { saveManager.listSaves(game) } }
-            .onSuccess { if (generation == savesGeneration) mutableSaves.value = it }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Lecture des sauvegardes impossible")) }
+        mutableSavesLoading.value = true
+        mutableSavesError.value = null
+        savesListJob = scope.launch {
+            try {
+                val game = repository.getGame(gameId) ?: return@launch
+                runCatchingCancellable { withContext(Dispatchers.IO) { saveManager.listSaves(game) } }
+                    .onSuccess { if (generation == savesGeneration) mutableSaves.value = it }
+                    .onFailure {
+                        if (generation == savesGeneration) mutableSavesError.value = it.message ?: "Lecture des sauvegardes impossible"
+                    }
+            } finally {
+                if (generation == savesGeneration) mutableSavesLoading.value = false
+            }
+        }
     }
 
     fun loadSaveEntries(save: GameSave) {
@@ -156,17 +177,30 @@ class GameToolsController(
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Scan des mods impossible")) }
     }
 
-    fun loadMods(gameId: String) = scope.launch {
+    fun loadMods(gameId: String) {
         val generation = ++modsGeneration
+        modsListJob?.cancel()
         activeModsGameId = gameId
         mutableMods.value = emptyList()
-        val game = repository.getGame(gameId) ?: return@launch
-        val root = settingsRepository.settings.first().modsRootUri
-        if (root != null) runCatchingCancellable { modsManager.scanRepository(root) }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Dépôt inaccessible")) }
-        runCatchingCancellable { modsManager.catalogFor(game) }
-            .onSuccess { if (generation == modsGeneration) mutableMods.value = it }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Catalogue de mods illisible")) }
+        mutableModsLoading.value = true
+        mutableModsError.value = null
+        modsListJob = scope.launch {
+            try {
+                val game = repository.getGame(gameId) ?: return@launch
+                val root = settingsRepository.settings.first().modsRootUri
+                if (root != null) runCatchingCancellable { modsManager.scanRepository(root) }
+                    .onFailure {
+                        if (generation == modsGeneration) mutableModsError.value = it.message ?: "Dépôt inaccessible"
+                    }
+                runCatchingCancellable { modsManager.catalogFor(game) }
+                    .onSuccess { if (generation == modsGeneration) mutableMods.value = it }
+                    .onFailure {
+                        if (generation == modsGeneration) mutableModsError.value = it.message ?: "Catalogue de mods illisible"
+                    }
+            } finally {
+                if (generation == modsGeneration) mutableModsLoading.value = false
+            }
+        }
     }
 
     fun requestModZipImport(gameId: String? = null) {

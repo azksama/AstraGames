@@ -62,8 +62,6 @@ class RecursiveSourceScanner(
         progress("Préparation du dossier")
         val startedAt = System.currentTimeMillis()
         val historyId = UUID.randomUUID().toString()
-        dao.insertScanHistory(ScanHistoryEntity(historyId, sourceId, startedAt))
-        dao.upsertSource(source.copy(lastScanStatus = ScanStatus.RUNNING.name, lastError = null))
         val errors = mutableListOf<String>()
         val reportItems = mutableListOf<ScanReportItem>()
         var found = 0
@@ -74,6 +72,9 @@ class RecursiveSourceScanner(
         var ignored = 0
         val visited = mutableSetOf<String>()
         val foundIds = mutableSetOf<String>()
+        try {
+        dao.insertScanHistory(ScanHistoryEntity(historyId, sourceId, startedAt))
+        dao.upsertSource(source.copy(lastScanStatus = ScanStatus.RUNNING.name, lastError = null))
         val knownGamesByUri = dao.getGamesForSource(sourceId).associateBy { it.documentUri }
         val exclusions = (dao.getExclusions(sourceId).mapNotNull { it.folderNamePattern } + DEFAULT_EXCLUSIONS)
             .map { it.lowercase(Locale.ROOT) }.toSet()
@@ -116,7 +117,7 @@ class RecursiveSourceScanner(
                 found++
                 unchanged++
                 foundIds += knownGame.id
-                dao.markGameFound(knownGame.id)
+                if (knownGame.missing) dao.markGameFound(knownGame.id)
                 reportItems += ScanReportItem(
                     relativePath.ifBlank { source.displayName }, knownGame.title,
                     ScanReportItemStatus.UNCHANGED, "Jeu déjà connu, analyse interne non répétée", knownGame.id
@@ -278,11 +279,6 @@ class RecursiveSourceScanner(
         try {
             walk(root, "", 0)
         } catch (error: CancellationException) {
-            withContext(NonCancellable) {
-                dao.upsertSource(source.copy(lastScanStatus = ScanStatus.PARTIAL.name, lastError = "Scan interrompu"))
-                dao.insertScanHistory(ScanHistoryEntity(id = historyId, sourceId = sourceId, startedAt = startedAt,
-                    finishedAt = System.currentTimeMillis(), gamesFound = found, gamesAdded = added, errors = 1))
-            }
             throw error
         } catch (error: Exception) {
             errors += (error.message ?: "Erreur de scan")
@@ -291,8 +287,7 @@ class RecursiveSourceScanner(
         val status = if (errors.isEmpty()) ScanStatus.SUCCESS else if (found > 0) ScanStatus.PARTIAL else ScanStatus.FAILED
         if (status == ScanStatus.SUCCESS) {
             progress("Vérification des jeux déplacés ou supprimés", visitedFolders = visited.size, foundGames = found)
-            dao.markSourceGamesMissing(sourceId)
-            foundIds.forEach { dao.markGameFound(it) }
+            dao.reconcileSourceGames(sourceId, foundIds.toList())
         }
         val missing = dao.countMissing(sourceId)
         if (missing > 0) {
@@ -325,6 +320,18 @@ class RecursiveSourceScanner(
             historyId, sourceId, source.displayName, startedAt, finishedAt, visited.size,
             found, added, updated, unchanged, moved, missing, ignored, errors, reportItems
         )
+        } catch (error: CancellationException) {
+            withContext(NonCancellable) {
+                val finishedAt = System.currentTimeMillis()
+                dao.upsertSource(source.copy(lastScanAt = finishedAt, lastScanStatus = ScanStatus.PARTIAL.name, lastError = "Scan interrompu"))
+                dao.insertScanHistory(ScanHistoryEntity(
+                    id = historyId, sourceId = sourceId, startedAt = startedAt, finishedAt = finishedAt,
+                    gamesFound = found, gamesAdded = added, gamesUpdated = updated, gamesUnchanged = unchanged,
+                    gamesMoved = moved, visitedFolders = visited.size, ignoredFolders = ignored, errors = errors.size + 1
+                ))
+            }
+            throw error
+        }
     }
 
     }

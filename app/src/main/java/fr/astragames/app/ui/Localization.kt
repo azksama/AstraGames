@@ -52,6 +52,16 @@ object AppLocalizer {
     ) = Translation(source, english, spanish, russian, german, chinese, japanese)
 
     private val catalog = listOf(
+        t("Effacer la recherche", "Clear search", "Borrar búsqueda", "Очистить поиск", "Suche löschen", "清除搜索", "検索をクリア"),
+        t("Recherche en cours…", "Searching…", "Buscando…", "Поиск…", "Suche läuft…", "搜索中…", "検索中…"),
+        t("Manquant", "Missing", "No encontrado", "Не найдено", "Fehlt", "缺失", "見つかりません"),
+        t("Affichage", "Display", "Vista", "Отображение", "Ansicht", "显示", "表示"),
+        t("Liste", "List", "Lista", "Список", "Liste", "列表", "リスト"),
+        t("Jamais scannée", "Never scanned", "Nunca escaneada", "Сканирование не проводилось", "Noch nie gescannt", "尚未扫描", "未スキャン"),
+        t("Scan en cours…", "Scanning…", "Escaneando…", "Сканирование…", "Scan läuft…", "扫描中…", "スキャン中…"),
+        t("Scan terminé", "Scan complete", "Escaneo completado", "Сканирование завершено", "Scan abgeschlossen", "扫描完成", "スキャン完了"),
+        t("Scan partiel", "Partial scan", "Escaneo parcial", "Частичное сканирование", "Teilweiser Scan", "部分扫描", "部分スキャン"),
+        t("Échec du scan", "Scan failed", "Error al escanear", "Ошибка сканирования", "Scan fehlgeschlagen", "扫描失败", "スキャン失敗"),
         t("Bibliothèque", "Library", "Biblioteca", "Библиотека", "Bibliothek", "资料库", "ライブラリ"),
         t("Recherche", "Search", "Buscar", "Поиск", "Suche", "搜索", "検索"),
         t("Collections", "Collections", "Colecciones", "Коллекции", "Sammlungen", "收藏", "コレクション"),
@@ -384,7 +394,7 @@ object AppLocalizer {
         t("Aucun tag. Utilisez + pour en créer un directement.", "No tags yet. Use + to create one directly.", "Sin etiquetas. Usa + para crear una directamente.", "Тегов нет. Нажмите +, чтобы создать тег.", "Keine Tags. Mit + direkt einen erstellen.", "暂无标签，可使用 + 直接创建。", "タグがありません。+ で直接作成できます。"),
         t("Ces réglages remplacent uniquement la détection automatique pour ce jeu.", "These settings only override automatic detection for this game.", "Estos ajustes solo sustituyen la detección automática para este juego.", "Эти настройки заменяют только автоматическое определение для этой игры.", "Diese Einstellungen überschreiben nur die automatische Erkennung für dieses Spiel.", "这些设置仅覆盖此游戏的自动检测。", "これらの設定は、このゲームの自動検出のみを上書きします。"),
         t("Créez des catégories puis classez plusieurs tags en une fois.", "Create categories, then organize several tags at once.", "Crea categorías y luego organiza varias etiquetas a la vez.", "Создавайте категории и распределяйте сразу несколько тегов.", "Erstelle Kategorien und ordne mehrere Tags auf einmal zu.", "创建分类，然后一次整理多个标签。", "カテゴリを作成し、複数のタグをまとめて整理します。"),
-        t("Créez une collection avec des règles ET/OU.", "Create a collection with AND/OR rules.", "Crea una colección con reglas Y/O.", "Создайте коллекцию с правилами И/ИЛИ.", "Erstelle eine Sammlung mit UND/ODER-Regeln.", "创建带有与/或规则的收藏。", "AND/OR ルールでコレクションを作成します。"),
+        t("Créez une collection avec vos critères.", "Create a collection with your criteria.", "Crea una colección con tus criterios.", "Создайте коллекцию по своим критериям.", "Erstelle eine Sammlung mit deinen Kriterien.", "根据您的条件创建收藏。", "条件を指定してコレクションを作成します。"),
         t("Fermer l'import F95Zone", "Close F95Zone import", "Cerrar la importación de F95Zone", "Закрыть импорт F95Zone", "F95Zone-Import schließen", "关闭 F95Zone 导入", "F95Zone の読み込みを閉じる"),
         t("Fermer la jaquette", "Close cover", "Cerrar carátula", "Закрыть обложку", "Cover schließen", "关闭封面", "カバーを閉じる"),
         t("Le dossier complet du jeu sera supprimé définitivement du téléphone.", "The game's full folder will be permanently deleted from the phone.", "La carpeta completa del juego se eliminará definitivamente del teléfono.", "Вся папка игры будет безвозвратно удалена с телефона.", "Der gesamte Spielordner wird dauerhaft vom Telefon gelöscht.", "游戏所在文件夹将被永久删除。", "ゲームのフォルダ全体がスマートフォンから完全に削除されます。"),
@@ -471,168 +481,172 @@ object AppLocalizer {
         return translations[AppLanguage.ENGLISH]?.get(source) ?: source
     }
 
+    private val dynamicPatterns = java.util.concurrent.ConcurrentHashMap<String, Regex>()
+
+    private fun dynamicPattern(pattern: String): Regex = dynamicPatterns.getOrPut(pattern) { Regex(pattern) }
+
     private fun translateDynamic(source: String, language: AppLanguage): String? {
         fun count(pattern: Regex, value: (Int) -> String): String? = pattern.matchEntire(source)?.groupValues?.get(1)?.toIntOrNull()?.let(value)
-        count(Regex("(\\d+) colonnes")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) colonnes")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number columns"; AppLanguage.SPANISH -> "$number columnas"; AppLanguage.RUSSIAN -> "$number столбцов"; AppLanguage.GERMAN -> "$number Spalten"; AppLanguage.CHINESE -> "$number 列"; AppLanguage.JAPANESE -> "$number 列"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) jeux")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) jeux")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number games"; AppLanguage.SPANISH -> "$number juegos"; AppLanguage.RUSSIAN -> "$number игр"; AppLanguage.GERMAN -> "$number Spiele"; AppLanguage.CHINESE -> "$number 个游戏"; AppLanguage.JAPANESE -> "$number 本のゲーム"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) jeu\\(x\\)")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) jeu\\(x\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number game(s)"; AppLanguage.SPANISH -> "$number juego(s)"; AppLanguage.RUSSIAN -> "$number игр"; AppLanguage.GERMAN -> "$number Spiel(e)"; AppLanguage.CHINESE -> "$number 个游戏"; AppLanguage.JAPANESE -> "$number 本のゲーム"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) tag\\(s\\)")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) tag\\(s\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number tag(s)"; AppLanguage.SPANISH -> "$number etiqueta(s)"; AppLanguage.RUSSIAN -> "$number тег(ов)"; AppLanguage.GERMAN -> "$number Tag(s)"; AppLanguage.CHINESE -> "$number 个标签"; AppLanguage.JAPANESE -> "$number 個のタグ"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) dossiers")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) dossiers")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number folders"; AppLanguage.SPANISH -> "$number carpetas"; AppLanguage.RUSSIAN -> "$number папок"; AppLanguage.GERMAN -> "$number Ordner"; AppLanguage.CHINESE -> "$number 个文件夹"; AppLanguage.JAPANESE -> "$number 個のフォルダ"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) sous-dossier\\(s\\)")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) sous-dossier\\(s\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number subfolder(s)"; AppLanguage.SPANISH -> "$number subcarpeta(s)"; AppLanguage.RUSSIAN -> "$number подпапок"; AppLanguage.GERMAN -> "$number Unterordner"; AppLanguage.CHINESE -> "$number 个子文件夹"; AppLanguage.JAPANESE -> "$number 個のサブフォルダ"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) groupe\\(s\\)")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) groupe\\(s\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number group(s)"; AppLanguage.SPANISH -> "$number grupo(s)"; AppLanguage.RUSSIAN -> "$number групп"; AppLanguage.GERMAN -> "$number Gruppe(n)"; AppLanguage.CHINESE -> "$number 个组"; AppLanguage.JAPANESE -> "$number グループ"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) sélectionné\\(s\\)")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) sélectionné\\(s\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number selected"; AppLanguage.SPANISH -> "$number seleccionados"; AppLanguage.RUSSIAN -> "Выбрано: $number"; AppLanguage.GERMAN -> "$number ausgewählt"; AppLanguage.CHINESE -> "已选择 $number 项"; AppLanguage.JAPANESE -> "$number 件を選択"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) tags importés")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) tags importés")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number tags imported"; AppLanguage.SPANISH -> "$number etiquetas importadas"; AppLanguage.RUSSIAN -> "Импортировано тегов: $number"; AppLanguage.GERMAN -> "$number Tags importiert"; AppLanguage.CHINESE -> "已导入 $number 个标签"; AppLanguage.JAPANESE -> "$number 個のタグを読み込みました"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) composants détectés")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) composants détectés")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number components detected"; AppLanguage.SPANISH -> "$number componentes detectados"; AppLanguage.RUSSIAN -> "Обнаружено компонентов: $number"; AppLanguage.GERMAN -> "$number Komponenten erkannt"; AppLanguage.CHINESE -> "检测到 $number 个组件"; AppLanguage.JAPANESE -> "$number 個のコンポーネントを検出"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        Regex("^(\\d+) sur (\\d+) sélectionné\\(s\\)$").matchEntire(source)?.let { match ->
+        dynamicPattern("^(\\d+) sur (\\d+) sélectionné\\(s\\)$").matchEntire(source)?.let { match ->
             val selected = match.groupValues[1]; val total = match.groupValues[2]
             return when (language) {
                 AppLanguage.ENGLISH -> "$selected of $total selected"; AppLanguage.SPANISH -> "$selected de $total seleccionados"; AppLanguage.RUSSIAN -> "Выбрано $selected из $total"; AppLanguage.GERMAN -> "$selected von $total ausgewählt"; AppLanguage.CHINESE -> "已选择 $selected / $total"; AppLanguage.JAPANESE -> "$total 件中 $selected 件を選択"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^(\\d+) jeux trouvés, (\\d+) ajoutés$").matchEntire(source)?.let { match ->
+        dynamicPattern("^(\\d+) jeux trouvés, (\\d+) ajoutés$").matchEntire(source)?.let { match ->
             val found = match.groupValues[1]; val added = match.groupValues[2]
             return when (language) {
                 AppLanguage.ENGLISH -> "$found games found, $added added"; AppLanguage.SPANISH -> "$found juegos encontrados, $added añadidos"; AppLanguage.RUSSIAN -> "Найдено игр: $found, добавлено: $added"; AppLanguage.GERMAN -> "$found Spiele gefunden, $added hinzugefügt"; AppLanguage.CHINESE -> "找到 $found 个游戏，添加 $added 个"; AppLanguage.JAPANESE -> "$found 本のゲームを検出、$added 本を追加"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^(\\d+) jeux détectés$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+        dynamicPattern("^(\\d+) jeux détectés$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
             return when (language) {
                 AppLanguage.ENGLISH -> "$number games detected"; AppLanguage.SPANISH -> "$number juegos detectados"; AppLanguage.RUSSIAN -> "Обнаружено игр: $number"; AppLanguage.GERMAN -> "$number Spiele erkannt"; AppLanguage.CHINESE -> "检测到 $number 个游戏"; AppLanguage.JAPANESE -> "$number 本のゲームを検出"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^(\\d+) jeu\\(x\\) classé\\(s\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+        dynamicPattern("^(\\d+) jeu\\(x\\) classé\\(s\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
             return when (language) {
                 AppLanguage.ENGLISH -> "$number game(s) organized"; AppLanguage.SPANISH -> "$number juego(s) organizados"; AppLanguage.RUSSIAN -> "Игр распределено: $number"; AppLanguage.GERMAN -> "$number Spiel(e) organisiert"; AppLanguage.CHINESE -> "已整理 $number 个游戏"; AppLanguage.JAPANESE -> "$number 本のゲームを整理"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^(\\d+) jeu\\(x\\) mis à jour$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+        dynamicPattern("^(\\d+) jeu\\(x\\) mis à jour$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
             return when (language) {
                 AppLanguage.ENGLISH -> "$number game(s) updated"; AppLanguage.SPANISH -> "$number juego(s) actualizados"; AppLanguage.RUSSIAN -> "Игр обновлено: $number"; AppLanguage.GERMAN -> "$number Spiel(e) aktualisiert"; AppLanguage.CHINESE -> "已更新 $number 个游戏"; AppLanguage.JAPANESE -> "$number 本のゲームを更新"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Tags ajoutés à (\\d+) jeu\\(x\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+        dynamicPattern("^Tags ajoutés à (\\d+) jeu\\(x\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Tags added to $number game(s)"; AppLanguage.SPANISH -> "Etiquetas añadidas a $number juego(s)"; AppLanguage.RUSSIAN -> "Теги добавлены к играм: $number"; AppLanguage.GERMAN -> "Tags zu $number Spiel(en) hinzugefügt"; AppLanguage.CHINESE -> "已为 $number 个游戏添加标签"; AppLanguage.JAPANESE -> "$number 本のゲームにタグを追加"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Actualisation terminée pour (\\d+) jeu\\(x\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+        dynamicPattern("^Actualisation terminée pour (\\d+) jeu\\(x\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Refresh finished for $number game(s)"; AppLanguage.SPANISH -> "Actualización terminada para $number juego(s)"; AppLanguage.RUSSIAN -> "Обновление завершено для игр: $number"; AppLanguage.GERMAN -> "Aktualisierung für $number Spiel(e) abgeschlossen"; AppLanguage.CHINESE -> "已完成 $number 个游戏的刷新"; AppLanguage.JAPANESE -> "$number 本のゲームの更新が完了"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Sauvegarde créée : (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { name ->
+        dynamicPattern("^Sauvegarde créée : (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { name ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Backup created: $name"; AppLanguage.SPANISH -> "Copia creada: $name"; AppLanguage.RUSSIAN -> "Резервная копия создана: $name"; AppLanguage.GERMAN -> "Sicherung erstellt: $name"; AppLanguage.CHINESE -> "已创建备份：$name"; AppLanguage.JAPANESE -> "バックアップを作成しました: $name"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Sous-dossier — niveau (\\d+)$").matchEntire(source)?.groupValues?.get(1)?.let { level ->
+        dynamicPattern("^Sous-dossier — niveau (\\d+)$").matchEntire(source)?.groupValues?.get(1)?.let { level ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Subfolder — level $level"; AppLanguage.SPANISH -> "Subcarpeta — nivel $level"; AppLanguage.RUSSIAN -> "Подпапка — уровень $level"; AppLanguage.GERMAN -> "Unterordner — Ebene $level"; AppLanguage.CHINESE -> "子文件夹 — 层级 $level"; AppLanguage.JAPANESE -> "サブフォルダ — レベル $level"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Automatique \\((.+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { engine ->
+        dynamicPattern("^Automatique \\((.+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { engine ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Automatic ($engine)"; AppLanguage.SPANISH -> "Automático ($engine)"; AppLanguage.RUSSIAN -> "Автоматически ($engine)"; AppLanguage.GERMAN -> "Automatisch ($engine)"; AppLanguage.CHINESE -> "自动（$engine）"; AppLanguage.JAPANESE -> "自動（$engine）"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Rechercher sur (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { engine ->
+        dynamicPattern("^Rechercher sur (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { engine ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Search on $engine"; AppLanguage.SPANISH -> "Buscar en $engine"; AppLanguage.RUSSIAN -> "Поиск в $engine"; AppLanguage.GERMAN -> "Auf $engine suchen"; AppLanguage.CHINESE -> "在 $engine 中搜索"; AppLanguage.JAPANESE -> "$engine で検索"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Filtres \\((\\d+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+        dynamicPattern("^Filtres \\((\\d+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Filters ($number)"; AppLanguage.SPANISH -> "Filtros ($number)"; AppLanguage.RUSSIAN -> "Фильтры ($number)"; AppLanguage.GERMAN -> "Filter ($number)"; AppLanguage.CHINESE -> "筛选（$number）"; AppLanguage.JAPANESE -> "フィルター（$number）"; AppLanguage.FRENCH -> source
             }
-        Regex("^Tout \\((\\d+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+        }
+        dynamicPattern("^Tout \\((\\d+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
             return when (language) {
                 AppLanguage.ENGLISH -> "All ($number)"; AppLanguage.SPANISH -> "Todo ($number)"; AppLanguage.RUSSIAN -> "Все ($number)"; AppLanguage.GERMAN -> "Alle ($number)"; AppLanguage.CHINESE -> "全部（$number）"; AppLanguage.JAPANESE -> "すべて（$number）"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Tags \\((\\d+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
+        dynamicPattern("^Tags \\((\\d+)\\)$").matchEntire(source)?.groupValues?.get(1)?.let { number ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Tags ($number)"; AppLanguage.SPANISH -> "Etiquetas ($number)"; AppLanguage.RUSSIAN -> "Теги ($number)"; AppLanguage.GERMAN -> "Tags ($number)"; AppLanguage.CHINESE -> "标签（$number）"; AppLanguage.JAPANESE -> "タグ（$number）"; AppLanguage.FRENCH -> source
             }
         }
-        count(Regex("(\\d+) jeu\\(x\\) restant\\(s\\)")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) jeu\\(x\\) restant\\(s\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number game(s) remaining"; AppLanguage.SPANISH -> "$number juego(s) restante(s)"; AppLanguage.RUSSIAN -> "Осталось игр: $number"; AppLanguage.GERMAN -> "$number Spiel(e) übrig"; AppLanguage.CHINESE -> "剩余 $number 个游戏"; AppLanguage.JAPANESE -> "残り $number 本のゲーム"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) nouveau\\(x\\) jeu\\(x\\)")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) nouveau\\(x\\) jeu\\(x\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number new game(s)"; AppLanguage.SPANISH -> "$number juego(s) nuevo(s)"; AppLanguage.RUSSIAN -> "Новых игр: $number"; AppLanguage.GERMAN -> "$number neues Spiel / neue Spiele"; AppLanguage.CHINESE -> "$number 个新游戏"; AppLanguage.JAPANESE -> "$number 本の新しいゲーム"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) tag\\(s\\) sélectionné\\(s\\)")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) tag\\(s\\) sélectionné\\(s\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number tag(s) selected"; AppLanguage.SPANISH -> "$number etiqueta(s) seleccionada(s)"; AppLanguage.RUSSIAN -> "Выбрано тегов: $number"; AppLanguage.GERMAN -> "$number Tag(s) ausgewählt"; AppLanguage.CHINESE -> "已选择 $number 个标签"; AppLanguage.JAPANESE -> "$number 個のタグを選択"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) jeu\\(x\\) ignoré\\(s\\) pendant les scans")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) jeu\\(x\\) ignoré\\(s\\) pendant les scans")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number game(s) ignored during scans"; AppLanguage.SPANISH -> "$number juego(s) ignorado(s) durante los escaneos"; AppLanguage.RUSSIAN -> "Игнорировано игр при сканировании: $number"; AppLanguage.GERMAN -> "$number Spiel(e) beim Scannen ignoriert"; AppLanguage.CHINESE -> "扫描时忽略了 $number 个游戏"; AppLanguage.JAPANESE -> "スキャンで $number 本のゲームを無視"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) exemplaires")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) exemplaires")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number copies"; AppLanguage.SPANISH -> "$number copias"; AppLanguage.RUSSIAN -> "$number копий"; AppLanguage.GERMAN -> "$number Exemplare"; AppLanguage.CHINESE -> "$number 份副本"; AppLanguage.JAPANESE -> "$number コピー"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("(\\d+) lancements")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) lancements")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number launches"; AppLanguage.SPANISH -> "$number lanzamientos"; AppLanguage.RUSSIAN -> "$number запусков"; AppLanguage.GERMAN -> "$number Starts"; AppLanguage.CHINESE -> "$number 次启动"; AppLanguage.JAPANESE -> "$number 回の起動"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        }
-        Regex("^Version (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { version ->
+        dynamicPattern("^Version (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { version ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Version $version"; AppLanguage.SPANISH -> "Versión $version"; AppLanguage.RUSSIAN -> "Версия $version"; AppLanguage.GERMAN -> "Version $version"; AppLanguage.CHINESE -> "版本 $version"; AppLanguage.JAPANESE -> "バージョン $version"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Configurer (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { title ->
+        dynamicPattern("^Configurer (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { title ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Configure $title"; AppLanguage.SPANISH -> "Configurar $title"; AppLanguage.RUSSIAN -> "Настроить: $title"; AppLanguage.GERMAN -> "$title konfigurieren"; AppLanguage.CHINESE -> "配置 $title"; AppLanguage.JAPANESE -> "$title を設定"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Jaquette de (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { title ->
+        dynamicPattern("^Jaquette de (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { title ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Cover for $title"; AppLanguage.SPANISH -> "Carátula de $title"; AppLanguage.RUSSIAN -> "Обложка: $title"; AppLanguage.GERMAN -> "Cover von $title"; AppLanguage.CHINESE -> "$title 的封面"; AppLanguage.JAPANESE -> "$title のカバー"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^Étape (\\d+) sur 3 · (.+)$").matchEntire(source)?.let { match ->
+        dynamicPattern("^Étape (\\d+) sur 3 · (.+)$").matchEntire(source)?.let { match ->
             val number = match.groupValues[1]; val title = match.groupValues[2]
             return when (language) {
                 AppLanguage.ENGLISH -> "Step $number of 3 · $title"; AppLanguage.SPANISH -> "Paso $number de 3 · $title"; AppLanguage.RUSSIAN -> "Шаг $number из 3 · $title"; AppLanguage.GERMAN -> "Schritt $number von 3 · $title"; AppLanguage.CHINESE -> "第 $number/3 步 · $title"; AppLanguage.JAPANESE -> "ステップ $number/3 · $title"; AppLanguage.FRENCH -> source
             }
         }
-        count(Regex("(\\d+) mise\\(s\\) à jour trouvée\\(s\\)")) { number -> when (language) {
+        count(dynamicPattern("(\\d+) mise\\(s\\) à jour trouvée\\(s\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number update(s) found"; AppLanguage.SPANISH -> "$number actualización(es) encontrada(s)"; AppLanguage.RUSSIAN -> "Найдено обновлений: $number"; AppLanguage.GERMAN -> "$number Update(s) gefunden"; AppLanguage.CHINESE -> "找到 $number 个更新"; AppLanguage.JAPANESE -> "$number 件の更新を検出"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("Avez-vous effectué la mise à jour vers la version (.+?) ?\\?")) { version -> when (language) {
+        dynamicPattern("Avez-vous effectué la mise à jour vers la version (.+?) ?\\?").matchEntire(source)?.groupValues?.get(1)?.let { version -> when (language) {
             AppLanguage.ENGLISH -> "Did you install version $version?"; AppLanguage.SPANISH -> "¿Has instalado la versión $version?"; AppLanguage.RUSSIAN -> "Вы установили версию $version?"; AppLanguage.GERMAN -> "Hast du Version $version installiert?"; AppLanguage.CHINESE -> "你是否已安装 $version 版本？"; AppLanguage.JAPANESE -> "$version をインストールしましたか？"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("Nouvelle version disponible : (.+)")) { version -> when (language) {
+        dynamicPattern("Nouvelle version disponible : (.+)").matchEntire(source)?.groupValues?.get(1)?.let { version -> when (language) {
             AppLanguage.ENGLISH -> "New version available: $version"; AppLanguage.SPANISH -> "Nueva versión disponible: $version"; AppLanguage.RUSSIAN -> "Доступна новая версия: $version"; AppLanguage.GERMAN -> "Neue Version verfügbar: $version"; AppLanguage.CHINESE -> "新版本可用：$version"; AppLanguage.JAPANESE -> "新しいバージョンが利用可能：$version"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        count(Regex("Ressemblance : (\\d+) %")) { number -> when (language) {
+        count(dynamicPattern("Ressemblance : (\\d+) %")) { number -> when (language) {
             AppLanguage.ENGLISH -> "Similarity: $number%"; AppLanguage.SPANISH -> "Similitud: $number%"; AppLanguage.RUSSIAN -> "Сходство: $number%"; AppLanguage.GERMAN -> "Ähnlichkeit: $number%"; AppLanguage.CHINESE -> "相似度：$number%"; AppLanguage.JAPANESE -> "類似度：$number%"; AppLanguage.FRENCH -> source
         } }?.let { return it }
-        Regex("^Connecté en tant que (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { user ->
+        dynamicPattern("^Connecté en tant que (.+)$").matchEntire(source)?.groupValues?.get(1)?.let { user ->
             return when (language) {
                 AppLanguage.ENGLISH -> "Logged in as $user"; AppLanguage.SPANISH -> "Conectado como $user"; AppLanguage.RUSSIAN -> "Вход выполнен: $user"; AppLanguage.GERMAN -> "Angemeldet als $user"; AppLanguage.CHINESE -> "已登录为 $user"; AppLanguage.JAPANESE -> "$user としてログイン"; AppLanguage.FRENCH -> source
             }
         }
-        Regex("^(.+) \\((\\d+)\\)$").matchEntire(source)?.let { match ->
-            val prefix = text(match.groupValues[1]); val number = match.groupValues[2]
+        dynamicPattern("^(.+) \\((\\d+)\\)$").matchEntire(source)?.let { match ->
+            val prefix = text(match.groupValues[1], language); val number = match.groupValues[2]
             return "$prefix ($number)"
         }
         return null

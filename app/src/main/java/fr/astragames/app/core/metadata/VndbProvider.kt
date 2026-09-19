@@ -11,6 +11,7 @@ import java.net.HttpURLConnection
 import java.net.URI
 import java.text.Normalizer
 import kotlin.math.max
+import kotlin.coroutines.cancellation.CancellationException
 
 data class VndbMetadata(
     val id: String,
@@ -51,6 +52,8 @@ class VndbProvider {
                     status == 429 -> if (attempts < 2) delay(2_000) else Log.w("AstraMetadata", "VNDB limite de requêtes atteinte pour « $gameTitle »")
                     else -> Log.w("AstraMetadata", "VNDB HTTP $status pour « $gameTitle »")
                 }
+            } catch (error: CancellationException) {
+                throw error
             } catch (error: Exception) {
                 Log.w("AstraMetadata", "VNDB inaccessible pour « $gameTitle »", error)
             } finally {

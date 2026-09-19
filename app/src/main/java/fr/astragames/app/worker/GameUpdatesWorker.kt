@@ -27,11 +27,12 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
             else null
         )
         val games = app.container.repository.games.first().filter { !it.f95Url.isNullOrBlank() && it.version != null }
+        val gameIds = games.mapTo(mutableSetOf()) { it.id }
         val found = mutableListOf<Pair<GameEntity, String>>()
         val latest = settings.f95LatestVersions.split('|').mapNotNull { entry ->
             val id = entry.substringBefore(':')
             val version = entry.substringAfter(':', "")
-            if (id in games.map { it.id } && version.isNotBlank()) id to version else null
+            if (id in gameIds && version.isNotBlank()) id to version else null
         }.toMap().toMutableMap()
         var failures = 0
         games.forEach { game ->

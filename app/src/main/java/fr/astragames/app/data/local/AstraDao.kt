@@ -55,6 +55,15 @@ interface AstraDao {
     @Query("UPDATE games SET missing = 0 WHERE id = :id")
     suspend fun markGameFound(id: String)
 
+    @Query("UPDATE games SET missing = 0 WHERE sourceId = :sourceId AND id IN (:ids)")
+    suspend fun markSourceGamesFound(sourceId: String, ids: List<String>)
+
+    @Transaction
+    suspend fun reconcileSourceGames(sourceId: String, foundIds: List<String>) {
+        markSourceGamesMissing(sourceId)
+        foundIds.chunked(900).forEach { markSourceGamesFound(sourceId, it) }
+    }
+
     @Query("SELECT COUNT(*) FROM games WHERE sourceId = :sourceId AND missing = 1")
     suspend fun countMissing(sourceId: String): Int
 
@@ -68,7 +77,16 @@ interface AstraDao {
     suspend fun setCover(id: String, coverUri: String?)
 
     @Query("UPDATE games SET version = :version WHERE id = :id")
-    suspend fun setGameVersion(id: String, version: String)
+    suspend fun setGameVersionRaw(id: String, version: String)
+
+    @Transaction
+    suspend fun setGameVersion(id: String, version: String) {
+        setGameVersionRaw(id, version)
+        getGame(id)?.let { game ->
+            deleteSearch(id)
+            insertSearchRaw(game.toSearchEntity())
+        }
+    }
 
     @Query("UPDATE games SET f95Url = :f95Url WHERE id = :id")
     suspend fun setF95Url(id: String, f95Url: String?)

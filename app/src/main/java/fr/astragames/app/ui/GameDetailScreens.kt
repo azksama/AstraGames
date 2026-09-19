@@ -26,10 +26,10 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -74,7 +74,7 @@ internal fun GameDetailScreen(
     var confirmGameRemoval by remember { mutableStateOf(false) }
     var showTools by remember { mutableStateOf(false) }
     val item = game
-    var confirmUpdate by rememberSaveable { mutableStateOf(false) }
+    var confirmUpdate by rememberSaveable(id) { mutableStateOf(false) }
     val latestUpdate = latestVersions[id]
     if (confirmUpdate && latestUpdate != null && item != null) {
         AlertDialog(
@@ -102,21 +102,17 @@ internal fun GameDetailScreen(
             contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(14.dp)
         ) {
             item {
-                Box(
-                    Modifier.fillMaxWidth().then(
-                        if (item.coverUri != null) Modifier.height(with(LocalDensity.current) { (LocalWindowInfo.current.containerSize.height * .5f).toDp() })
-                        else Modifier
-                    )
-                ) {
+                BoxWithConstraints(Modifier.fillMaxWidth()) {
+                    val coverWidth = (maxWidth * .3f).coerceIn(80.dp, 128.dp)
                     if (item.coverUri != null) {
                         AsyncImage(
                             model = item.coverUri,
                             contentDescription = null,
                             contentScale = ContentScale.Crop,
-                            modifier = Modifier.fillMaxSize().blur(30.dp)
+                            modifier = Modifier.matchParentSize().blur(30.dp)
                         )
                         Box(
-                            Modifier.fillMaxSize().background(
+                            Modifier.matchParentSize().background(
                                 Brush.verticalGradient(
                                     0f to Color.Transparent,
                                     0.55f to Color.Transparent,
@@ -127,14 +123,17 @@ internal fun GameDetailScreen(
                         )
                     }
                     Column(
-                        Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(start = 16.dp, end = 16.dp, top = 108.dp),
+                        Modifier.align(Alignment.TopCenter).fillMaxWidth().statusBarsPadding().padding(start = 16.dp, end = 16.dp, top = 76.dp),
                         verticalArrangement = Arrangement.spacedBy(14.dp)
                     ) {
                         Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         GameCover(
                             item,
-                            Modifier.width(128.dp).aspectRatio(.72f).then(
-                                if (item.coverUri != null) Modifier.clickable { previewCover = true } else Modifier
+                            Modifier.width(coverWidth).aspectRatio(.72f).then(
+                                if (item.coverUri != null) Modifier
+                                    .semantics { contentDescription = AppLocalizer.text("Jaquette") + ", " + item.title }
+                                    .clickable(onClickLabel = AppLocalizer.text("Ouvrir"), role = Role.Button) { previewCover = true }
+                                else Modifier
                             )
                         )
                         Surface(
@@ -162,24 +161,24 @@ internal fun GameDetailScreen(
                                 Row(Modifier.padding(start = 12.dp, top = 4.dp, bottom = 4.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                                     Icon(Icons.Default.Update, null, Modifier.size(16.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
                                     Spacer(Modifier.width(6.dp))
-                                    Text("Nouvelle version disponible : ${latestUpdate}", Modifier.weight(1f), color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                                    IconButton(onClick = { confirmUpdate = true }, Modifier.size(30.dp)) {
+                                    Text("Nouvelle version disponible : ${latestUpdate}", Modifier.weight(1f), color = MaterialTheme.colorScheme.onTertiaryContainer, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold)
+                                    IconButton(onClick = { confirmUpdate = true }) {
                                         Icon(Icons.Default.CheckCircle, "Mise à jour effectuée", Modifier.size(18.dp), tint = MaterialTheme.colorScheme.onTertiaryContainer)
                                     }
                                 }
                             }
                         }
                         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                            Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f).height(40.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Jouer") }
+                            Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f).heightIn(min = 48.dp)) { Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(6.dp)); Text("Jouer") }
                             FilledTonalButton(
-                                onClick = { showTools = true }, modifier = Modifier.height(40.dp),
+                                onClick = { showTools = true }, modifier = Modifier.heightIn(min = 48.dp),
                                 contentPadding = PaddingValues(horizontal = 12.dp)
                             ) { Icon(Icons.Default.Build, null); Spacer(Modifier.width(6.dp)); Text("Outils") }
-                            FilledTonalButton(
-                                onClick = { vm.toggleFavorite(item.id) }, modifier = Modifier.height(40.dp),
-                                contentPadding = PaddingValues(horizontal = 12.dp)
+                            FilledTonalIconToggleButton(
+                                checked = item.favorite,
+                                onCheckedChange = { vm.toggleFavorite(item.id) }, modifier = Modifier.size(48.dp)
                             ) {
-                                Icon(if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, "Favori", Modifier.size(20.dp), tint = if (item.favorite) Color.Red else LocalContentColor.current)
+                                Icon(if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, AppLocalizer.text("Favori"), Modifier.size(20.dp))
                             }
                         }
                     }
@@ -330,7 +329,7 @@ internal fun GameDetailScreen(
 @Composable
 internal fun GameDetailHeader(onBack: () -> Unit, onEdit: () -> Unit, enabled: Boolean) {
     Row(
-        Modifier.fillMaxWidth().statusBarsPadding().height(58.dp).padding(horizontal = 12.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().height(52.dp).padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         CircularHeaderButton(onBack, Icons.AutoMirrored.Filled.ArrowBack, "Retour")
@@ -352,8 +351,8 @@ internal fun CircularHeaderButton(
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainer.copy(alpha = .9f),
         tonalElevation = 3.dp,
-        modifier = Modifier.size(42.dp)
-    ) { Box(contentAlignment = Alignment.Center) { Icon(icon, description, Modifier.size(22.dp)) } }
+        modifier = Modifier.size(48.dp)
+    ) { Box(contentAlignment = Alignment.Center) { Icon(icon, AppLocalizer.text(description), Modifier.size(22.dp)) } }
 }
 
 @Composable
@@ -369,11 +368,11 @@ internal fun ExpandableDetailSection(
     ) {
         Column(Modifier.fillMaxWidth()) {
             Row(
-                Modifier.fillMaxWidth().clickable(onClick = onToggle).padding(horizontal = 16.dp, vertical = 13.dp),
+                Modifier.fillMaxWidth().clickable(role = Role.Button, onClick = onToggle).heightIn(min = 48.dp).padding(horizontal = 16.dp, vertical = 13.dp),
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
-                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, if (expanded) "Refermer" else "Ouvrir")
+                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, AppLocalizer.text(if (expanded) "Refermer" else "Ouvrir"))
             }
             if (expanded) Column(
                 Modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
@@ -464,13 +463,13 @@ internal fun LaunchProfileDialog(
     onReset: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var launcherType by remember(game.id, saved) { mutableStateOf(saved?.launcherType ?: "JOIPLAY") }
-    var engineOverride by remember(game.id, saved) { mutableStateOf(saved?.engineOverride) }
-    var executable by remember(game.id, saved) { mutableStateOf(saved?.executableName ?: game.executableName.orEmpty()) }
-    var physicalPath by remember(game.id, saved) { mutableStateOf(saved?.physicalPath ?: game.physicalPath.orEmpty()) }
-    var customAction by remember(game.id, saved) { mutableStateOf(saved?.customAction.orEmpty()) }
-    var packageName by remember(game.id, saved) { mutableStateOf(saved?.packageName.orEmpty()) }
-    var arguments by remember(game.id, saved) { mutableStateOf(saved?.arguments.orEmpty()) }
+    var launcherType by rememberSaveable(game.id, saved) { mutableStateOf(saved?.launcherType ?: "JOIPLAY") }
+    var engineOverride by rememberSaveable(game.id, saved) { mutableStateOf(saved?.engineOverride) }
+    var executable by rememberSaveable(game.id, saved) { mutableStateOf(saved?.executableName ?: game.executableName.orEmpty()) }
+    var physicalPath by rememberSaveable(game.id, saved) { mutableStateOf(saved?.physicalPath ?: game.physicalPath.orEmpty()) }
+    var customAction by rememberSaveable(game.id, saved) { mutableStateOf(saved?.customAction.orEmpty()) }
+    var packageName by rememberSaveable(game.id, saved) { mutableStateOf(saved?.packageName.orEmpty()) }
+    var arguments by rememberSaveable(game.id, saved) { mutableStateOf(saved?.arguments.orEmpty()) }
     var launcherMenu by remember { mutableStateOf(false) }
     var engineMenu by remember { mutableStateOf(false) }
     fun profile() = LaunchProfileEntity(
@@ -482,7 +481,7 @@ internal fun LaunchProfileDialog(
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
+            Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
                 Column(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center)) {
                     CompactHeader("Profil de lancement", game.title, onBack = onDismiss)
                     LazyColumn(

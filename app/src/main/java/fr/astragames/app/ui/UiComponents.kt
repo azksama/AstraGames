@@ -1,6 +1,7 @@
 package fr.astragames.app.ui
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -9,7 +10,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.*
 import fr.astragames.app.core.model.*
@@ -19,7 +24,7 @@ import java.text.Normalizer
 import java.util.Date
 
 @Composable
-internal fun SectionTitle(text: String, modifier: Modifier = Modifier) = Text(text, modifier.padding(start = 16.dp, top = 14.dp, bottom = 5.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+internal fun SectionTitle(text: String, modifier: Modifier = Modifier) = Text(text, modifier.padding(start = 16.dp, top = 14.dp, bottom = 5.dp).semantics { heading() }, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
 
 @Composable
 internal fun SettingsSectionHeader(title: String, expanded: Boolean, onToggle: () -> Unit) {
@@ -43,7 +48,7 @@ internal fun CompactActionButton(
     onClick: () -> Unit,
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String
-) = IconButton(onClick = onClick, modifier = Modifier.size(36.dp)) {
+) = IconButton(onClick = onClick, modifier = Modifier.size(48.dp)) {
     Icon(icon, AppLocalizer.text(description), Modifier.size(18.dp))
 }
 
@@ -55,23 +60,23 @@ internal fun RoundedListItem(
     leadingContent: (@Composable () -> Unit)? = null,
     trailingContent: (@Composable () -> Unit)? = null
 ) {
-    Surface(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
-        shape = RoundedCornerShape(18.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
-    ) {
-        ListItem(
-            headlineContent = headlineContent,
-            supportingContent = supportingContent,
-            leadingContent = leadingContent,
-            trailingContent = trailingContent,
-            colors = ListItemDefaults.colors(containerColor = Color.Transparent)
-        )
-    }
+    ListItem(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+            .clip(RoundedCornerShape(18.dp)).then(modifier),
+        headlineContent = headlineContent,
+        supportingContent = supportingContent,
+        leadingContent = leadingContent,
+        trailingContent = trailingContent,
+        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    )
 }
 
 @Composable
-internal fun SettingsSwitch(title: String, checked: Boolean, onChange: (Boolean) -> Unit) = RoundedListItem(headlineContent = { Text(title) }, trailingContent = { Switch(checked, onChange) })
+internal fun SettingsSwitch(title: String, checked: Boolean, onChange: (Boolean) -> Unit) = RoundedListItem(
+    modifier = Modifier.toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
+    headlineContent = { Text(title) },
+    trailingContent = { Switch(checked, null) }
+)
 
 internal fun updateIntervalLabel(code: String) = when (code) {
     "LAUNCH" -> "Chaque lancement"

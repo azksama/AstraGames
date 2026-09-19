@@ -8,7 +8,16 @@ import org.junit.Test
 
 class SearchAndTagTest {
     @Test fun parserBuildsSafePrefixAndQuery() {
-        assertEquals("moby* AND fantasy* AND english*", SearchParser.toFtsQuery("Moby fantasy, English"))
+        assertEquals("moby* fantasy* english*", SearchParser.toFtsQuery("Moby fantasy, English"))
+    }
+
+    @Test fun punctuationUsesTheSameWordBoundariesAsFts() {
+        assertEquals("rpg* maker* mv*", SearchParser.toFtsQuery("RPG_MAKER-MV"))
+        assertEquals(emptyList<String>(), SearchParser.terms("--- ___ \""))
+    }
+
+    @Test fun punctuationCannotIntroduceFtsOperators() {
+        assertEquals("alpha* beta*", SearchParser.toFtsQuery("alpha -beta alpha"))
     }
 
     @Test fun tagModesRespectAllAnyAndExclude() {

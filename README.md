@@ -15,12 +15,12 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - rapport détaillé et persistant après chaque scan : ajoutés, actualisés, déjà connus, déplacés, manquants, ignorés et erreurs avec chemin et raison ;
 - Room avec index FTS4, historique des scans et sessions de lancement ;
 - bibliothèque en grille réglable sur 2, 3 ou 4 colonnes ou en liste, favoris, sélection multiple et actions rapides ;
-- recherche accessible par bouton flottant, avec moteur en liste et multi-tags regroupés par catégorie ;
+- recherche accessible par glissement vers le bas en haut de liste, avec moteur en liste et multi-tags regroupés par catégorie ;
 - création, édition, suppression, tri et classement multiple des tags par catégories ;
 - sélection rapide et groupée des tags pour chaque jeu, sans affectation globale implicite ;
 - dossiers et sous-dossiers Astra virtuels navigables, renommables et supprimables sans supprimer les jeux ;
 - panneau de filtres compact par moteur, source, dossier Astra, dossier parent système réel, tags, état et tri, sans exposer les sous-dossiers comme entrées séparées ;
-- collections intelligentes intégrées et personnalisables avec règles moteur, tag recherchable et trié alphabétiquement, dossier, favori, jaquette, dates et durée de jeu, combinables en ET/OU ;
+- collections intelligentes intégrées et personnalisables avec règles moteur, tag recherchable et trié alphabétiquement, dossier, favori, jaquette, dates et durée de jeu ; les nouvelles collections appliquent toutes leurs règles, les anciennes conservent leur mode enregistré ;
 - résolution guidée des doublons : comparaison côte à côte, choix du principal, fusion des métadonnées et de l’historique, récupération des sauvegardes et stratégie de conflits ;
 - suivi du temps de jeu par sessions et affichage de la durée cumulée ;
 - gestionnaire de runtimes JoiPlay avec détection dynamique des variantes installées, catalogue officiel mis en cache sept jours et notification des mises à jour ;
@@ -127,7 +127,7 @@ L’import ZIP est limité à 4 000 entrées et 200 Mio décompressés. La dési
 
 Les archives du catalogue `.astra` utilisent la clé Android Keystore de l’installation actuelle. Elles ne constituent pas une migration vers un autre téléphone ou après désinstallation de l’app. Les anciens ZIP non chiffrés restent importables (schémas 5 à 8). Les jeux et leurs permissions SAF ne sont pas embarqués dans ces archives.
 
-Le bilan de la revue globale et les limites des vérifications figurent dans [docs/AUDIT_2026-09-16.md](docs/AUDIT_2026-09-16.md).
+Les bilans et limites des vérifications figurent dans la [revue sauvegardes/mods du 16 septembre](docs/AUDIT_2026-09-16.md) et la [revue technique/UI du 19 septembre](docs/AUDIT_2026-09-19.md).
 
 ## Limites de preuve
 

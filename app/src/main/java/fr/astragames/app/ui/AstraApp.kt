@@ -9,7 +9,20 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
@@ -17,6 +30,11 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -98,7 +116,8 @@ fun AstraApp(
                     val route = entry?.destination?.route.orEmpty()
                     val topLevel = route.isBlank() || route in topLevelRoutes
                     BoxWithConstraints(Modifier.fillMaxSize()) {
-                        val wide = maxWidth >= 840.dp
+                        val wide = maxWidth >= 840.dp || (maxWidth >= 600.dp && maxHeight < 480.dp)
+                        val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
                         Scaffold(
                             contentWindowInsets = WindowInsets(0, 0, 0, 0),
                             snackbarHost = { SnackbarHost(snackbar) }
@@ -106,21 +125,17 @@ fun AstraApp(
                             if (topLevel && wide) {
                                 Row(Modifier.padding(padding).fillMaxSize()) {
                                     CompactNavigationRail(route, navController, updateBadgeCount)
-                                    Box(Modifier.weight(1f).topLevelSwipe(route, navController)) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
+                                    Box(Modifier.weight(1f).navigationBarsPadding().then(if (route in menuDestinations.map { it.route }) Modifier.pullDownSearch(route, navController).topLevelSwipe(route, navController) else Modifier)) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
                                 }
                             } else Box(Modifier.padding(padding).fillMaxSize()) {
                                 Box(
                                     Modifier.fillMaxSize()
-                                        .padding(bottom = if (topLevel) 74.dp else 0.dp)
-                                        .then(if (topLevel) Modifier.topLevelSwipe(route, navController) else Modifier)
+                                        .then(if (topLevel && !imeVisible) Modifier.navigationBarsPadding().padding(bottom = 84.dp) else Modifier)
+                                        .then(if (route in menuDestinations.map { it.route }) Modifier.pullDownSearch(route, navController).topLevelSwipe(route, navController) else Modifier)
                                 ) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
-                                if (topLevel) {
+                                if (topLevel && !imeVisible) {
                                     CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter), updateBadgeCount)
-                                    if (route != Destination.SEARCH.route) FloatingActionButton(
-                                        onClick = { navigate(navController, Destination.SEARCH.route) },
-                                        modifier = Modifier.align(Alignment.BottomEnd).navigationBarsPadding().padding(end = 18.dp, bottom = 72.dp),
-                                        containerColor = MaterialTheme.colorScheme.primaryContainer
-                                    ) { Icon(Icons.Default.Search, AppLocalizer.text("Rechercher", visibleLanguage)) }
+
                                 }
                             }
                         }
@@ -151,13 +166,59 @@ internal fun LanguageTransition(language: AppLanguage, content: @Composable (App
 @Composable
 internal fun CompactBottomNavigation(route: String, nav: NavHostController, modifier: Modifier = Modifier, badgeCount: Int = 0) {
     Surface(
-        modifier.fillMaxWidth().navigationBarsPadding(),
-        color = MaterialTheme.colorScheme.background
+        modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+        shape = CircleShape,
+        color = MaterialTheme.colorScheme.surfaceContainerHigh,
+        tonalElevation = 4.dp,
+        shadowElevation = 8.dp
     ) {
         Row(
-            Modifier.fillMaxWidth().height(58.dp).padding(horizontal = 6.dp),
+            Modifier.height(68.dp).padding(horizontal = 8.dp).selectableGroup(),
             horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically
         ) { menuDestinations.forEach { NavIcon(it, route == it.route || (route.isBlank() && it == Destination.LIBRARY), { navigate(nav, it.route) }, badge = if (it == Destination.UPDATES) badgeCount else 0) } }
+    }
+}
+
+@Composable
+internal fun Modifier.pullDownSearch(route: String, nav: NavHostController): Modifier {
+    val threshold = with(LocalDensity.current) { 80.dp.toPx() }
+    val pull = remember(route, threshold, nav) { SearchPullGesture(threshold) { nav.navigate(Destination.SEARCH.route) { launchSingleTop = true } } }
+    val connection = remember(pull) {
+        object : NestedScrollConnection {
+            override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
+                if (consumed.y != 0f) pull.reset()
+                if (available.y != 0f) pull.drag(available.y)
+                return Offset.Zero
+            }
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                pull.reset()
+                return Velocity.Zero
+            }
+        }
+    }
+    return this.nestedScroll(connection).pointerInput(pull) {
+        detectVerticalDragGestures(
+            onDragStart = { pull.reset() },
+            onDragEnd = { pull.reset() },
+            onDragCancel = { pull.reset() },
+            onVerticalDrag = { _, amount -> pull.drag(amount) }
+        )
+    }.semantics {
+        customActions = listOf(CustomAccessibilityAction(AppLocalizer.text("Rechercher")) {
+            nav.navigate(Destination.SEARCH.route) { launchSingleTop = true }
+            true
+        })
+    }
+}
+
+internal class SearchPullGesture(private val threshold: Float, private val onSearch: () -> Unit) {
+    private var distance = 0f
+    private var opened = false
+    fun reset() { distance = 0f; opened = false }
+    fun drag(amount: Float) {
+        distance = (distance + amount).coerceAtLeast(0f)
+        if (!opened && distance >= threshold) { opened = true; onSearch() }
     }
 }
 
@@ -189,22 +250,26 @@ internal fun CompactNavigationRail(route: String, nav: NavHostController, badgeC
         RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 4.dp
     ) {
         Column(
-            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(),
+            Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).selectableGroup(),
             verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
-        ) { menuDestinations.forEach { NavIcon(it, route == it.route, { navigate(nav, it.route) }, badge = if (it == Destination.UPDATES) badgeCount else 0); Spacer(Modifier.height(8.dp)) } }
+        ) {
+            menuDestinations.forEach { NavIcon(it, route == it.route, { navigate(nav, it.route) }, badge = if (it == Destination.UPDATES) badgeCount else 0); Spacer(Modifier.height(8.dp)) }
+        }
     }
 }
 
 @Composable
 internal fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> Unit, badge: Int = 0) {
     Box(
-        Modifier.size(56.dp).clickable(onClick = onClick),
+        Modifier.size(56.dp).clip(CircleShape)
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
             destination.icon(), AppLocalizer.text(destination.description),
             modifier = Modifier.size(if (selected) 27.dp else 23.dp),
-            tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .42f)
+            tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
         )
         if (badge > 0) {
             Box(
@@ -248,7 +313,7 @@ internal fun AppNavHost(
         composable(Destination.SEARCH.route) { SearchScreen(state, vm, { nav.navigate("game/$it") }, nav::popBackStack) }
         composable(Destination.COLLECTIONS.route) { CollectionsScreen(state, vm) { nav.navigate("game/$it") } }
         composable(Destination.UPDATES.route) { GameUpdatesScreen(state, vm) { nav.navigate("game/$it") } }
-        composable(Destination.HISTORY.route) { HistoryScreen(state, vm) }
+        composable(Destination.HISTORY.route) { HistoryScreen(state, vm) { nav.navigate("game/$it") } }
         composable(Destination.TAGS.route) { TagsScreen(state, vm, onPickTags, nav::popBackStack) }
         composable(Destination.SETTINGS.route) {
             SettingsScreen(state, vm, onPickSource, { nav.navigate(Destination.TAGS.route) }, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
@@ -268,13 +333,13 @@ internal fun CompactHeader(
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     Row(
-        Modifier.fillMaxWidth().statusBarsPadding().height(52.dp).padding(horizontal = 10.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 56.dp).padding(horizontal = 10.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, AppLocalizer.text("Retour")) }
         Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         actions()
     }

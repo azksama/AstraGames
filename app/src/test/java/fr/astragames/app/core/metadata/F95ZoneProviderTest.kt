@@ -4,6 +4,50 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class F95ZoneProviderTest {
+    @Test fun extractsColonLabelsAndInlineValuesFromTheOpeningPost() {
+        val metadata = F95ZoneProvider().parseHtml(
+            """
+            <div class="message-inner"><div class="bbWrapper">
+              <b>Version:</b> <span>1.4.2</span><br>
+              <strong>Language:</strong> <span>English</span><br>
+            </div></div>
+            <div class="message-inner"><b>Version:</b> 9.9<br></div>
+            """.trimIndent(),
+            "https://f95zone.to/threads/example.123/"
+        )
+        assertEquals("1.4.2", metadata.version)
+        assertEquals("English", metadata.language)
+    }
+
+    @Test fun doesNotReadVersionClaimsFromReplies() {
+        val metadata = F95ZoneProvider().parseHtml(
+            """
+            <div class="message-inner"><p>No version supplied.</p></div>
+            <div class="message-inner"><b>Version</b>: 9.9<br></div>
+            """.trimIndent(),
+            "https://f95zone.to/threads/example.123/"
+        )
+        assertEquals(null, metadata.version)
+    }
+
+    @Test fun supportsDefinitionListsAndLabelsSplitByLineBreaks() {
+        val metadata = F95ZoneProvider().parseHtml(
+            "<div class='message-inner'><b>Version</b>:<br>2.1<br><dl><dt>Language:</dt><dd>French</dd></dl></div>",
+            "https://f95zone.to/threads/example.123/"
+        )
+        assertEquals("2.1", metadata.version)
+        assertEquals("French", metadata.language)
+    }
+
+    @Test fun emptyFieldDoesNotCaptureTheFollowingLabel() {
+        val metadata = F95ZoneProvider().parseHtml(
+            "<div class='message-inner'><b>Version:</b><br><b>Language:</b> English<br></div>",
+            "https://f95zone.to/threads/example.123/"
+        )
+        assertEquals(null, metadata.version)
+        assertEquals("English", metadata.language)
+    }
+
     @Test fun extractsTagsAndLazyImages() {
         val metadata = F95ZoneProvider().parseHtml(
             """

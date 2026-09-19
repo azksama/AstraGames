@@ -273,6 +273,11 @@ class GameRepository(
         return@withContext DuplicateMergeResult(preview.secondarySaves.size, preview.conflictingSaves.size)
     }
 
+    suspend fun deleteGames(ids: Set<String>) = withContext(Dispatchers.IO) {
+        ids.forEach { requireNoInstalledMods(it) }
+        ids.forEach { deleteGame(it, deleteAssociatedFiles = false) }
+    }
+
     suspend fun deleteGame(id: String, deleteAssociatedFiles: Boolean) = withContext(Dispatchers.IO) {
         val game = dao.getGame(id) ?: return@withContext
         if (!deleteAssociatedFiles) requireNoInstalledMods(id)

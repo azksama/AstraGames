@@ -173,18 +173,37 @@ class F95ZoneProvider {
 
     /** Extrait un champ « Version » / « Language » du premier message d’un thread XenForo. */
     private fun extractField(document: Document, label: String): String? {
-        val elements = document.select("b, strong, dt")
+        val message = document.selectFirst(".message-inner") ?: document.body()
+        val body = message.selectFirst(".bbWrapper") ?: message
+        val elements = body.select("b, strong, dt")
         for (element in elements) {
-            if (!element.text().trim().equals(label, ignoreCase = true)) continue
-            (element.nextSibling() as? org.jsoup.nodes.TextNode)?.let { node ->
-                val value = node.text().trim().removePrefix(":").trim()
-                if (value.isNotBlank() && value.length < 80) return value
+            if (!element.text().trim().removeSuffix(":").trim().equals(label, ignoreCase = true)) continue
+            if (element.tagName() == "dt") {
+                element.nextElementSibling()?.takeIf { it.tagName() == "dd" }
+                    ?.text()?.fieldValue()?.let { return it }
+                continue
             }
-            element.nextElementSibling()?.takeIf { it.tagName() == "dd" }?.text()?.trim()?.takeIf { it.isNotBlank() && it.length < 80 }?.let { return it }
+            val value = StringBuilder()
+            var sibling = element.nextSibling()
+            while (sibling != null && value.length < 80) {
+                when (val node = sibling) {
+                    is org.jsoup.nodes.TextNode -> value.append(node.text())
+                    is Element -> {
+                        if (node.tagName() in setOf("b", "strong", "dt") || node.isBlock) break
+                        if (node.tagName() == "br") {
+                            if (value.toString().fieldValue() != null) break
+                        } else value.append(node.text())
+                    }
+                }
+                sibling = sibling.nextSibling()
+            }
+            value.toString().fieldValue()?.let { return it }
         }
-        val pattern = Regex("(?i)<b>\\s*" + Regex.escape(label) + "\\s*</b>(?:<[^>]*>|\\s)*:?\\s*([^<\\r\\n]{1,80})")
-        return pattern.find(document.html())?.groupValues?.get(1)?.trim()?.takeIf { it.isNotBlank() }
+        return null
     }
+
+    private fun String.fieldValue(): String? = trim().removePrefix(":").trim()
+        .takeIf { it.isNotBlank() && it.length < 80 }
 
     private fun looksLikeImage(value: String): Boolean {
         val path = value.substringBefore('?').lowercase(java.util.Locale.ROOT)

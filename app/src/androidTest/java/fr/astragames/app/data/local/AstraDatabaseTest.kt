@@ -2,9 +2,11 @@ package fr.astragames.app.data.local
 
 import android.content.Context
 import androidx.room.Room
+import androidx.room.withTransaction
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import fr.astragames.app.core.filesystem.FileAccessResolver
+import fr.astragames.app.core.search.SearchParser
 import fr.astragames.app.data.backup.BackupManager
 import fr.astragames.app.data.repository.GameRepository
 import fr.astragames.app.data.repository.SaveConflictStrategy
@@ -13,7 +15,9 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -44,6 +48,38 @@ class AstraDatabaseTest {
     @Test fun gameAndFtsIndexStayInSync() = runTest {
         database.dao().upsertGame(game())
         assertEquals("g1", database.dao().searchGames("wind*").first().single().id)
+    }
+
+    @Test fun punctuationAndVersionUpdatesRemainSearchable() = runTest {
+        val dao = database.dao()
+        dao.upsertGame(game().copy(title = "Wind-Waiting_Island", version = "oldversion"))
+        dao.upsertGame(game().copy(id = "partial", documentUri = "content://partial", title = "Wind", engine = "HTML5"))
+        assertEquals("g1", dao.searchGames(SearchParser.toFtsQuery("Wind-Waiting_Isl")).first().single().id)
+        assertEquals("g1", dao.searchGames(SearchParser.toFtsQuery("RPG_MAKER_MV")).first().single().id)
+
+        dao.setGameVersion("g1", "newversion")
+
+        assertEquals("g1", dao.searchGames("newversion*").first().single().id)
+        assertEquals(emptyList<GameEntity>(), dao.searchGames("oldversion*").first())
+    }
+
+    @Test fun scanReconciliationHandlesLargeLibrariesAndKeepsOtherSourcesUnchanged() = runTest {
+        val dao = database.dao()
+        val ids = (1..1_001).map { "game-$it" }
+        database.withTransaction {
+            ids.forEach { id -> dao.upsertGame(game().copy(id = id, documentUri = "content://$id", missing = true)) }
+            dao.upsertGame(game().copy(id = "gone", documentUri = "content://gone"))
+            dao.upsertGame(game().copy(id = "other", documentUri = "content://other", sourceId = "s2", missing = true))
+        }
+
+        dao.reconcileSourceGames("s1", ids + "other")
+
+        assertEquals(1, dao.countMissing("s1"))
+        assertEquals(true, dao.getGame("gone")?.missing)
+        assertEquals(false, dao.getGame(ids.last())?.missing)
+        assertEquals(true, dao.getGame("other")?.missing)
+        dao.reconcileSourceGames("s1", emptyList())
+        assertEquals(1_002, dao.countMissing("s1"))
     }
 
     @Test fun f95ImportReusesExistingTagsAndAssociatesNewOnes() = runTest {
@@ -168,6 +204,25 @@ class AstraDatabaseTest {
         assertEquals(3_000, dao.observePlayStats().first().single().totalDurationMs)
         assertEquals("DUPLICATE_MERGED", dao.observeDeletedGames().first().single().reason)
         assertNull(dao.getGame("g2"))
+    }
+
+    @Test fun bulkRemovalChecksEveryModJournalBeforeDeletingAnyGame() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dao = database.dao()
+        dao.upsertGame(game())
+        dao.upsertGame(game().copy(id = "g2", documentUri = "content://g2"))
+        dao.upsertInstallation(ModInstallationEntity("i1", "m1", "g2", 4, "1.0", "OVERLAY", "INSTALLED"))
+        val repository = GameRepository(
+            context, dao, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database)
+        )
+
+        val failure = runCatching { repository.deleteGames(linkedSetOf("g1", "g2")) }.exceptionOrNull()
+
+        assertTrue(failure is IllegalArgumentException)
+        assertNotNull(dao.getGame("g1"))
+        assertNotNull(dao.getGame("g2"))
+        assertTrue(dao.observeDeletedGames().first().isEmpty())
+        assertEquals(1, dao.observeInstallationsForGame("g2").first().size)
     }
 
     @Test fun saveAndModTablesExistAfterCreation() = runTest {

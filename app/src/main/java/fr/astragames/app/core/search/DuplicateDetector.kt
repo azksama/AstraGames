@@ -10,18 +10,34 @@ object DuplicateDetector {
         first.id != second.id && groups(listOf(first, second)).isNotEmpty()
 
     fun groups(games: List<GameEntity>): List<DuplicateGroup> {
-        val groupedIds = mutableSetOf<String>()
-        val result = mutableListOf<DuplicateGroup>()
-        games.filter { it.fingerprint.isNotBlank() }.groupBy { it.fingerprint }.filterValues { it.size > 1 }.forEach { (fingerprint, group) ->
-            result += DuplicateGroup("fingerprint:$fingerprint", group.sortedBy { it.title.lowercase(java.util.Locale.ROOT) })
-            groupedIds += group.map { it.id }
+        val uniqueGames = games.distinctBy { it.id }
+        val parents = uniqueGames.associate { it.id to it.id }.toMutableMap()
+        fun root(id: String): String {
+            var current = id
+            while (parents.getValue(current) != current) {
+                parents[current] = parents.getValue(parents.getValue(current))
+                current = parents.getValue(current)
+            }
+            return current
         }
-        games.filterNot { it.id in groupedIds }
-            .groupBy { normalizeTitle(it.title) }
-            .filterKeys { it.length >= 4 }
-            .filterValues { it.size > 1 }
-            .forEach { (title, group) -> result += DuplicateGroup("title:$title", group.sortedBy { game -> game.title.lowercase(java.util.Locale.ROOT) }) }
-        return result.sortedByDescending { it.games.size }
+        val firstByFingerprint = mutableMapOf<String, String>()
+        val firstByTitle = mutableMapOf<String, String>()
+        val titles = uniqueGames.associate { it.id to normalizeTitle(it.title) }
+        uniqueGames.forEach { game ->
+            fun connect(index: MutableMap<String, String>, key: String) {
+                val previous = index.putIfAbsent(key, game.id) ?: return
+                parents[root(game.id)] = root(previous)
+            }
+            if (game.fingerprint.isNotBlank()) connect(firstByFingerprint, game.fingerprint)
+            titles.getValue(game.id).takeIf { it.length >= 4 }?.let { connect(firstByTitle, it) }
+        }
+        return uniqueGames.groupBy { root(it.id) }.values.filter { it.size > 1 }.map { group ->
+            val fingerprint = group.filter { it.fingerprint.isNotBlank() }
+                .groupingBy { it.fingerprint }.eachCount().filterValues { it > 1 }.keys.minOrNull()
+            val key = fingerprint?.let { "fingerprint:$it" }
+                ?: "title:${titles.getValue(group.first().id)}"
+            DuplicateGroup(key, group.sortedWith(compareBy<GameEntity> { it.title.lowercase(java.util.Locale.ROOT) }.thenBy { it.id }))
+        }.sortedWith(compareByDescending<DuplicateGroup> { it.games.size }.thenBy { it.key })
     }
 
     internal fun normalizeTitle(value: String): String = Normalizer.normalize(value, Normalizer.Form.NFD)

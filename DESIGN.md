@@ -14,17 +14,17 @@ Astra est une médiathèque Android pour des catalogues très volumineux. L'inte
 
 ## Adaptation
 
-- La navigation sans libellés utilise une surface flottante compacte de 56 dp sur téléphone et un rail de 72 dp sur écran large.
+- La navigation à cinq destinations utilise des cibles de 56 dp avec un fond de sélection visible et une sémantique d’onglet ; sur écran large, un rail de 72 dp conserve ces destinations.
 - La bibliothèque laisse l'utilisateur choisir précisément 2, 3 ou 4 colonnes.
-- À partir de 600 dp, la grille devient adaptative ; à partir de 840 dp, la navigation passe sur un rail latéral compact.
+- À partir de 600 dp, la grille devient adaptative ; à partir de 840 dp, ou en paysage entre 600 et 839 dp avec une fenêtre courte, la navigation passe sur un rail latéral compact.
 - Les vues en liste restent disponibles pour les écrans étroits et la recherche.
 - Les détails conservent une présentation plein écran sur téléphone.
-- Les en-têtes applicatifs restent limités à 52 dp hors barre système.
+- Les en-têtes ont une hauteur minimale de 56 dp hors barre système et grandissent avec le texte ; les actions secondaires passent dans un menu pour préserver le titre.
 - Les actions de source sont regroupées sous le libellé afin de ne pas compresser le nom sur téléphone.
-- Le bouton de recherche flotte au-dessus du menu, sans panneau opaque occupant toute la largeur basse.
-- Le glissement horizontal depuis toute la page passe à l'écran principal précédent ou suivant ; les listes verticales restent prioritaires tant que le mouvement n'est pas clairement horizontal.
+- Le menu inférieur flotte dans une pilule ; les fonds actifs, survols et effets pressés sont circulaires. La recherche s’ouvre en tirant vers le bas en haut d’une liste ou sur une page vide, et reste accessible via une action d’accessibilité.
+- Le glissement horizontal sur les destinations du menu passe à l’écran principal précédent ou suivant ; les listes verticales restent prioritaires tant que le mouvement n'est pas clairement horizontal.
 - La transition entre pages dure 150 ms afin de garder le geste direct.
-- Les survols et effets pressés du menu reprennent exactement la forme arrondie de l'état actif.
+- Les survols et effets pressés du menu reprennent exactement la forme circulaire de l'état actif.
 - Les actions de l'assistant post-scan restent ancrées sous le contenu défilable et au-dessus du clavier et des barres système.
 
 ## États obligatoires
@@ -41,3 +41,12 @@ Astra est une médiathèque Android pour des catalogues très volumineux. L'inte
 - Les dossiers Astra restent virtuels.
 - Les métadonnées utilisateur, favoris, tags et dossiers survivent à un déplacement reconnu par fingerprint.
 - Les permissions sont demandées par le Storage Access Framework et conservées de façon persistante.
+
+## Revue du 19 septembre 2026
+
+- Recherche : champ nommé et ciblé à l’ouverture, filtres horizontaux, sélecteur de tags partagé et état de chargement distinct des résultats vides. Une fiche ouverte depuis les résultats conserve la recherche au retour.
+- Bibliothèque : menu d’affichage, sélection multiple compatible avec le bouton Retour, état manquant en grille et bouton de remise à zéro des résultats vides.
+- Actions : cibles de 48 dp, favoris nommés selon leur état, paramètres basculables sur toute la ligne, titres de jeux conservés tels quels.
+- Collections : cartes compactes en trois colonnes, avec contenu centré sur les deux axes ; le texte agrandi détermine la hauteur. Le filtre des collections personnelles est centré verticalement. Le choix ET/OU est retiré : les nouvelles collections exigent toutes les règles, les anciennes conservent leur mode enregistré.
+- Détails et outils : en-tête dimensionné par son contenu, listes virtualisées, éditeur plein écran compatible avec le clavier, chargement/erreur distincts des listes vides.
+- Couleurs : surfaces claires et sombres cohérentes avec l’accent cyan, sans dépendre des couleurs Material par défaut pour les conteneurs. Les couleurs dynamiques restent disponibles.

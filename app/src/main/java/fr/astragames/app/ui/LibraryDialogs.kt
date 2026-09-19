@@ -163,7 +163,7 @@ internal fun SmartCollectionEditorDialog(
     onDismiss: () -> Unit
 ) {
     var name by remember(collection?.id) { mutableStateOf(collection?.name.orEmpty()) }
-    var mode by remember(collection?.id) { mutableStateOf(collection?.matchMode ?: "ALL") }
+    val mode = collection?.matchMode ?: "ALL"
     val rules = remember(collection?.id, existingRules) {
         mutableStateListOf<CollectionRuleDraft>().apply {
             addAll(existingRules.map { CollectionRuleDraft(it.field, it.operator, it.value) })
@@ -179,13 +179,6 @@ internal fun SmartCollectionEditorDialog(
                 }
                 LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     item { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Nom") }, singleLine = true) }
-                    item {
-                        Text("Correspondance", style = MaterialTheme.typography.titleSmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            FilterChip(mode == "ALL", { mode = "ALL" }, { Text("Toutes les règles (ET)") })
-                            FilterChip(mode == "ANY", { mode = "ANY" }, { Text("Au moins une (OU)") })
-                        }
-                    }
                     item { FilledTonalButton(onClick = { editingIndex = null; addingRule = true }, Modifier.fillMaxWidth()) {
                         Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Ajouter une règle")
                     } }

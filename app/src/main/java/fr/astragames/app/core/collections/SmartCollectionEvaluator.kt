@@ -15,11 +15,15 @@ object SmartCollectionEvaluator {
         refs: List<GameTagCrossRef>,
         folders: List<LibraryFolderEntity>,
         playStat: GamePlayStat?,
-        now: Long = System.currentTimeMillis()
+        now: Long = System.currentTimeMillis(),
+        folderIdsByRoot: Map<String, Set<String>> = emptyMap()
     ): Boolean {
         if (rules.isEmpty()) return false
-        val results = rules.map { rule -> matches(rule, game, refs, folders, playStat, now) }
-        return if (collection.matchMode == "ANY") results.any { it } else results.all { it }
+        return if (collection.matchMode == "ANY") {
+            rules.any { matches(it, game, refs, folders, playStat, now, folderIdsByRoot) }
+        } else {
+            rules.all { matches(it, game, refs, folders, playStat, now, folderIdsByRoot) }
+        }
     }
 
     private fun matches(
@@ -28,12 +32,13 @@ object SmartCollectionEvaluator {
         refs: List<GameTagCrossRef>,
         folders: List<LibraryFolderEntity>,
         playStat: GamePlayStat?,
-        now: Long
+        now: Long,
+        folderIdsByRoot: Map<String, Set<String>>
     ): Boolean = when (rule.field) {
         "ENGINE" -> compareText(game.engine, rule.operator, rule.value)
         "TAG" -> (refs.any { it.gameId == game.id && it.tagId == rule.value }) xor (rule.operator == "NOT")
         "FOLDER" -> {
-            val ids = descendantFolderIds(rule.value, folders)
+            val ids = folderIdsByRoot[rule.value] ?: descendantFolderIds(rule.value, folders)
             (game.libraryFolderId in ids) xor (rule.operator == "NOT")
         }
         "FAVORITE" -> compareBoolean(game.favorite, rule.operator, rule.value)

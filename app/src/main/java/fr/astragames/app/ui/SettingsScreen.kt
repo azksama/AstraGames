@@ -3,6 +3,7 @@ package fr.astragames.app.ui
 import fr.astragames.app.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -17,6 +18,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
@@ -28,7 +32,7 @@ import fr.astragames.app.data.local.GameSourceEntity
 
 @Composable
 internal fun AuditDialog(vm: AstraViewModel, onDismiss: () -> Unit) {
-    val events by vm.auditEvents().collectAsStateWithLifecycle(initialValue = emptyList())
+    val events by remember(vm) { vm.auditEvents() }.collectAsStateWithLifecycle(initialValue = emptyList())
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
@@ -61,7 +65,7 @@ internal fun SettingsScreen(
     var showDuplicates by remember { mutableStateOf(false) }
     var showDeleted by remember { mutableStateOf(false) }
     var showAudit by remember { mutableStateOf(false) }
-    var sourcesExpanded by rememberSaveable { mutableStateOf(false) }
+    var sourcesExpanded by rememberSaveable { mutableStateOf(state.sources.isEmpty()) }
     var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
     var joiplayExpanded by rememberSaveable { mutableStateOf(false) }
     var organizationExpanded by rememberSaveable { mutableStateOf(false) }
@@ -76,15 +80,12 @@ internal fun SettingsScreen(
             item { SettingsSectionHeader("Sources et scan", sourcesExpanded) { sourcesExpanded = !sourcesExpanded } }
             if (sourcesExpanded) {
             items(state.sources, key = { it.id }) { source ->
-                RoundedListItem(
-                    headlineContent = { Text(source.displayName) }, leadingContent = { Icon(Icons.Default.Source, null) },
-                    supportingContent = {
-                        Column { Text("${source.gamesCount} jeux • ${source.lastScanStatus.lowercase(java.util.Locale.ROOT)}"); Row(verticalAlignment = Alignment.CenterVertically) {
-                            TextButton(onClick = { vm.scanSource(source.id) }) { Text("Scanner") }
-                            TextButton(onClick = { vm.showLatestScanReport(source.id) }, enabled = source.lastScanAt != null) { Text("Rapport") }
-                            IconButton(onClick = { sourceToDelete = source }) { Icon(Icons.Default.DeleteOutline, "Supprimer") }
-                        } }
-                    }, trailingContent = { Switch(source.enabled, { vm.toggleSource(source.id) }) }
+                SourceSettingsCard(
+                    source = source,
+                    onToggle = { vm.toggleSource(source.id) },
+                    onScan = { vm.scanSource(source.id) },
+                    onReport = { vm.showLatestScanReport(source.id) },
+                    onRemove = { sourceToDelete = source }
                 )
             }
             item { RoundedListItem(modifier = Modifier.clickable(onClick = onPickSource), headlineContent = { Text("Ajouter une source") }, leadingContent = { Icon(Icons.Default.Add, null) }) }
@@ -132,9 +133,14 @@ internal fun SettingsScreen(
             }
             item {
                 RoundedListItem(
+                    modifier = Modifier.toggleable(
+                        value = state.settings.openSearchInExternalBrowser,
+                        role = Role.Switch,
+                        onValueChange = vm::setOpenSearchInExternalBrowser
+                    ),
                     headlineContent = { Text("Rechercher dans le navigateur") },
                     supportingContent = { Text("Les recherches du moteur sélectionné s’ouvrent directement dans le navigateur du téléphone.") },
-                    trailingContent = { Switch(state.settings.openSearchInExternalBrowser, vm::setOpenSearchInExternalBrowser) }
+                    trailingContent = { Switch(state.settings.openSearchInExternalBrowser, onCheckedChange = null) }
                 )
             }
             }
@@ -261,4 +267,57 @@ internal fun SettingsScreen(
         { confirmRestore = false }
     )
     if (showPinSetup) PinSetupDialog({ vm.setPinLock(it); showPinSetup = false }, { showPinSetup = false })
+}
+
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+private fun SourceSettingsCard(
+    source: GameSourceEntity,
+    onToggle: () -> Unit,
+    onScan: () -> Unit,
+    onReport: () -> Unit,
+    onRemove: () -> Unit
+) {
+    val running = source.lastScanStatus == "RUNNING"
+    val status = when (source.lastScanStatus) {
+        "RUNNING" -> "Scan en cours…"
+        "SUCCESS" -> "Scan terminé"
+        "PARTIAL" -> "Scan partiel"
+        "FAILED" -> "Échec du scan"
+        else -> "Jamais scannée"
+    }
+    Card(
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+    ) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Icon(Icons.Default.Source, null, tint = MaterialTheme.colorScheme.primary)
+                Text(source.displayName, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                Switch(
+                    checked = source.enabled,
+                    enabled = !running,
+                    onCheckedChange = { onToggle() },
+                    modifier = Modifier.semantics { contentDescription = source.displayName }
+                )
+            }
+            Text("${source.gamesCount} jeux", style = MaterialTheme.typography.bodyMedium)
+            Text(status, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            source.lastError?.takeIf { it.isNotBlank() }?.let { error ->
+                Text(error, Modifier.padding(top = 6.dp), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+            FlowRow(
+                modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                TextButton(onClick = onScan, enabled = !running) { Text("Scanner") }
+                TextButton(onClick = onReport, enabled = source.lastScanAt != null) { Text("Rapport") }
+                TextButton(onClick = onRemove, enabled = !running) {
+                    Icon(Icons.Default.DeleteOutline, null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Supprimer")
+                }
+            }
+        }
+    }
 }

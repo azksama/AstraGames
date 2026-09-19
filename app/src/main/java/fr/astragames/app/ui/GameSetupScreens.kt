@@ -317,15 +317,21 @@ internal fun GameTagPickerSheet(
     var category by remember { mutableStateOf("__all__") }
     var query by remember { mutableStateOf("") }
     fun cycle(tagId: String) {
+        if (onSaveExcluded == null) {
+            included = included.toggle(tagId)
+            return
+        }
         when {
             tagId in included -> { included = included - tagId; excluded = excluded + tagId }
             tagId in excluded -> excluded = excluded - tagId
             else -> included = included + tagId
         }
     }
-    val visible = tags.filter {
-        (category == "__all__" || (category == "__none__" && it.groupName == null) || it.groupName == category) &&
-            (query.isBlank() || it.name.contains(query, true))
+    val visible = remember(tags, category, query) {
+        tags.filter {
+            (category == "__all__" || (category == "__none__" && it.groupName == null) || it.groupName == category) &&
+                (query.isBlank() || it.name.contains(query.trim(), true))
+        }
     }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().imePadding().padding(bottom = 10.dp)) {
