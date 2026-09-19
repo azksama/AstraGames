@@ -2,6 +2,7 @@ package fr.astragames.app.data.mods
 
 import android.content.Context
 import android.net.Uri
+import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import fr.astragames.app.data.local.AstraDao
 import fr.astragames.app.data.local.GameEntity
@@ -111,6 +112,11 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
 
     suspend fun install(game: GameEntity, mod: ModEntity): ModInstallationEntity = withContext(Dispatchers.IO) { lock.withLock {
         require(mod.engine == game.engine || mod.engine == "OTHER") { "Moteur incompatible." }
+        val gameRoot = documentDir(context, game.documentUri.toUri())
+        val translationData = gameRoot?.findFile("www")?.findFile("data") ?: gameRoot?.findFile("data")
+        check(translationData?.findFile(".astra-translation")?.findFile("manifest.json") == null) {
+            "Restaurez la traduction avant d’installer des mods."
+        }
         val installed = dao.observeInstallationsForGame(game.id).firstValue()
         require(installed.none { it.modId == mod.id }) { "Ce mod est deja installe ou doit etre restaure." }
         val packageRoot = documentDir(context, Uri.parse(mod.folderUri)) ?: error("Dossier du mod introuvable.")

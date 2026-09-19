@@ -85,10 +85,11 @@ import java.util.Locale
 internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () -> Unit) {
     var showSaves by rememberSaveable(game.id) { mutableStateOf(false) }
     var showBackups by rememberSaveable(game.id) { mutableStateOf(false) }
+    var showTranslation by rememberSaveable(game.id) { mutableStateOf(false) }
     var showMods by rememberSaveable(game.id) { mutableStateOf(false) }
     var editing by remember(game.id) { mutableStateOf<GameSave?>(null) }
     val sections = remember(game) { GameToolsRegistry.sectionsFor(game) }
-    if (!showSaves && !showBackups && !showMods && editing == null) ModalBottomSheet(onDismissRequest = onDismiss) {
+    if (!showSaves && !showBackups && !showMods && !showTranslation && editing == null) ModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
         Text("Outils", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.titleLarge)
@@ -108,6 +109,7 @@ internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () 
                             "save_editor" -> showSaves = true
                             "save_backups" -> showBackups = true
                             "mods" -> showMods = true
+                            "translate" -> showTranslation = true
                             "open_folder" -> vm.openGameFolder(game.id)
                             "rescan" -> vm.rescanGame(game.id)
                         }
@@ -119,6 +121,7 @@ internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () 
     }
     if (showSaves) SaveListSheet(game, vm, { editing = it; showSaves = false }, { showSaves = false })
     if (showBackups) SaveBackupsSheet(game, vm) { showBackups = false }
+    if (showTranslation) GameTranslationScreen(game, vm.translation) { showTranslation = false }
     if (showMods) ModsSheet(game, vm) { showMods = false }
     editing?.let { save -> SaveEditorDialog(game, save, vm) { editing = null } }
 }

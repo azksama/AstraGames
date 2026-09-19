@@ -38,6 +38,7 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - Baseline Profile embarqué et module de génération Macrobenchmark pour accélérer le démarrage et les parcours principaux ;
 - copie rapide du nom d’une jaquette en touchant son libellé et raccourci vers le dossier de sauvegarde d’un jeu ;
 - verrouillage biométrique et code chiffré, historique des sessions, bouton Outils, éditeur de sauvegardes et gestionnaire de mods ;
+- traduction locale des textes RPG Maker MV/MZ avec Google Translate (ML Kit), sans compte ni clé API, cache réutilisable et restauration des originaux ;
 - payload et Intent JoiPlay sans appel à `ShortcutActivity` ;
 - diagnostic de compatibilité par jeu et profils de lancement personnalisables (moteur, dossier, fichier d'entrée, arguments ou application externe) avec test direct ;
 - scan au lancement et worker périodique prêt à être planifié ;
@@ -58,6 +59,7 @@ data/saves   codecs, découverte SAF, écriture vérifiée et backups
 data/mods    import ZIP, installation et restauration journalisées
 data/backup  archives chiffrées du catalogue
 launcher/    JoiPlay et futur MTool
+translation/ ML Kit, extraction MV/MZ, cache et restauration journalisée
 settings/    DataStore
 worker/      WorkManager
 ui/          navigation, écrans par domaine, état et contrôleur des outils
@@ -128,6 +130,26 @@ L’import ZIP est limité à 4 000 entrées et 200 Mio décompressés. La dési
 Les archives du catalogue `.astra` utilisent la clé Android Keystore de l’installation actuelle. Elles ne constituent pas une migration vers un autre téléphone ou après désinstallation de l’app. Les anciens ZIP non chiffrés restent importables (schémas 5 à 8). Les jeux et leurs permissions SAF ne sont pas embarqués dans ces archives.
 
 Les bilans et limites des vérifications figurent dans la [revue sauvegardes/mods du 16 septembre](docs/AUDIT_2026-09-16.md) et la [revue technique/UI du 19 septembre](docs/AUDIT_2026-09-19.md).
+
+## Traduction locale RPG Maker MV/MZ
+
+Depuis **Fiche du jeu → Outils → Traduire le jeu**, choisir la langue source et la langue cible, fermer le jeu puis toucher **Traduire avec Google**. Google Translate (ML Kit) télécharge les modèles nécessaires au premier usage, puis traduit sur l’appareil sans compte ni clé API. Le téléchargement utilise uniquement le Wi-Fi par défaut ; cette option peut être désactivée. Une fois les modèles disponibles, la traduction fonctionne hors connexion. Garder Astra ouvert pendant le traitement ; après un arrêt, les fragments déjà traduits sont réutilisés au prochain essai.
+
+Le module lit les JSON standards dans `data` ou `www/data` : dialogues, choix, noms affichés, descriptions, termes des menus et messages de combat. Les commandes de mise en forme et variables comme `\N[1]`, `\V[2]`, `\C[3]`, `%1` et les retours à la ligne sont conservés. Les textes identiques sont traduits une seule fois, avec un cache distinct pour chaque paire de langues. Les scripts, notes, noms de ressources, images, contenus propres aux plugins et sauvegardes du joueur ne sont pas traduits. XP, VX et VX Ace ne sont pas couverts par ce module.
+
+Tous les originaux sont sauvegardés et relus avant application, dans `data/.astra-translation` (ou `www/data/.astra-translation`). **Conserver ce dossier**, qui reste auprès du jeu et n’est pas inclus dans l’archive du catalogue. **Restaurer les originaux** annule la traduction à l’octet près. La restauration refuse d’écraser un fichier modifié depuis par un autre outil. Les écritures interrompues sont journalisées ; si une reprise automatique échoue, ce même écran permet de relancer la restauration. Une interruption pendant la création initiale du journal, ou un stockage endommagé, peut nécessiter de récupérer manuellement les fichiers depuis le sous-dossier `original`.
+
+Les mods installés via Astra doivent être désinstallés avant traduction ; restaurer ensuite les originaux avant d’installer des mods ou une mise à jour du jeu. Limites de traitement : 2 000 fichiers, 16 Mio par fichier, 64 Mio de JSON cumulés et 4 000 caractères par fragment. Il n’y a pas de remise en page automatique : une traduction plus longue peut déborder des fenêtres du jeu, et certaines polices ne contiennent pas les caractères de la langue cible. La qualité et la durée dépendent du texte, de la paire de langues et du téléphone ; traduire un jeu complet en quelques secondes n’est pas garanti.
+
+La traduction automatique est fournie par Google Translate, sans garantie d’exactitude. [Fonctionnement de ML Kit](https://developers.google.com/ml-kit/language/translation) et [conditions d’utilisation](https://developers.google.com/ml-kit/language/translation/translation-terms). Les paires sans anglais utilisent l’anglais comme langue intermédiaire, ce qui peut affecter la qualité.
+
+Le test réel du modèle est explicite et utilise uniquement des textes synthétiques :
+
+```powershell
+adb shell am instrument -w -r -e class fr.astragames.app.translation.GameTranslationTest -e liveTranslation true fr.astragames.app.test/androidx.test.runner.AndroidJUnitRunner
+```
+
+Sans l’argument `liveTranslation`, le test nécessitant les modèles est ignoré ; les tests d’extraction, de stockage local/SAF, d’interface et de restauration restent exécutables sans téléchargement.
 
 ## Limites de preuve
 

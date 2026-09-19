@@ -87,6 +87,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val compatibility: StateFlow<Map<String, GameCompatibilityReport>> = mutableCompatibility
     private val compatibilityDiagnostic = CompatibilityDiagnostic(app.container.launcher)
     val events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 8)
+    internal val translation = GameTranslationController(app, viewModelScope)
     val tools = GameToolsController(app, viewModelScope, events) { ignoreNextRelock = true }
     private val mutableCoverSearch = MutableStateFlow(
         CoverSearchState(configured = app.container.covers.configured)
@@ -1088,6 +1089,13 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     fun launchGame(id: String) = viewModelScope.launch {
         val game = repository.getGame(id) ?: return@launch
+        val translationReady = runCatchingCancellable {
+            fr.astragames.app.translation.GameTranslationManager(app).isLaunchSafe(game)
+        }.getOrDefault(false)
+        if ((translation.state.value.busy && translation.state.value.gameId == id) || !translationReady) {
+            events.emit(UiEvent.Message("Terminez la traduction ou restaurez les originaux avant de lancer le jeu."))
+            return@launch
+        }
         val profile = repository.getLaunchProfile(id)
         val diagnostic = withContext(Dispatchers.IO) { compatibilityDiagnostic.inspect(getApplication(), game, profile) }
         mutableCompatibility.value = mutableCompatibility.value + (id to diagnostic)

@@ -262,7 +262,7 @@ class RecursiveSourceScanner(
             if (source.recursive) {
                 children.asSequence()
                     .filter { it.isDirectory }
-                    .filter { source.includeHiddenFolders || !it.name.orEmpty().startsWith('.') }
+                    .filter { it.name != ".astra-translation" && (source.includeHiddenFolders || !it.name.orEmpty().startsWith('.')) }
                     .forEach { child ->
                         val childRelative = listOf(relativePath, child.name.orEmpty()).filter { it.isNotBlank() }.joinToString("/")
                         if (child.name.orEmpty().lowercase(Locale.ROOT) in exclusions) {

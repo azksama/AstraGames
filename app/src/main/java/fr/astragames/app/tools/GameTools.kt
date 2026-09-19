@@ -6,6 +6,7 @@ import androidx.compose.material.icons.filled.Build
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Folder
 import androidx.compose.material.icons.filled.History
+import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.ui.graphics.vector.ImageVector
 import fr.astragames.app.data.local.GameEntity
@@ -80,11 +81,20 @@ object RescanGameTool : GameTool {
     override fun isAvailable(game: GameEntity) = true
 }
 
+object TranslateGameTool : GameTool {
+    override val id = "translate"
+    override val title = "Traduire le jeu"
+    override val description = "Traduction locale sans compte — RPG Maker MV/MZ"
+    override val icon = Icons.Default.Translate
+    override val section = "Jeu"
+    override fun isAvailable(game: GameEntity) = game.engine in setOf("RPG_MAKER_MV", "RPG_MAKER_MZ")
+}
+
 /** Registre des outils disponibles sur la fiche d'un jeu. */
 object GameToolsRegistry {
     private val tools = listOf(
         SaveFolderTool, SaveEditorTool, SaveBackupTool,
-        ModsManagerTool, OpenGameFolderTool, RescanGameTool
+        ModsManagerTool, TranslateGameTool, OpenGameFolderTool, RescanGameTool
     )
 
     fun availableFor(game: GameEntity): List<GameTool> = tools.filter { it.isAvailable(game) }

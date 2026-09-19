@@ -15,8 +15,8 @@ android {
         applicationId = "fr.astragames.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 21
-        versionName = "1.6.3"
+        versionCode = 22
+        versionName = "1.6.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -91,6 +91,7 @@ dependencies {
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.4.0")
     implementation("com.vanniktech:android-image-cropper:4.7.0")
     implementation("org.jsoup:jsoup:1.23.1")
+    implementation("com.google.mlkit:translate:17.0.3")
     coreLibraryDesugaring("com.android.tools:desugar_jdk_libs_nio:2.1.5")
 
     testImplementation("junit:junit:4.13.2")
