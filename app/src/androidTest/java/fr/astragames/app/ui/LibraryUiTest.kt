@@ -46,7 +46,7 @@ import androidx.compose.ui.test.performClick
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import fr.astragames.app.core.model.LibraryViewMode
-import fr.astragames.app.core.model.ThemeMode
+
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.TagEntity
 import fr.astragames.app.settings.AppLanguage
@@ -102,11 +102,11 @@ class LibraryUiTest {
             }
         }
 
-        compose.onNodeWithContentDescription("Library")
+        compose.onNodeWithContentDescription("Games")
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
             .assertIsSelected()
         compose.onNodeWithContentDescription("Settings").assertIsNotSelected().performClick().assertIsSelected()
-        compose.onNodeWithContentDescription("Library").assertIsNotSelected()
+        compose.onNodeWithContentDescription("Games").assertIsNotSelected()
     }
 
     @Test fun userTitleStaysUntouchedAndFavoriteDoesNotOpenTheGame() {
@@ -170,9 +170,9 @@ class LibraryUiTest {
         compose.runOnIdle { assertEquals(setOf("exploration"), saved) }
     }
 
-    @Test fun populatedLightLibraryCanBeRenderedAndCaptured() = captureLibrary(ThemeMode.LIGHT, "library-light.png")
+    @Test fun populatedGridLibraryCanBeRenderedAndCaptured() = captureLibrary(LibraryViewMode.GRID, "library-grid.png")
 
-    @Test fun populatedDarkLibraryCanBeRenderedAndCaptured() = captureLibrary(ThemeMode.DARK, "library-dark.png")
+    @Test fun populatedListLibraryCanBeRenderedAndCaptured() = captureLibrary(LibraryViewMode.LIST, "library-list.png")
 
     @Test fun pullingDownAtTopOpensSearch() = verifySearchPull(initialItem = 0, opens = true)
 
@@ -200,7 +200,7 @@ class LibraryUiTest {
         else compose.onNodeWithText("Search opened").assertDoesNotExist()
     }
 
-    private fun captureLibrary(theme: ThemeMode, filename: String) {
+    private fun captureLibrary(viewMode: LibraryViewMode, filename: String) {
         val games = listOf(
             game("north", "Northern Lights").copy(favorite = true),
             game("garden", "The Clockwork Garden").copy(engine = "RENPY"),
@@ -209,10 +209,10 @@ class LibraryUiTest {
             game("orbit", "Orbit 42").copy(engine = "HTML5"),
             game("island", "The Last Island").copy(favorite = true)
         )
-        content(theme) {
+        content {
             Column {
                 CompactHeader("Astra", "6 jeux")
-                GameCollection(games, LibraryViewMode.GRID, 2, {}, {}, onQuickGame = {})
+                GameCollection(games, viewMode, 2, {}, {}, onQuickGame = {})
             }
         }
         compose.onNodeWithText("Northern Lights").assertIsDisplayed()
@@ -226,10 +226,10 @@ class LibraryUiTest {
         }
     }
 
-    private fun content(theme: ThemeMode = ThemeMode.LIGHT, body: @Composable () -> Unit) {
+    private fun content(body: @Composable () -> Unit) {
         compose.setContent {
             CompositionLocalProvider(LocalAppLanguage provides AppLanguage.ENGLISH) {
-                AstraTheme(theme, dynamicColor = false) {
+                AstraTheme {
                     Surface(Modifier.fillMaxSize(), content = body)
                 }
             }

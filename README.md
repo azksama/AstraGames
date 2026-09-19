@@ -32,9 +32,10 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
 - ajout textuel de tags par virgules ou crochets pendant la configuration et l’édition, avec réutilisation automatique des tags existants ;
-- thèmes clair, sombre, système et couleurs dynamiques ;
+- palette Astra fixe : fond `#09090f`, cartes et menu `#716b82`, actions `#302147`, textes secondaires `#c9b7ff` et titres blancs ;
 - flou des jaquettes désactivable, automatique au démarrage ou manuel, avec bascule rapide depuis l’accueil ;
-- navigation compacte flottante à trois entrées, glissement horizontal rapide entre les écrans principaux et interface adaptée aux tablettes/pliables ;
+- navigation flottante élargie à quatre entrées (Accueil, Jeux, Collections, Paramètres), sans bande opaque derrière la pilule ;
+- accueil avec icône Astra/GAMES, dernière partie en affiche panoramique, bouton de reprise et deux jeux précédents ; bibliothèque complète accessible par Jeux ou Tout voir ;
 - Baseline Profile embarqué et module de génération Macrobenchmark pour accélérer le démarrage et les parcours principaux ;
 - copie rapide du nom d’une jaquette en touchant son libellé et raccourci vers le dossier de sauvegarde d’un jeu ;
 - verrouillage biométrique et code chiffré, historique des sessions, bouton Outils, éditeur de sauvegardes et gestionnaire de mods ;
@@ -136,6 +137,8 @@ Les bilans et limites des vérifications figurent dans la [revue sauvegardes/mod
 Depuis **Fiche du jeu → Outils → Traduire le jeu**, choisir la langue source et la langue cible, fermer le jeu puis toucher **Traduire avec Google**. Google Translate (ML Kit) télécharge les modèles nécessaires au premier usage, puis traduit sur l’appareil sans compte ni clé API. Le téléchargement utilise uniquement le Wi-Fi par défaut ; cette option peut être désactivée. Une fois les modèles disponibles, la traduction fonctionne hors connexion. Garder Astra ouvert pendant le traitement ; après un arrêt, les fragments déjà traduits sont réutilisés au prochain essai.
 
 Le module lit les JSON standards dans `data` ou `www/data` : dialogues, choix, noms affichés, descriptions, termes des menus et messages de combat. Les commandes de mise en forme et variables comme `\N[1]`, `\V[2]`, `\C[3]`, `%1` et les retours à la ligne sont conservés. Les textes identiques sont traduits une seule fois, avec un cache distinct pour chaque paire de langues. Les scripts, notes, noms de ressources, images, contenus propres aux plugins et sauvegardes du joueur ne sont pas traduits. XP, VX et VX Ace ne sont pas couverts par ce module.
+
+Le temps restant est estimé après quelques fragments, à partir des caractères effectivement traités pendant cette tentative ; le téléchargement des modèles et les traductions déjà en cache sont exclus de ce calcul. Les retours à la ligne ajoutés par le modèle dans un fragment sont normalisés en espaces, sans toucher aux retours à la ligne du jeu. Une sortie vide ou contenant des commandes inattendues laisse le fragment original en place au lieu de bloquer toute la traduction. Le bilan indique le nombre de fragments uniques conservés et reste disponible après réouverture de l’écran. Ces fragments ne sont pas mis en cache comme des traductions réussies ; ils peuvent être retentés après restauration des originaux.
 
 Tous les originaux sont sauvegardés et relus avant application, dans `data/.astra-translation` (ou `www/data/.astra-translation`). **Conserver ce dossier**, qui reste auprès du jeu et n’est pas inclus dans l’archive du catalogue. **Restaurer les originaux** annule la traduction à l’octet près. La restauration refuse d’écraser un fichier modifié depuis par un autre outil. Les écritures interrompues sont journalisées ; si une reprise automatique échoue, ce même écran permet de relancer la restauration. Une interruption pendant la création initiale du journal, ou un stockage endommagé, peut nécessiter de récupérer manuellement les fichiers depuis le sous-dossier `original`.
 

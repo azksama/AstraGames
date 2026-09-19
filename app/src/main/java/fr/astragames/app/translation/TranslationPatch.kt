@@ -19,6 +19,10 @@ internal class TranslationPatch(private val files: TranslationFiles) {
     private data class Record(val name: String, val original: String, val translated: String)
     fun exists() = files.read(MANIFEST) != null
 
+    fun preservedFragments(): Int = files.read(MANIFEST)?.let {
+        JSONObject(it.toString(Charsets.UTF_8)).optInt("preservedFragments", 0).coerceAtLeast(0)
+    } ?: 0
+
     fun isLaunchSafe(): Boolean = runCatching {
         val bytes = files.read(MANIFEST) ?: return true
         if (files.read(PENDING) != null) return false
@@ -39,7 +43,7 @@ internal class TranslationPatch(private val files: TranslationFiles) {
         states.all { it.first } || states.all { it.second }
     }.getOrDefault(false)
 
-    fun apply(changes: List<Change>, source: String, target: String) {
+    fun apply(changes: List<Change>, source: String, target: String, preservedFragments: Int = 0) {
         check(!exists()) { "Restaurez la traduction précédente avant de la remplacer." }
         require(changes.isNotEmpty() && changes.size <= 2000)
         require(changes.map { it.name }.distinct().size == changes.size)
@@ -54,6 +58,7 @@ internal class TranslationPatch(private val files: TranslationFiles) {
             verifiedWrite("$BACKUP/translated/${it.name}", it.translated)
         }
         val journal = JSONObject().put("version", 1).put("source", source).put("target", target)
+            .put("preservedFragments", preservedFragments)
             .put("files", JSONArray(records.map { JSONObject().put("name", it.name).put("original", it.original).put("translated", it.translated) }))
         try {
             verifiedWrite(MANIFEST, journal.toString().toByteArray())

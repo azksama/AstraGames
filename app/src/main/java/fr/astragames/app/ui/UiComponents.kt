@@ -24,7 +24,7 @@ import java.text.Normalizer
 import java.util.Date
 
 @Composable
-internal fun SectionTitle(text: String, modifier: Modifier = Modifier) = Text(text, modifier.padding(start = 16.dp, top = 14.dp, bottom = 5.dp).semantics { heading() }, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.primary)
+internal fun SectionTitle(text: String, modifier: Modifier = Modifier) = Text(text, modifier.padding(start = 16.dp, top = 14.dp, bottom = 5.dp).semantics { heading() }, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
 
 @Composable
 internal fun SettingsSectionHeader(title: String, expanded: Boolean, onToggle: () -> Unit) {

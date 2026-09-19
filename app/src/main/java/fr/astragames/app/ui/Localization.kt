@@ -52,6 +52,21 @@ object AppLocalizer {
     ) = Translation(source, english, spanish, russian, german, chinese, japanese)
 
     private val catalog = listOf(
+        t("Traduction partielle appliquée", "Partial translation applied", "Traducción parcial aplicada", "Частичный перевод применён", "Teilübersetzung angewendet", "已应用部分翻译", "部分的な翻訳を適用しました"),
+        t("Accueil", "Home", "Inicio", "Главная", "Start", "主页", "ホーム"),
+        t("Jeux", "Games", "Juegos", "Игры", "Spiele", "游戏", "ゲーム"),
+        t("Tes jeux", "Your games", "Tus juegos", "Твои игры", "Deine Spiele", "你的游戏", "あなたのゲーム"),
+        t("Tout voir", "View all", "Ver todos", "Все игры", "Alle ansehen", "查看全部", "すべて見る"),
+        t("Reprendre la partie", "Resume game", "Continuar partida", "Продолжить игру", "Spiel fortsetzen", "继续游戏", "ゲームを再開"),
+        t("Dernière session", "Last session", "Última sesión", "Последний сеанс", "Letzte Sitzung", "上次游玩", "前回のプレイ"),
+        t("Ta prochaine aventure commence ici", "Your next adventure starts here", "Tu próxima aventura empieza aquí", "Твоё следующее приключение начинается здесь", "Dein nächstes Abenteuer beginnt hier", "下一场冒险从这里开始", "次の冒険はここから"),
+        t("Lance un jeu pour le retrouver sur ton accueil.", "Launch a game to find it on your home screen.", "Inicia un juego para verlo en tu inicio.", "Запусти игру, чтобы увидеть её на главной.", "Starte ein Spiel, um es auf der Startseite zu sehen.", "启动游戏后即可在主页找到它。", "ゲームを起動するとホームに表示されます。"),
+        t("Découvrir tes jeux", "Browse your games", "Explorar tus juegos", "Смотреть игры", "Spiele entdecken", "浏览游戏", "ゲームを探す"),
+        t("Tes autres parties récentes apparaîtront ici.", "Your other recent games will appear here.", "Tus otras partidas recientes aparecerán aquí.", "Здесь появятся другие недавние игры.", "Deine weiteren zuletzt gespielten Spiele erscheinen hier.", "其他最近游玩的游戏将显示在这里。", "ほかの最近遊んだゲームはここに表示されます。"),
+        t("Temps restant estimé", "Estimated time remaining", "Tiempo restante estimado", "Примерно осталось", "Geschätzte Restzeit", "预计剩余时间", "推定残り時間"),
+        t("Calcul en cours…", "Calculating…", "Calculando…", "Расчёт…", "Wird berechnet…", "正在计算…", "計算中…"),
+        t("Passages conservés dans la langue d’origine", "Fragments kept in the original language", "Fragmentos conservados en el idioma original", "Фрагменты на исходном языке", "Passagen in der Originalsprache", "保留原文的片段", "原文のまま保持した部分"),
+        t("Les passages incompatibles restent inchangés pour préserver le jeu.", "Incompatible fragments stay unchanged to preserve the game.", "Los fragmentos incompatibles no cambian para preservar el juego.", "Несовместимые фрагменты оставлены без изменений для сохранности игры.", "Unverträgliche Passagen bleiben zum Schutz des Spiels unverändert.", "为保护游戏，不兼容片段保持原样。", "ゲームを保護するため互換性のない部分は変更しません。"),
         t("Fichiers", "Files", "Archivos", "Файлы", "Dateien", "文件", "ファイル"),
         t("Textes uniques", "Unique texts", "Textos únicos", "Уникальные тексты", "Eindeutige Texte", "唯一文本", "重複を除くテキスト"),
         t("Caractères", "Characters", "Caracteres", "Символы", "Zeichen", "字符", "文字数"),
@@ -695,7 +710,7 @@ internal fun Text(
     MaterialText(
         text = AppLocalizer.text(text, language),
         modifier = modifier,
-        color = color,
+        color = if (color == Color.Unspecified && style in listOf(androidx.compose.material3.MaterialTheme.typography.bodySmall, androidx.compose.material3.MaterialTheme.typography.labelSmall)) androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant else color,
         fontWeight = fontWeight,
         maxLines = maxLines,
         overflow = overflow,

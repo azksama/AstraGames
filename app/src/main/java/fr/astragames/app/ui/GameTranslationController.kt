@@ -44,7 +44,11 @@ internal class GameTranslationController(
         val result = manager.translate(game, source, target, wifiOnly) { progress ->
             mutableState.update { it.copy(progress = progress) }
         }
-        mutableState.update { it.copy(analysis = result, message = if (result.installed) "Traduction appliquée" else "Aucun texte modifié") }
+        mutableState.update { it.copy(analysis = result, message = when {
+            !result.installed -> "Aucun texte modifié"
+            result.preservedFragments > 0 -> "Traduction partielle appliquée"
+            else -> "Traduction appliquée"
+        }) }
     }
 
     fun restore(game: GameEntity) = run(game, "Restauration des originaux") {

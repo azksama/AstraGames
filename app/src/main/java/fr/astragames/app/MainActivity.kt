@@ -10,6 +10,7 @@ import android.os.Build
 import androidx.fragment.app.FragmentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.SystemBarStyle
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.activity.viewModels
 import androidx.biometric.BiometricManager
@@ -62,7 +63,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
         lifecycleScope.launch {
             repeatOnLifecycle(Lifecycle.State.STARTED) {
@@ -107,7 +108,7 @@ class MainActivity : FragmentActivity() {
         }
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
-            AstraTheme(state.settings.themeMode, state.settings.dynamicColor) {
+            AstraTheme {
                 AstraApp(
                     state = state,
                     viewModel = viewModel,

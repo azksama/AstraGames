@@ -10,7 +10,6 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import fr.astragames.app.AstraApplication
-import fr.astragames.app.core.model.ThemeMode
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.settings.AppLanguage
 import fr.astragames.app.translation.GameTranslationManager
@@ -20,6 +19,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CompletableDeferred
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Rule
@@ -63,7 +63,7 @@ class GameTranslationUiTest {
         AppLocalizer.language = AppLanguage.FRENCH
         compose.setContent {
             CompositionLocalProvider(LocalAppLanguage provides AppLanguage.FRENCH) {
-                AstraTheme(ThemeMode.LIGHT, dynamicColor = false) { GameTranslationScreen(game, controller) {} }
+                AstraTheme { GameTranslationScreen(game, controller) {} }
             }
         }
         compose.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.analysis != null }
@@ -82,5 +82,43 @@ class GameTranslationUiTest {
         compose.waitUntil(10_000) { controller.state.value.message == "Originaux restaurés" && !controller.state.value.busy }
         assertArrayEquals(original, file.readBytes())
         compose.onNodeWithText("Traduire avec Google").assertIsEnabled()
+    }
+
+    @Test fun remainingTimeAndPartialTranslationReportAreShown() {
+        val data = File(directory, "timing/data").apply { mkdirs() }
+        val original = """{"displayName":"Village","events":[null,{"pages":[{"list":[{"code":401,"parameters":["First line."]},{"code":401,"parameters":["Second line."]},{"code":401,"parameters":["Third line."]}]}]}]}""".toByteArray()
+        val file = File(data, "Map001.json").apply { writeBytes(original) }
+        val game = GameEntity(id = "translation-timing", title = "Translation timing", documentUri = Uri.fromFile(data.parentFile).toString(), physicalPath = null, executableName = "Game.exe", engine = "RPG_MAKER_MV", launcher = "JOIPLAY", sourceId = "test", dateAdded = 1, lastModified = 1, fingerprint = "test")
+        val context = object : ContextWrapper(app) { override fun getNoBackupFilesDir() = File(directory, "private").apply { mkdirs() } }
+        val finish = CompletableDeferred<Unit>()
+        var calls = 0
+        val manager = GameTranslationManager(context) { _, _ -> object : TextTranslator {
+            override suspend fun prepare(wifiOnly: Boolean) = Unit
+            override suspend fun translate(text: String): String {
+                calls++
+                if (calls == 4) { finish.await(); return "\\V[9]" }
+                kotlinx.coroutines.delay(20)
+                return "Texte traduit."
+            }
+            override fun close() = Unit
+        } }
+        val controller = GameTranslationController(app, scope, manager)
+        AppLocalizer.language = AppLanguage.FRENCH
+        compose.setContent { CompositionLocalProvider(LocalAppLanguage provides AppLanguage.FRENCH) { AstraTheme {
+            GameTranslationScreen(game, controller) {}
+        } } }
+        compose.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.analysis != null }
+        compose.onNodeWithText("Traduire avec Google").performClick()
+        compose.onAllNodesWithText("Traduire avec Google").onLast().performClick()
+        compose.waitUntil(10_000) { controller.state.value.progress?.remainingSeconds != null }
+        compose.onNodeWithText("Temps restant estimé").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("< 1 min").assertIsDisplayed()
+        finish.complete(Unit)
+        compose.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.analysis?.installed == true }
+        compose.onNodeWithText("Traduction partielle appliquée").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Passages conservés dans la langue d’origine").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Restaurer les originaux").performClick()
+        compose.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.message == "Originaux restaurés" }
+        assertArrayEquals(original, file.readBytes())
     }
 }

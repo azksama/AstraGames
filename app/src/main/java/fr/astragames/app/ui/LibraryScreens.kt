@@ -376,7 +376,7 @@ internal fun GameCover(game: GameEntity, modifier: Modifier = Modifier) {
     val coverBlur = LocalCoverBlurState.current
     Surface(modifier, RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceVariant) {
         Box(
-            Modifier.fillMaxSize().background(Brush.verticalGradient(listOf(MaterialTheme.colorScheme.primaryContainer, MaterialTheme.colorScheme.surfaceVariant))),
+            Modifier.fillMaxSize(),
             contentAlignment = Alignment.Center
         ) {
             Icon(Icons.Default.SportsEsports, null, Modifier.size(36.dp), tint = MaterialTheme.colorScheme.primary)

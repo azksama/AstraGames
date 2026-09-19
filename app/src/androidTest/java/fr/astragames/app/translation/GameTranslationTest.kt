@@ -123,4 +123,36 @@ class GameTranslationTest {
         File(ApplicationProvider.getApplicationContext<Context>().filesDir, "translation-live-result.json").writeText(report.toString(2))
         android.util.Log.i("AstraTranslationTest", "firstMs=$elapsed cachedMs=$cacheElapsed")
     }
+
+    @Test fun incompatibleFinalFragmentDoesNotBlockApplicationAndCachedRetry() = runBlocking {
+        val dir = File(root, "partial/data").apply { mkdirs() }
+        val file = File(dir, "Map001.json").apply { writeBytes(original) }
+        val game = game(Uri.fromFile(dir.parentFile).toString())
+        var calls = 0
+        val manager = GameTranslationManager(context) { _, _ -> object : TextTranslator {
+            override suspend fun prepare(wifiOnly: Boolean) = Unit
+            override suspend fun translate(text: String): String {
+                calls++
+                return when (text) {
+                    "Village" -> "Bourg"
+                    "Hello, traveler!" -> "Bonjour,\nvoyageur !"
+                    else -> "\\V[9]"
+                }
+            }
+            override fun close() = Unit
+        } }
+        val result = manager.translate(game, "en", "fr", false) {}
+        assertTrue(result.installed)
+        assertEquals(1, result.preservedFragments)
+        assertEquals(1, manager.analyze(game).preservedFragments)
+        assertTrue(file.readText().contains("Bonjour, voyageur !"))
+        assertTrue(file.readText().contains("Open the treasure chest."))
+        assertFalse(file.readText().contains("V[9]"))
+        assertTrue(manager.isLaunchSafe(game))
+        manager.restore(game)
+        assertArrayEquals(original, file.readBytes())
+        calls = 0
+        assertEquals(1, manager.translate(game, "en", "fr", false) {}.preservedFragments)
+        assertEquals(1, calls)
+    }
 }

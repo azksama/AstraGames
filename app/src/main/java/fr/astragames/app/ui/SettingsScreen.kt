@@ -160,11 +160,6 @@ internal fun SettingsScreen(
                     Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
-            item { SettingsSwitch("Couleurs dynamiques", state.settings.dynamicColor, vm::setDynamicColor) }
-
-            item { LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(ThemeMode.entries) { mode -> FilterChip(state.settings.themeMode == mode, { vm.setTheme(mode) }, { Text(mode.label()) }) }
-            } }
             }
             item { SettingsSectionHeader("JoiPlay", joiplayExpanded) { joiplayExpanded = !joiplayExpanded } }
             if (joiplayExpanded) {

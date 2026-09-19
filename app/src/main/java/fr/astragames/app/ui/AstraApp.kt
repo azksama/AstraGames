@@ -6,7 +6,13 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsHoveredAsState
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -32,6 +38,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.unit.sp
+import fr.astragames.app.R
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
@@ -51,13 +60,14 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
 
 internal enum class Destination(val route: String, val description: String, val visibleInMenu: Boolean = true) {
-    LIBRARY("library", "Bibliothèque"), SEARCH("search", "Recherche", false),
-    COLLECTIONS("collections", "Collections"), UPDATES("updates", "Mises à jour"), HISTORY("history", "Historique"), TAGS("tags", "Tags", false), SETTINGS("settings", "Paramètres")
+    HOME("home", "Accueil"), LIBRARY("library", "Jeux"), SEARCH("search", "Recherche", false),
+    COLLECTIONS("collections", "Collections"), UPDATES("updates", "Mises à jour", false), HISTORY("history", "Historique", false), TAGS("tags", "Tags", false), SETTINGS("settings", "Paramètres")
 }
 
 internal val menuDestinations = Destination.entries.filter { it.visibleInMenu }
 internal val topLevelRoutes = Destination.entries.map { it.route }.toSet()
-internal val PageBottomPadding = 32.dp
+internal val LocalPageBottomPadding = staticCompositionLocalOf { 32.dp }
+internal val PageBottomPadding: androidx.compose.ui.unit.Dp @Composable get() = LocalPageBottomPadding.current
 internal const val PageTransitionDurationMillis = 150
 internal const val SEARCH_WEBVIEW_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/127.0 Mobile Safari/537.36"
 
@@ -74,7 +84,6 @@ fun AstraApp(
 ) {
     val snackbar = remember { SnackbarHostState() }
     val scanReports by viewModel.scanReports.collectAsStateWithLifecycle()
-    val updateBadgeCount by viewModel.updateBadgeCount.collectAsStateWithLifecycle()
     AppLocalizer.language = state.settings.language
     LaunchedEffect(viewModel) {
         viewModel.events.collectLatest { if (it is UiEvent.Message) snackbar.showSnackbar(AppLocalizer.text(it.text)) }
@@ -124,17 +133,19 @@ fun AstraApp(
                         ) { padding ->
                             if (topLevel && wide) {
                                 Row(Modifier.padding(padding).fillMaxSize()) {
-                                    CompactNavigationRail(route, navController, updateBadgeCount)
+                                    CompactNavigationRail(route, navController)
                                     Box(Modifier.weight(1f).navigationBarsPadding().then(if (route in menuDestinations.map { it.route }) Modifier.pullDownSearch(route, navController).topLevelSwipe(route, navController) else Modifier)) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
                                 }
                             } else Box(Modifier.padding(padding).fillMaxSize()) {
                                 Box(
                                     Modifier.fillMaxSize()
-                                        .then(if (topLevel && !imeVisible) Modifier.navigationBarsPadding().padding(bottom = 84.dp) else Modifier)
+                                        .then(if (topLevel && !imeVisible) Modifier.navigationBarsPadding() else Modifier)
                                         .then(if (route in menuDestinations.map { it.route }) Modifier.pullDownSearch(route, navController).topLevelSwipe(route, navController) else Modifier)
-                                ) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
+                                ) { CompositionLocalProvider(LocalPageBottomPadding provides if (topLevel && !imeVisible) 104.dp else 32.dp) {
+                                    AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
+                                } }
                                 if (topLevel && !imeVisible) {
-                                    CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter), updateBadgeCount)
+                                    CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter))
 
                                 }
                             }
@@ -164,18 +175,18 @@ internal fun LanguageTransition(language: AppLanguage, content: @Composable (App
 }
 
 @Composable
-internal fun CompactBottomNavigation(route: String, nav: NavHostController, modifier: Modifier = Modifier, badgeCount: Int = 0) {
+internal fun CompactBottomNavigation(route: String, nav: NavHostController, modifier: Modifier = Modifier) {
     Surface(
-        modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp),
+        modifier.navigationBarsPadding().padding(horizontal = 12.dp, vertical = 8.dp).widthIn(max = 560.dp).fillMaxWidth(),
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
-        tonalElevation = 4.dp,
-        shadowElevation = 8.dp
+        tonalElevation = 0.dp,
+        shadowElevation = 0.dp
     ) {
         Row(
             Modifier.height(68.dp).padding(horizontal = 8.dp).selectableGroup(),
             horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically
-        ) { menuDestinations.forEach { NavIcon(it, route == it.route || (route.isBlank() && it == Destination.LIBRARY), { navigate(nav, it.route) }, badge = if (it == Destination.UPDATES) badgeCount else 0) } }
+        ) { menuDestinations.forEach { NavIcon(it, route == it.route || (route.isBlank() && it == Destination.HOME), { navigate(nav, it.route) }) } }
     }
 }
 
@@ -244,7 +255,7 @@ internal fun Modifier.topLevelSwipe(route: String, nav: NavHostController): Modi
 }
 
 @Composable
-internal fun CompactNavigationRail(route: String, nav: NavHostController, badgeCount: Int = 0) {
+internal fun CompactNavigationRail(route: String, nav: NavHostController) {
     Surface(
         Modifier.width(72.dp).fillMaxHeight().padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
         RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 4.dp
@@ -253,17 +264,22 @@ internal fun CompactNavigationRail(route: String, nav: NavHostController, badgeC
             Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding().verticalScroll(rememberScrollState()).selectableGroup(),
             verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            menuDestinations.forEach { NavIcon(it, route == it.route, { navigate(nav, it.route) }, badge = if (it == Destination.UPDATES) badgeCount else 0); Spacer(Modifier.height(8.dp)) }
+            menuDestinations.forEach { NavIcon(it, route == it.route, { navigate(nav, it.route) }); Spacer(Modifier.height(8.dp)) }
         }
     }
 }
 
 @Composable
 internal fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> Unit, badge: Int = 0) {
+    val interactions = remember { MutableInteractionSource() }
+    val hovered by interactions.collectIsHoveredAsState()
+    val focused by interactions.collectIsFocusedAsState()
+    val pressed by interactions.collectIsPressedAsState()
     Box(
         Modifier.size(56.dp).clip(CircleShape)
-            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
-            .selectable(selected = selected, role = Role.Tab, onClick = onClick),
+            .background(if (selected || hovered || focused || pressed) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+            .hoverable(interactions)
+            .selectable(selected = selected, interactionSource = interactions, indication = null, role = Role.Tab, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Icon(
@@ -282,11 +298,12 @@ internal fun NavIcon(destination: Destination, selected: Boolean, onClick: () ->
 }
 
 internal fun navigate(nav: NavHostController, route: String) = nav.navigate(route) {
-    popUpTo(Destination.LIBRARY.route) { saveState = false }; launchSingleTop = true; restoreState = false
+    popUpTo(Destination.HOME.route) { saveState = false }; launchSingleTop = true; restoreState = false
 }
 
 internal fun Destination.icon() = when (this) {
-    Destination.LIBRARY -> Icons.Default.Home
+    Destination.HOME -> Icons.Default.Home
+    Destination.LIBRARY -> Icons.Default.SportsEsports
     Destination.SEARCH -> Icons.Default.Search
     Destination.COLLECTIONS -> Icons.Default.CollectionsBookmark
     Destination.UPDATES -> Icons.Default.Update
@@ -303,12 +320,16 @@ internal fun AppNavHost(
 ) {
     NavHost(
         navController = nav,
-        startDestination = Destination.LIBRARY.route,
+        startDestination = Destination.HOME.route,
         enterTransition = { fadeIn(tween(PageTransitionDurationMillis)) },
         exitTransition = { fadeOut(tween(PageTransitionDurationMillis)) },
         popEnterTransition = { fadeIn(tween(PageTransitionDurationMillis)) },
         popExitTransition = { fadeOut(tween(PageTransitionDurationMillis)) }
     ) {
+        composable(Destination.HOME.route) {
+            HomeScreen(state, onGame = { nav.navigate("game/$it") }, onResume = vm::launchGame,
+                onAllGames = { vm.clearFilters(); navigate(nav, Destination.LIBRARY.route) }, onPickSource = onPickSource)
+        }
         composable(Destination.LIBRARY.route) { LibraryScreen(state, vm, { nav.navigate("game/$it") }, onPickSource) }
         composable(Destination.SEARCH.route) { SearchScreen(state, vm, { nav.navigate("game/$it") }, nav::popBackStack) }
         composable(Destination.COLLECTIONS.route) { CollectionsScreen(state, vm) { nav.navigate("game/$it") } }
@@ -337,9 +358,13 @@ internal fun CompactHeader(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, AppLocalizer.text("Retour")) }
+        if (title == "Astra") {
+            Image(painterResource(R.mipmap.astra_icon), null, Modifier.padding(end = 10.dp).size(44.dp).clip(RoundedCornerShape(12.dp)))
+        }
         Column(Modifier.weight(1f)) {
             Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (title == "Astra") androidx.compose.material3.Text("GAMES", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 3.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         actions()
     }

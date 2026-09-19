@@ -13,8 +13,8 @@ import org.json.JSONObject
 import java.io.File
 import android.util.AtomicFile
 
-internal data class TranslationAnalysis(val files: Int, val texts: Int, val characters: Int, val installed: Boolean)
-internal data class TranslationProgress(val phase: String, val completed: Int = 0, val total: Int = 0)
+internal data class TranslationAnalysis(val files: Int, val texts: Int, val characters: Int, val installed: Boolean, val preservedFragments: Int = 0)
+internal data class TranslationProgress(val phase: String, val completed: Int = 0, val total: Int = 0, val remainingSeconds: Long? = null)
 
 internal class GameTranslationManager(
     private val context: Context,
@@ -43,7 +43,7 @@ internal class GameTranslationManager(
         val dir = dataDir(game)
         val files = SafTranslationFiles(context, dir)
         val installed = TranslationPatch(files).exists()
-        if (installed) return@withContext TranslationAnalysis(0, 0, 0, true)
+        if (installed) return@withContext TranslationAnalysis(0, 0, 0, true, TranslationPatch(files).preservedFragments())
         val documents = load(dir, files)
         val texts = documents.flatMap { it.texts }.distinct()
         TranslationAnalysis(documents.size, texts.size, texts.sumOf { it.length }, false)
@@ -64,21 +64,29 @@ internal class GameTranslationManager(
         val originalTexts = documents.flatMap { it.texts }.distinct()
         val fragments = originalTexts.flatMap(ProtectedText::fragments).distinct()
         require(fragments.isNotEmpty()) { "Aucun texte à traduire." }
-        require(fragments.none { it.length > 4000 }) { "Un texte dépasse 4 000 caractères. Ce jeu nécessite un adaptateur spécifique." }
         val cache = TranslationCache(File(context.noBackupFilesDir, "translation-cache/v1/$source-$target"))
         val translated = mutableMapOf<String, String>()
         val pending = mutableListOf<String>()
+        var preserved = 0
         fragments.forEach { text -> cache.read(text)?.let { translated[text] = it } ?: run { pending += text } }
         if (pending.isNotEmpty()) createTranslator(source, target).use { translator ->
             progress(TranslationProgress("Téléchargement des langues", translated.size, fragments.size))
             translator.prepare(wifiOnly)
+            val timing = TranslationTiming(android.os.SystemClock.elapsedRealtime(), pending.sumOf { it.length.toLong() })
+            progress(TranslationProgress("Traduction locale", translated.size, fragments.size))
             pending.forEach { text ->
                 currentCoroutineContext().ensureActive()
-                progress(TranslationProgress("Traduction locale", translated.size, fragments.size))
-                val value = translator.translate(text).trim()
-                require(value.isNotBlank() && ProtectedText.controls(value).isEmpty()) { "Le modèle a produit un texte incompatible. Les fichiers du jeu sont conservés." }
-                cache.write(text, value)
-                translated[text] = value
+                val value = if (text.length <= 4000) TranslationOutput.validated(translator.translate(text)) else null
+                if (value == null) {
+                    // Keep this fragment verbatim; never cache a failed translation as a success.
+                    preserved++
+                    translated[text] = text
+                } else {
+                    cache.write(text, value)
+                    translated[text] = value
+                }
+                val remaining = timing.completed(text.length, android.os.SystemClock.elapsedRealtime())
+                progress(TranslationProgress("Traduction locale", translated.size, fragments.size, remaining))
             }
         }
         currentCoroutineContext().ensureActive()
@@ -96,9 +104,9 @@ internal class GameTranslationManager(
         if (changes.isNotEmpty()) {
             progress(TranslationProgress("Sauvegarde et application", fragments.size, fragments.size))
             // No suspension during the journaled write sequence; failures roll back synchronously.
-            patch.apply(changes, source, target)
+            patch.apply(changes, source, target, preserved)
         }
-        TranslationAnalysis(documents.size, originalTexts.size, originalTexts.sumOf { it.length }, changes.isNotEmpty())
+        TranslationAnalysis(documents.size, originalTexts.size, originalTexts.sumOf { it.length }, changes.isNotEmpty(), preserved)
     }
 
     suspend fun restore(game: GameEntity) = withContext(Dispatchers.IO) {
