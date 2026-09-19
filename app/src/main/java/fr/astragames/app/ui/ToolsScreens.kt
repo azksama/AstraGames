@@ -107,7 +107,7 @@ internal fun LockScreen(state: AstraUiState, vm: AstraViewModel) {
 }
 
 @Composable
-internal fun HistoryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit) {
+internal fun HistoryScreen(state: AstraUiState, vm: AstraViewModel, onBack: (() -> Unit)? = null, onGame: (String) -> Unit) {
     val sessions by remember(vm) { vm.playHistory() }.collectAsStateWithLifecycle(emptyList())
     var confirmClear by remember { mutableStateOf(false) }
     val games = remember(state.games) { state.games.associateBy { it.id } }
@@ -117,12 +117,9 @@ internal fun HistoryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
         val dateFormat = DateFormat.getDateInstance(DateFormat.FULL, locale)
         sessions.groupBy { dateFormat.format(Date(it.startedAt)) }
     }
-    Scaffold(topBar = {
-        Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp)) {
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Text("Historique", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f).padding(start = 8.dp))
-                TextButton(onClick = { confirmClear = true }, enabled = sessions.isNotEmpty()) { Text("Effacer") }
-            }
+    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
+        CompactHeader("Historique", onBack = onBack) {
+            TextButton(onClick = { confirmClear = true }, enabled = sessions.isNotEmpty()) { Text("Effacer") }
         }
     }) { padding ->
         if (sessions.isEmpty()) {

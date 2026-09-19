@@ -43,6 +43,8 @@ internal fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
                 onValueChange = vm::updateQuery,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).focusRequester(focusRequester),
                 singleLine = true,
+                shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
+                colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer, focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
                 leadingIcon = { Icon(Icons.Default.Search, null) },
                 trailingIcon = {
                     if (state.filters.query.isNotEmpty()) IconButton(onClick = { vm.updateQuery("") }) {

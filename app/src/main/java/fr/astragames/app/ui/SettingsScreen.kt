@@ -65,18 +65,39 @@ internal fun SettingsScreen(
     var showDuplicates by remember { mutableStateOf(false) }
     var showDeleted by remember { mutableStateOf(false) }
     var showAudit by remember { mutableStateOf(false) }
-    var sourcesExpanded by rememberSaveable { mutableStateOf(state.sources.isEmpty()) }
-    var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
-    var joiplayExpanded by rememberSaveable { mutableStateOf(false) }
-    var organizationExpanded by rememberSaveable { mutableStateOf(false) }
-    var backupExpanded by rememberSaveable { mutableStateOf(false) }
-    var securityExpanded by rememberSaveable { mutableStateOf(false) }
+    var sourcesExpanded by rememberSaveable { mutableStateOf(true) }
+    var appearanceExpanded by rememberSaveable { mutableStateOf(true) }
+    var joiplayExpanded by rememberSaveable { mutableStateOf(true) }
+    var organizationExpanded by rememberSaveable { mutableStateOf(true) }
+    var backupExpanded by rememberSaveable { mutableStateOf(true) }
+    var securityExpanded by rememberSaveable { mutableStateOf(true) }
     var showPinSetup by remember { mutableStateOf(false) }
     var intervalMenu by remember { mutableStateOf(false) }
     var showRuntimes by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
-    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Paramètres") }) { padding ->
-        LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(bottom = PageBottomPadding)) {
+    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Astra") }) { padding ->
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { LazyColumn(Modifier.padding(padding).widthIn(max = 760.dp).fillMaxWidth(), contentPadding = PaddingValues(bottom = PageBottomPadding)) {
+            item { Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                PageHeading("Paramètres")
+                LibrarySummary(state)
+            } }
+            item { SettingsSectionHeader("Apparence", appearanceExpanded) { appearanceExpanded = !appearanceExpanded } }
+            if (appearanceExpanded) {
+            item {
+                LanguageSelector(
+                    state.settings.language,
+                    vm::setLanguage,
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+            item {
+                CoverBlurSelector(
+                    state.settings.coverBlurMode,
+                    vm::setCoverBlurMode,
+                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
+                )
+            }
+            }
             item { SettingsSectionHeader("Sources et scan", sourcesExpanded) { sourcesExpanded = !sourcesExpanded } }
             if (sourcesExpanded) {
             items(state.sources, key = { it.id }) { source ->
@@ -141,23 +162,6 @@ internal fun SettingsScreen(
                     headlineContent = { Text("Rechercher dans le navigateur") },
                     supportingContent = { Text("Les recherches du moteur sélectionné s’ouvrent directement dans le navigateur du téléphone.") },
                     trailingContent = { Switch(state.settings.openSearchInExternalBrowser, onCheckedChange = null) }
-                )
-            }
-            }
-            item { SettingsSectionHeader("Apparence", appearanceExpanded) { appearanceExpanded = !appearanceExpanded } }
-            if (appearanceExpanded) {
-            item {
-                LanguageSelector(
-                    state.settings.language,
-                    vm::setLanguage,
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
-                )
-            }
-            item {
-                CoverBlurSelector(
-                    state.settings.coverBlurMode,
-                    vm::setCoverBlurMode,
-                    Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)
                 )
             }
             }
@@ -245,6 +249,7 @@ internal fun SettingsScreen(
             }
         }
     }
+    }
     sourceToDelete?.let { source -> ConfirmDialog(
         "Retirer la source « ${source.displayName} » ?",
         "Les jeux de cette source seront retirés de la bibliothèque Astra. Aucun fichier ne sera supprimé du téléphone.",
@@ -259,7 +264,7 @@ internal fun SettingsScreen(
         "Restaurer une sauvegarde ?",
         "Le catalogue actuel sera remplacé par la sauvegarde sélectionnée. Les fichiers des jeux ne seront pas modifiés.",
         { confirmRestore = false; onRestoreBackup() },
-        { confirmRestore = false }
+        { confirmRestore = false }, confirmLabel = "Restaurer"
     )
     if (showPinSetup) PinSetupDialog({ vm.setPinLock(it); showPinSetup = false }, { showPinSetup = false })
 }

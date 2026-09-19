@@ -31,13 +31,13 @@ internal fun SettingsSectionHeader(title: String, expanded: Boolean, onToggle: (
     Surface(
         Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onToggle),
         shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surfaceContainerLow
+        color = Color.Transparent
     ) {
         Row(
             Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface)
+            Text(title, Modifier.weight(1f), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
         }
     }
@@ -61,13 +61,13 @@ internal fun RoundedListItem(
     trailingContent: (@Composable () -> Unit)? = null
 ) {
     ListItem(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 5.dp)
+        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 0.dp)
             .clip(RoundedCornerShape(18.dp)).then(modifier),
         headlineContent = headlineContent,
         supportingContent = supportingContent,
         leadingContent = leadingContent,
         trailingContent = trailingContent,
-        colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
+        colors = ListItemDefaults.colors(containerColor = Color.Transparent)
     )
 }
 
@@ -114,7 +114,12 @@ internal fun InfoLine(label: String, value: String) { Text(label, style = Materi
 internal fun Set<String>.toggle(id: String): Set<String> = toMutableSet().apply { if (!add(id)) remove(id) }
 internal fun String.normalizeTagName(): String = Normalizer.normalize(trim(), Normalizer.Form.NFD)
     .replace(Regex("\\p{Mn}+"), "").lowercase(java.util.Locale.ROOT)
-internal fun String.readableEngine() = lowercase(java.util.Locale.ROOT).replace('_', ' ').split(' ').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
+internal fun String.readableEngine(): String = when {
+    startsWith("RPG_MAKER_") -> "RPG Maker " + removePrefix("RPG_MAKER_").replace("VX_ACE", "VX Ace")
+    this == "REN_PY" || this == "RENPY" -> "Ren’Py"
+    this == "HTML" || this == "HTML5" -> this
+    else -> lowercase(java.util.Locale.ROOT).replace('_', ' ').split(' ').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
+}
 internal fun Long.asDateTime(): String = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(this))
 
 internal fun Long?.asDuration(): String {

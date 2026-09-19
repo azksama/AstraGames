@@ -27,13 +27,13 @@ import androidx.navigation.compose.*
 import fr.astragames.app.core.model.*
 
 @Composable
-internal fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit) {
+internal fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel, onBack: (() -> Unit)? = null, onGame: (String) -> Unit) {
     val updates by vm.gameUpdates.collectAsStateWithLifecycle()
     val checking by vm.updatesChecking.collectAsStateWithLifecycle()
     val uriHandler = LocalUriHandler.current
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
-        topBar = { CompactHeader("Mises à jour") {
+        topBar = { CompactHeader("Mises à jour", onBack = onBack) {
             IconButton(onClick = { vm.checkGameUpdates() }, enabled = !checking) {
                 Icon(Icons.Default.Refresh, AppLocalizer.text("Vérifier les mises à jour"))
             }

@@ -44,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.ListItem
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Tab
 import androidx.compose.material3.PrimaryTabRow
@@ -86,7 +87,7 @@ internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () 
     var showMods by rememberSaveable(game.id) { mutableStateOf(false) }
     var editing by remember(game.id) { mutableStateOf<GameSave?>(null) }
     val sections = remember(game) { GameToolsRegistry.sectionsFor(game) }
-    if (!showSaves && !showBackups && !showMods && !showTranslation && editing == null) ModalBottomSheet(onDismissRequest = onDismiss) {
+    if (!showSaves && !showBackups && !showMods && !showTranslation && editing == null) ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
         Text("Outils", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.titleLarge)

@@ -45,7 +45,7 @@ import fr.astragames.app.core.model.*
 import fr.astragames.app.data.local.GameEntity
 
 @Composable
-internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit, onPickSource: () -> Unit) {
+internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit, onPickSource: () -> Unit, onSearch: () -> Unit = {}) {
     var columnsMenu by remember { mutableStateOf(false) }
     var selectionMenu by remember { mutableStateOf(false) }
     var selectedGames by remember { mutableStateOf(emptySet<String>()) }
@@ -61,7 +61,7 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
     Scaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
-            CompactHeader(if (selectedGames.isEmpty()) "Astra" else "${selectedGames.size} sélectionné(s)", if (selectedGames.isEmpty()) "${state.filteredGames.size} jeux" else null) {
+            CompactHeader(if (selectedGames.isEmpty()) "Astra" else "${selectedGames.size} sélectionné(s)", null) {
                 if (selectedGames.isNotEmpty()) {
                     Box {
                         IconButton(onClick = { selectionMenu = true }) { Icon(Icons.Default.MoreVert, AppLocalizer.text("Actions rapides")) }
@@ -102,6 +102,10 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
+            Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                if (with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toDp() } >= 480.dp) PageHeading("Tous les jeux", "${state.filteredGames.size} jeux")
+                SearchEntry(onSearch)
+            }
             FilterStrip(state, vm)
             when {
                 state.scanning && state.games.isEmpty() -> CenterMessage("Exploration de tous les sous-dossiers…", Modifier.fillMaxSize(), loading = true)
@@ -146,7 +150,8 @@ internal fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
         listOfNotNull(sourceId, folderId, collectionId, systemFolderId, query.takeIf { it.isNotBlank() }, engine, (tagIds + excludedTagIds).takeIf { it.isNotEmpty() }, missingOnly.takeIf { it }, sort.takeIf { it != LibrarySort.TITLE }).size
     }
     val hasActiveFilters = activeCount > 0 || state.filters.favoritesOnly
-    LazyRow(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+    LazyRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 4.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        item { FilterChip(!hasActiveFilters, vm::clearFilters, { Text("Tous") }) }
         item { FilterChip(state.filters.favoritesOnly, vm::toggleFavoriteFilter, { Text("Favoris") }, leadingIcon = { Icon(Icons.Default.Star, null) }) }
         item {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -307,7 +312,7 @@ internal fun GameCollection(
         BoxWithConstraints {
             val gridCells = if (maxWidth >= 600.dp) GridCells.Adaptive(180.dp) else GridCells.Fixed(columns.coerceIn(2, 4))
             LazyVerticalGrid(
-                gridCells, contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = PageBottomPadding),
+                gridCells, contentPadding = PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = PageBottomPadding),
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
             ) { items(games, key = { it.id }) { GameGridCard(it, onGame, onFavorite, it.id in selected, onLongGame, onQuickGame) } }
         }
@@ -315,9 +320,9 @@ internal fun GameCollection(
         items(games, key = { it.id }) { game ->
             ListItem(
                 modifier = Modifier.semantics { this.selected = game.id in selected }.combinedClickable(onClick = { onGame(game.id) }, onLongClick = onLongGame?.let { { it(game.id) } }),
-                headlineContent = { MaterialText(game.title, maxLines = 2, overflow = TextOverflow.Ellipsis) },
-                supportingContent = { MaterialText(game.engine.readableEngine() + if (game.missing) " • ${AppLocalizer.text("Manquant", LocalAppLanguage.current)}" else "") },
-                leadingContent = { if (game.id in selected) Checkbox(true, { onLongGame?.invoke(game.id) }) else GameCover(game, Modifier.width(52.dp).aspectRatio(.72f)) },
+                headlineContent = { MaterialText(game.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) },
+                supportingContent = { MaterialText(game.engine.readableEngine() + if (game.missing) " • ${AppLocalizer.text("Manquant", LocalAppLanguage.current)}" else "", style = MaterialTheme.typography.bodySmall) },
+                leadingContent = { if (game.id in selected) Checkbox(true, { onLongGame?.invoke(game.id) }) else GameCover(game, Modifier.width(56.dp).height(68.dp)) },
                 trailingContent = { Row {
                     IconButton(onClick = { onFavorite(game.id) }, Modifier.size(48.dp)) {
                         Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, AppLocalizer.text(if (game.favorite) "Retirer des favoris" else "Ajouter aux favoris"), Modifier.size(20.dp), tint = if (game.favorite) MaterialTheme.colorScheme.primary else LocalContentColor.current)
@@ -326,6 +331,7 @@ internal fun GameCollection(
                 } },
                 colors = ListItemDefaults.colors(containerColor = if (game.id in selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
             )
+            HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
         }
     }
 }

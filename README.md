@@ -15,7 +15,7 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - rapport détaillé et persistant après chaque scan : ajoutés, actualisés, déjà connus, déplacés, manquants, ignorés et erreurs avec chemin et raison ;
 - Room avec index FTS4, historique des scans et sessions de lancement ;
 - bibliothèque en grille réglable sur 2, 3 ou 4 colonnes ou en liste, favoris, sélection multiple et actions rapides ;
-- recherche accessible par glissement vers le bas en haut de liste, avec moteur en liste et multi-tags regroupés par catégorie ;
+- recherche accessible depuis les champs de l’accueil et de Jeux ou par glissement vers le bas en haut de liste, avec moteur en liste et multi-tags regroupés par catégorie ;
 - création, édition, suppression, tri et classement multiple des tags par catégories ;
 - sélection rapide et groupée des tags pour chaque jeu, sans affectation globale implicite ;
 - dossiers et sous-dossiers Astra virtuels navigables, renommables et supprimables sans supprimer les jeux ;
@@ -32,10 +32,13 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
 - ajout textuel de tags par virgules ou crochets pendant la configuration et l’édition, avec réutilisation automatique des tags existants ;
-- palette Astra fixe : fond `#09090f`, cartes et menu `#716b82`, actions `#302147`, textes secondaires `#c9b7ff` et titres blancs ;
-- flou des jaquettes désactivable, automatique au démarrage ou manuel, avec bascule rapide depuis l’accueil ;
+- refonte UI/UX inspirée de `design_astra.pen` : polices Geist/Inter embarquées, affiches panoramiques, listes compactes et réglages en lignes ;
+- palette Astra fixe : fond `#09090f`, cartes et menu `#191e29`, bordures `#2b3242`, actions `#302147`, textes secondaires `#c9b7ff` et titres blancs ;
+- flou des jaquettes désactivable, automatique au démarrage ou manuel, avec bascule rapide depuis Jeux ;
 - navigation flottante élargie à quatre entrées (Accueil, Jeux, Collections, Paramètres), sans bande opaque derrière la pilule ;
 - accueil avec icône Astra/GAMES, dernière partie en affiche panoramique, bouton de reprise et deux jeux précédents ; bibliothèque complète accessible par Jeux ou Tout voir ;
+- accès Historique et Mises à jour dans la section Activité de l’accueil ;
+- navigation latérale sur grand écran, largeur de lecture limitée et commandes accessibles avec texte agrandi ;
 - Baseline Profile embarqué et module de génération Macrobenchmark pour accélérer le démarrage et les parcours principaux ;
 - copie rapide du nom d’une jaquette en touchant son libellé et raccourci vers le dossier de sauvegarde d’un jeu ;
 - verrouillage biométrique et code chiffré, historique des sessions, bouton Outils, éditeur de sauvegardes et gestionnaire de mods ;

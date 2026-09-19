@@ -52,6 +52,12 @@ object AppLocalizer {
     ) = Translation(source, english, spanish, russian, german, chinese, japanese)
 
     private val catalog = listOf(
+        t("Tous les jeux", "All games", "Todos los juegos", "Все игры", "Alle Spiele", "所有游戏", "すべてのゲーム"),
+        t("Rechercher un jeu", "Search games", "Buscar un juego", "Найти игру", "Spiele suchen", "搜索游戏", "ゲームを検索"),
+        t("Activité", "Activity", "Actividad", "Активность", "Aktivität", "动态", "アクティビティ"),
+        t("Reprendre", "Continue playing", "Continuar", "Продолжить", "Weiterspielen", "继续游玩", "プレイを再開"),
+        t("Sources", "Sources", "Fuentes", "Источники", "Quellen", "来源", "ソース"),
+        t("Nom du jeu copié", "Game name copied", "Nombre del juego copiado", "Название игры скопировано", "Spielname kopiert", "已复制游戏名称", "ゲーム名をコピーしました"),
         t("Traduction partielle appliquée", "Partial translation applied", "Traducción parcial aplicada", "Частичный перевод применён", "Teilübersetzung angewendet", "已应用部分翻译", "部分的な翻訳を適用しました"),
         t("Accueil", "Home", "Inicio", "Главная", "Start", "主页", "ホーム"),
         t("Jeux", "Games", "Juegos", "Игры", "Spiele", "游戏", "ゲーム"),

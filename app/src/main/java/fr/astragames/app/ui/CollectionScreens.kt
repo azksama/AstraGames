@@ -61,7 +61,7 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             CompactHeader(
-                selectedSmart?.name ?: selectedCustom?.name ?: current?.name ?: "Collections",
+                selectedSmart?.name ?: selectedCustom?.name ?: current?.name ?: "Astra",
                 subtitle = if (current != null) "${visibleFolders.size} sous-dossier(s)" else null,
                 onBack = when {
                     selectedSmart != null -> ({ smartKey = null })
@@ -76,20 +76,21 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
             Box(Modifier.padding(padding).fillMaxSize()) {
                 GameCollection(displayedGames, state.settings.viewMode, state.settings.gridColumns, onGame, vm::toggleFavorite)
             }
-        } else LazyColumn(Modifier.padding(padding).imePadding(), contentPadding = PaddingValues(start = 12.dp, top = 12.dp, end = 12.dp, bottom = PageBottomPadding)) {
+        } else LazyColumn(Modifier.padding(padding).imePadding(), contentPadding = PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = PageBottomPadding)) {
             if (currentId == null) {
+                item { PageHeading("Collections"); Spacer(Modifier.height(20.dp)) }
                 item { SectionTitle("Collections intelligentes") }
                 item {
                     Box(Modifier.fillMaxWidth()) {
                         val columns = 3
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             smartCollections.chunked(columns).forEach { row ->
-                                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                     row.forEach { smart ->
                                         Card(
                                             modifier = Modifier.weight(1f).fillMaxHeight(),
                                             onClick = { smartKey = smart.key },
-                                            shape = RoundedCornerShape(18.dp),
+                                            shape = RoundedCornerShape(14.dp),
                                             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
                                         ) {
                                             Column(Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {

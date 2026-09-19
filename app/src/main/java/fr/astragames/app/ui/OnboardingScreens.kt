@@ -180,82 +180,13 @@ internal fun OnboardingScreen(
 }
 
 @Composable
-internal fun LanguageSelector(
-    selected: AppLanguage,
-    onSelect: (AppLanguage) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Langue", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Box(Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
-                Text("${selected.flag}  ${selected.nativeName}", Modifier.weight(1f), maxLines = 1)
-                Icon(Icons.Default.ArrowDropDown, null)
-            }
-            DropdownMenu(expanded, { expanded = false }, Modifier.widthIn(min = 200.dp, max = 320.dp)) {
-                AppLanguage.entries.forEach { language ->
-                    DropdownMenuItem(
-                        text = { Text("${language.flag}  ${language.nativeName}") },
-                        leadingIcon = { if (language == selected) Icon(Icons.Default.Check, null) },
-                        onClick = { onSelect(language); expanded = false }
-                    )
-                }
-            }
-        }
-    }
-}
+internal fun LanguageSelector(selected: AppLanguage, onSelect: (AppLanguage) -> Unit, modifier: Modifier = Modifier) =
+    PreferenceChoice("Langue", selected, AppLanguage.entries.map { it to "${it.flag}  ${it.nativeName}" }, onSelect, modifier)
 
 @Composable
-internal fun SearchEngineSelector(
-    selected: SearchEngine,
-    onSelect: (SearchEngine) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Moteur de recherche", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Box(Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
-                Text(selected.displayName, Modifier.weight(1f), maxLines = 1)
-                Icon(Icons.Default.ArrowDropDown, null)
-            }
-            DropdownMenu(expanded, { expanded = false }, Modifier.widthIn(min = 200.dp, max = 320.dp)) {
-                SearchEngine.entries.forEach { engine ->
-                    DropdownMenuItem(
-                        text = { Text(engine.displayName) },
-                        leadingIcon = { if (engine == selected) Icon(Icons.Default.Check, null) },
-                        onClick = { onSelect(engine); expanded = false }
-                    )
-                }
-            }
-        }
-    }
-}
+internal fun SearchEngineSelector(selected: SearchEngine, onSelect: (SearchEngine) -> Unit, modifier: Modifier = Modifier) =
+    PreferenceChoice("Moteur de recherche", selected, SearchEngine.entries.map { it to it.displayName }, onSelect, modifier)
 
 @Composable
-internal fun CoverBlurSelector(
-    selected: CoverBlurMode,
-    onSelect: (CoverBlurMode) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        Text("Flou des jaquettes", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
-        Box(Modifier.fillMaxWidth()) {
-            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
-                Text(selected.label(), Modifier.weight(1f), maxLines = 1)
-                Icon(Icons.Default.ArrowDropDown, null)
-            }
-            DropdownMenu(expanded, { expanded = false }, Modifier.widthIn(min = 220.dp, max = 320.dp)) {
-                CoverBlurMode.entries.forEach { mode ->
-                    DropdownMenuItem(
-                        text = { Text(mode.label()) },
-                        leadingIcon = { if (mode == selected) Icon(Icons.Default.Check, null) },
-                        onClick = { onSelect(mode); expanded = false }
-                    )
-                }
-            }
-        }
-    }
-}
+internal fun CoverBlurSelector(selected: CoverBlurMode, onSelect: (CoverBlurMode) -> Unit, modifier: Modifier = Modifier) =
+    PreferenceChoice("Flou des jaquettes", selected, CoverBlurMode.entries.map { it to it.label() }, onSelect, modifier)

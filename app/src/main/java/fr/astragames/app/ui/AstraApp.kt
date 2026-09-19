@@ -6,6 +6,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.background
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.hoverable
@@ -68,6 +69,8 @@ internal val menuDestinations = Destination.entries.filter { it.visibleInMenu }
 internal val topLevelRoutes = Destination.entries.map { it.route }.toSet()
 internal val LocalPageBottomPadding = staticCompositionLocalOf { 32.dp }
 internal val PageBottomPadding: androidx.compose.ui.unit.Dp @Composable get() = LocalPageBottomPadding.current
+internal val NavigationContentHeight: androidx.compose.ui.unit.Dp
+    @Composable get() = with(LocalDensity.current) { (28.sp.toDp() + 38.dp).coerceAtLeast(68.dp) }
 internal const val PageTransitionDurationMillis = 150
 internal const val SEARCH_WEBVIEW_USER_AGENT = "Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/127.0 Mobile Safari/537.36"
 
@@ -139,9 +142,10 @@ fun AstraApp(
                             } else Box(Modifier.padding(padding).fillMaxSize()) {
                                 Box(
                                     Modifier.fillMaxSize()
+                                        .padding(bottom = if (topLevel && !imeVisible) NavigationContentHeight + 16.dp else 0.dp)
                                         .then(if (topLevel && !imeVisible) Modifier.navigationBarsPadding() else Modifier)
                                         .then(if (route in menuDestinations.map { it.route }) Modifier.pullDownSearch(route, navController).topLevelSwipe(route, navController) else Modifier)
-                                ) { CompositionLocalProvider(LocalPageBottomPadding provides if (topLevel && !imeVisible) 104.dp else 32.dp) {
+                                ) { CompositionLocalProvider(LocalPageBottomPadding provides 24.dp) {
                                     AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
                                 } }
                                 if (topLevel && !imeVisible) {
@@ -181,12 +185,13 @@ internal fun CompactBottomNavigation(route: String, nav: NavHostController, modi
         shape = CircleShape,
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         tonalElevation = 0.dp,
-        shadowElevation = 0.dp
+        shadowElevation = 0.dp,
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Row(
-            Modifier.height(68.dp).padding(horizontal = 8.dp).selectableGroup(),
+            Modifier.heightIn(min = NavigationContentHeight).padding(horizontal = 8.dp).selectableGroup(),
             horizontalArrangement = Arrangement.SpaceEvenly, verticalAlignment = Alignment.CenterVertically
-        ) { menuDestinations.forEach { NavIcon(it, route == it.route || (route.isBlank() && it == Destination.HOME), { navigate(nav, it.route) }) } }
+        ) { menuDestinations.forEach { NavIcon(it, route == it.route || (route.isBlank() && it == Destination.HOME), { navigate(nav, it.route) }, modifier = Modifier.weight(1f)) } }
     }
 }
 
@@ -257,7 +262,7 @@ internal fun Modifier.topLevelSwipe(route: String, nav: NavHostController): Modi
 @Composable
 internal fun CompactNavigationRail(route: String, nav: NavHostController) {
     Surface(
-        Modifier.width(72.dp).fillMaxHeight().padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
+        Modifier.width(104.dp).fillMaxHeight().padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
         RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 4.dp
     ) {
         Column(
@@ -270,23 +275,24 @@ internal fun CompactNavigationRail(route: String, nav: NavHostController) {
 }
 
 @Composable
-internal fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> Unit, badge: Int = 0) {
+internal fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, badge: Int = 0) {
     val interactions = remember { MutableInteractionSource() }
     val hovered by interactions.collectIsHoveredAsState()
     val focused by interactions.collectIsFocusedAsState()
     val pressed by interactions.collectIsPressedAsState()
     Box(
-        Modifier.size(56.dp).clip(CircleShape)
+        modifier.widthIn(min = 48.dp, max = 96.dp).heightIn(min = 56.dp).clip(RoundedCornerShape(26.dp))
             .background(if (selected || hovered || focused || pressed) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
             .hoverable(interactions)
             .selectable(selected = selected, interactionSource = interactions, indication = null, role = Role.Tab, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
-        Icon(
-            destination.icon(), AppLocalizer.text(destination.description),
-            modifier = Modifier.size(if (selected) 27.dp else 23.dp),
-            tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant
-        )
+        Column(Modifier.padding(horizontal = 5.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Icon(destination.icon(), AppLocalizer.text(destination.description), modifier = Modifier.size(21.dp),
+                tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(destination.description, style = MaterialTheme.typography.labelSmall, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center, overflow = TextOverflow.Ellipsis,
+                color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
+        }
         if (badge > 0) {
             Box(
                 Modifier.align(Alignment.TopEnd).offset(x = (-12).dp, y = 10.dp)
@@ -328,13 +334,14 @@ internal fun AppNavHost(
     ) {
         composable(Destination.HOME.route) {
             HomeScreen(state, onGame = { nav.navigate("game/$it") }, onResume = vm::launchGame,
-                onAllGames = { vm.clearFilters(); navigate(nav, Destination.LIBRARY.route) }, onPickSource = onPickSource)
+                onAllGames = { vm.clearFilters(); navigate(nav, Destination.LIBRARY.route) }, onPickSource = onPickSource, onSearch = { nav.navigate(Destination.SEARCH.route) },
+                onHistory = { nav.navigate(Destination.HISTORY.route) }, onUpdates = { nav.navigate(Destination.UPDATES.route) })
         }
-        composable(Destination.LIBRARY.route) { LibraryScreen(state, vm, { nav.navigate("game/$it") }, onPickSource) }
+        composable(Destination.LIBRARY.route) { LibraryScreen(state, vm, { nav.navigate("game/$it") }, onPickSource, { nav.navigate(Destination.SEARCH.route) }) }
         composable(Destination.SEARCH.route) { SearchScreen(state, vm, { nav.navigate("game/$it") }, nav::popBackStack) }
         composable(Destination.COLLECTIONS.route) { CollectionsScreen(state, vm) { nav.navigate("game/$it") } }
-        composable(Destination.UPDATES.route) { GameUpdatesScreen(state, vm) { nav.navigate("game/$it") } }
-        composable(Destination.HISTORY.route) { HistoryScreen(state, vm) { nav.navigate("game/$it") } }
+        composable(Destination.UPDATES.route) { GameUpdatesScreen(state, vm, nav::popBackStack) { nav.navigate("game/$it") } }
+        composable(Destination.HISTORY.route) { HistoryScreen(state, vm, nav::popBackStack) { nav.navigate("game/$it") } }
         composable(Destination.TAGS.route) { TagsScreen(state, vm, onPickTags, nav::popBackStack) }
         composable(Destination.SETTINGS.route) {
             SettingsScreen(state, vm, onPickSource, { nav.navigate(Destination.TAGS.route) }, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
@@ -354,12 +361,12 @@ internal fun CompactHeader(
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     Row(
-        Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 56.dp).padding(horizontal = 10.dp, vertical = 4.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, AppLocalizer.text("Retour")) }
         if (title == "Astra") {
-            Image(painterResource(R.mipmap.astra_icon), null, Modifier.padding(end = 10.dp).size(44.dp).clip(RoundedCornerShape(12.dp)))
+            Image(painterResource(R.mipmap.astra_icon), null, Modifier.padding(end = 10.dp).size(36.dp).clip(RoundedCornerShape(12.dp)))
         }
         Column(Modifier.weight(1f)) {
             Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)

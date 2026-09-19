@@ -67,7 +67,7 @@ class HomeUiTest {
                     val entry by nav.currentBackStackEntryAsState()
                     Surface(Modifier.fillMaxSize()) {
                         Box {
-                            NavHost(navController = nav, startDestination = "home") {
+                            NavHost(navController = nav, startDestination = "home", modifier = Modifier.padding(bottom = 88.dp)) {
                                 composable("home") { HomeScreen(AstraUiState(games = games), opened::add, resumed::add, { navigate(nav, "library") }, {}) }
                                 composable("library") { Text("All games opened") }
                                 composable("collections") { Text("Collections opened") }
@@ -87,15 +87,17 @@ class HomeUiTest {
         compose.onNodeWithContentDescription("Games").assertIsNotSelected()
         compose.onNodeWithContentDescription("Updates").assertDoesNotExist()
         compose.onNodeWithContentDescription("History").assertDoesNotExist()
-        compose.onNodeWithText("Resume game").performClick()
+        compose.onNodeWithText("Resume game").performScrollTo().performClick()
         assertEquals(listOf("first"), resumed)
-        compose.onNodeWithText("Northern Lights").performScrollTo().performClick()
+        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Northern Lights"))
+        compose.onNode(hasScrollToNodeAction()).performTouchInput { swipeUp() }
+        compose.onNodeWithText("Northern Lights").performClick()
         assertEquals(listOf("second"), opened)
         compose.onNodeWithText("The Clockwork Garden").performScrollTo()
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         val output = File(context.cacheDir, "ui-review").apply { mkdirs() }.resolve("home-phone.png")
         output.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
-        compose.onNodeWithText("View all").performClick()
+        compose.onNodeWithText("View all").performScrollTo().performClick()
         compose.onNodeWithText("All games opened").assertIsDisplayed()
         compose.onNodeWithContentDescription("Games").assertIsSelected()
     }

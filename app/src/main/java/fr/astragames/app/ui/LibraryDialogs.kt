@@ -75,9 +75,9 @@ internal fun CategoryChoiceDialog(categories: List<TagCategoryEntity>, onChoice:
 }
 
 @Composable
-internal fun ConfirmDialog(title: String, message: String, onConfirm: () -> Unit, onDismiss: () -> Unit) = AlertDialog(
+internal fun ConfirmDialog(title: String, message: String, onConfirm: () -> Unit, onDismiss: () -> Unit, confirmLabel: String = "Supprimer") = AlertDialog(
     onDismissRequest = onDismiss, title = { Text(title) }, text = { Text(message) },
-    confirmButton = { TextButton(onClick = onConfirm) { Text("Supprimer") } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+    confirmButton = { TextButton(onClick = onConfirm) { Text(confirmLabel) } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
 )
 
 @Composable

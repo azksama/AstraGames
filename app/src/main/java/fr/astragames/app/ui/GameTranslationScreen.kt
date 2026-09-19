@@ -18,6 +18,7 @@ import com.google.mlkit.nl.translate.TranslateLanguage
 import fr.astragames.app.data.local.GameEntity
 import java.util.Locale
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslationController, onDismiss: () -> Unit) {
     val state by controller.state.collectAsStateWithLifecycle()
@@ -64,12 +65,16 @@ internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslation
                         }
                     }
                     state.progress?.let { progress ->
-                        Text(progress.phase, style = MaterialTheme.typography.titleSmall)
-                        if (progress.total > 0 && progress.phase == "Traduction locale") {
-                            LinearProgressIndicator(progress = { progress.completed.toFloat() / progress.total }, modifier = Modifier.fillMaxWidth())
-                            Text("${progress.completed} / ${progress.total}", style = MaterialTheme.typography.labelMedium)
-                            TranslationRemainingTime(progress.remainingSeconds)
-                        } else LinearProgressIndicator(Modifier.fillMaxWidth())
+                        Surface(shape = androidx.compose.foundation.shape.RoundedCornerShape(16.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
+                            Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                Text(progress.phase, style = MaterialTheme.typography.titleSmall)
+                                if (progress.total > 0 && progress.phase == "Traduction locale") {
+                                    LinearProgressIndicator(progress = { progress.completed.toFloat() / progress.total }, modifier = Modifier.fillMaxWidth())
+                                    Text("${progress.completed} / ${progress.total}", style = MaterialTheme.typography.labelMedium)
+                                    TranslationRemainingTime(progress.remainingSeconds)
+                                } else LinearProgressIndicator(Modifier.fillMaxWidth())
+                            }
+                        }
                     }
                     state.message?.let { Text(it, color = MaterialTheme.colorScheme.primary) }
                     state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -79,7 +84,7 @@ internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslation
                     TextButton(onClick = { uriHandler.openUri("https://developers.google.com/ml-kit/language/translation") }) { Text("À propos de Google Translate") }
                     Spacer(Modifier.height(8.dp))
                 }
-                Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.End) {
+                FlowRow(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (state.busy) {
                         TextButton(onClick = controller::cancel, enabled = state.progress?.phase !in setOf("Sauvegarde et application", "Restauration des originaux")) { Text("Arrêter") }
                     } else if (state.analysis?.installed == true) {
@@ -116,21 +121,7 @@ private fun TranslationRemainingTime(seconds: Long?) {
 
 @Composable
 private fun TranslationLanguagePicker(label: String, selected: String, enabled: Boolean, onSelect: (String) -> Unit) {
-    var expanded by remember { mutableStateOf(false) }
     val locale = Locale.forLanguageTag(LocalAppLanguage.current.code)
     val languages = remember(locale) { TranslateLanguage.getAllLanguages().sortedBy { Locale.forLanguageTag(it).getDisplayLanguage(locale) } }
-    Column {
-        Text(label, style = MaterialTheme.typography.labelLarge)
-        Box {
-            OutlinedButton(onClick = { expanded = true }, enabled = enabled, modifier = Modifier.fillMaxWidth()) {
-                androidx.compose.material3.Text(Locale.forLanguageTag(selected).getDisplayLanguage(locale))
-            }
-            DropdownMenu(expanded, { expanded = false }, Modifier.heightIn(max = 320.dp)) {
-                languages.forEach { code -> DropdownMenuItem(
-                    text = { androidx.compose.material3.Text(Locale.forLanguageTag(code).getDisplayLanguage(locale)) },
-                    onClick = { expanded = false; onSelect(code) }
-                ) }
-            }
-        }
-    }
+    PreferenceChoice(label, selected, languages.map { it to Locale.forLanguageTag(it).getDisplayLanguage(locale) }, onSelect, enabled = enabled)
 }
