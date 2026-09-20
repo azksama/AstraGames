@@ -117,7 +117,7 @@ internal fun HistoryScreen(state: AstraUiState, vm: AstraViewModel, onBack: (() 
         val dateFormat = DateFormat.getDateInstance(DateFormat.FULL, locale)
         sessions.groupBy { dateFormat.format(Date(it.startedAt)) }
     }
-    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
+    ScrollingScaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
         CompactHeader("Historique", onBack = onBack) {
             TextButton(onClick = { confirmClear = true }, enabled = sessions.isNotEmpty()) { Text("Effacer") }
         }

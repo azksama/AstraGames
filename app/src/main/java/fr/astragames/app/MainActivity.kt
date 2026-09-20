@@ -108,7 +108,7 @@ class MainActivity : FragmentActivity() {
         }
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
-            AstraTheme {
+            AstraTheme(hue = state.settings.accentHue) {
                 AstraApp(
                     state = state,
                     viewModel = viewModel,

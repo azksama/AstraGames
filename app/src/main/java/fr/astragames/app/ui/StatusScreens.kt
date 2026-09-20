@@ -31,7 +31,7 @@ internal fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel, onBack: 
     val updates by vm.gameUpdates.collectAsStateWithLifecycle()
     val checking by vm.updatesChecking.collectAsStateWithLifecycle()
     val uriHandler = LocalUriHandler.current
-    Scaffold(
+    ScrollingScaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = { CompactHeader("Mises à jour", onBack = onBack) {
             IconButton(onClick = { vm.checkGameUpdates() }, enabled = !checking) {

@@ -35,8 +35,7 @@ internal fun AuditDialog(vm: AstraViewModel, onDismiss: () -> Unit) {
     val events by remember(vm) { vm.auditEvents() }.collectAsStateWithLifecycle(initialValue = emptyList())
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                CompactHeader("Historique des modifications", onBack = onDismiss)
+            ScrollingColumn(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), topBar = { CompactHeader("Historique des modifications", onBack = onDismiss) }) {
                 if (events.isEmpty()) CenterMessage("Aucun événement enregistré", Modifier.fillMaxSize())
                 else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = PageBottomPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(events, key = { it.id }) { event ->
@@ -75,7 +74,7 @@ internal fun SettingsScreen(
     var intervalMenu by remember { mutableStateOf(false) }
     var showRuntimes by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
-    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Astra") }) { padding ->
+    ScrollingScaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Astra") }) { padding ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { LazyColumn(Modifier.padding(padding).widthIn(max = 760.dp).fillMaxWidth(), contentPadding = PaddingValues(bottom = PageBottomPadding)) {
             item { Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
                 PageHeading("Paramètres")
@@ -83,6 +82,7 @@ internal fun SettingsScreen(
             } }
             item { SettingsSectionHeader("Apparence", appearanceExpanded) { appearanceExpanded = !appearanceExpanded } }
             if (appearanceExpanded) {
+            item { HuePreference(state.settings.accentHue, vm::setAccentHue) }
             item {
                 LanguageSelector(
                     state.settings.language,

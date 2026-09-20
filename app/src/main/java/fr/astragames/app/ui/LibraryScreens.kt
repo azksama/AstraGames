@@ -58,9 +58,10 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
     LaunchedEffect(state.games) {
         selectedGames = selectedGames.intersect(state.games.mapTo(mutableSetOf()) { it.id })
     }
-    Scaffold(
+    ScrollingScaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
+            Column {
             CompactHeader(if (selectedGames.isEmpty()) "Astra" else "${selectedGames.size} sélectionné(s)", null) {
                 if (selectedGames.isNotEmpty()) {
                     Box {
@@ -99,14 +100,16 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
                 }
                 }
             }
+            Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) { PageHeading("Tous les jeux", "${state.filteredGames.size} jeux") }
+            FilterStrip(state, vm)
+            }
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                if (with(androidx.compose.ui.platform.LocalDensity.current) { androidx.compose.ui.platform.LocalWindowInfo.current.containerSize.height.toDp() } >= 480.dp) PageHeading("Tous les jeux", "${state.filteredGames.size} jeux")
                 SearchEntry(onSearch)
             }
-            FilterStrip(state, vm)
+            Spacer(Modifier.height(6.dp))
             when {
                 state.scanning && state.games.isEmpty() -> CenterMessage("Exploration de tous les sous-dossiers…", Modifier.fillMaxSize(), loading = true)
                 state.games.isEmpty() -> EmptyLibrary(onPickSource, { vm.scanAll() }, state.sources.any { it.enabled })
@@ -342,7 +345,7 @@ internal fun GameGridCard(
     game: GameEntity, onGame: (String) -> Unit, onFavorite: (String) -> Unit,
     selected: Boolean, onLongGame: ((String) -> Unit)?, onQuickGame: ((String) -> Unit)?
 ) {
-    Column(Modifier.clip(RoundedCornerShape(16.dp)).semantics { this.selected = selected }.combinedClickable(onClick = { onGame(game.id) }, onLongClick = onLongGame?.let { { it(game.id) } })) {
+    Column(Modifier.semantics { this.selected = selected }.combinedClickable(onClick = { onGame(game.id) }, onLongClick = onLongGame?.let { { it(game.id) } })) {
         Box {
             GameCover(game, Modifier.fillMaxWidth().aspectRatio(.72f))
             if (selected) Surface(Modifier.matchParentSize(), RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primary.copy(alpha = .28f), border = BorderStroke(3.dp, MaterialTheme.colorScheme.primary)) {}

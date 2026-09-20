@@ -50,12 +50,11 @@ internal fun DuplicatesDialog(state: AstraUiState, vm: AstraViewModel, onDismiss
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
-            Column {
-                CompactHeader(
+            ScrollingColumn(topBar = { CompactHeader(
                     selectedGroup?.let { "Comparer les doublons" } ?: "Doublons détectés",
                     selectedGroup?.let { "Choisissez l’exemplaire principal" } ?: "${state.duplicateGroups.size} groupe(s)",
                     onBack = if (selectedGroup != null) ({ selectedKey = null; vm.clearDuplicatePreview() }) else onDismiss
-                )
+                ) }) {
                 if (selectedGroup != null && primaryId != null && secondary != null) {
                     DuplicateComparisonContent(
                         group = selectedGroup, state = state, primaryId = primaryId!!, preview = preview,
@@ -180,8 +179,7 @@ internal fun SaveConflictStrategy.label() = when (this) {
 internal fun DeletedGamesDialog(games: List<DeletedGameEntity>, onRestore: (String) -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
-            Column {
-                CompactHeader("Jeux supprimés", "${games.size} jeu(x)", onBack = onDismiss)
+            ScrollingColumn(topBar = { CompactHeader("Jeux supprimés", "${games.size} jeu(x)", onBack = onDismiss) }) {
                 if (games.isEmpty()) CenterMessage("Aucun jeu supprimé", Modifier.fillMaxSize())
                 else LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
                     items(games, key = { it.id }) { game -> RoundedListItem(
@@ -201,8 +199,7 @@ internal fun RuntimeManagerDialog(runtimes: List<JoiPlayRuntimeInfo>, onDismiss:
     val uriHandler = LocalUriHandler.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
-            Column {
-                CompactHeader("Runtimes JoiPlay", "Détection locale des composants", onBack = onDismiss)
+            ScrollingColumn(topBar = { CompactHeader("Runtimes JoiPlay", "Détection locale des composants", onBack = onDismiss) }) {
                 LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
                     items(runtimes, key = { it.key }) { runtime -> RoundedListItem(
                         headlineContent = { Text(runtime.name) },

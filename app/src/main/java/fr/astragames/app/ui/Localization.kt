@@ -52,6 +52,23 @@ object AppLocalizer {
     ) = Translation(source, english, spanish, russian, german, chinese, japanese)
 
     private val catalog = listOf(
+        t("Teinte de l’application", "App hue", "Tono de la aplicación", "Оттенок приложения", "App-Farbton", "应用色调", "アプリの色合い"),
+        t("Vos jeux, organisés à votre façon.", "Your games, organized your way.", "Tus juegos, organizados a tu manera.", "Ваши игры в удобном для вас порядке.", "Deine Spiele, nach deinen Wünschen sortiert.", "按你的方式整理游戏。", "自分らしくゲームを整理。"),
+        t("Créer une collection intelligente", "Create smart collection", "Crear colección inteligente", "Создать умную коллекцию", "Intelligente Sammlung erstellen", "创建智能合集", "スマートコレクションを作成"),
+        t("Définissez vos règles. Les jeux correspondants sont ajoutés automatiquement.", "Set your rules. Matching games are added automatically.", "Define tus reglas. Los juegos coincidentes se añaden automáticamente.", "Задайте правила. Подходящие игры добавляются автоматически.", "Lege Regeln fest. Passende Spiele werden automatisch hinzugefügt.", "设置规则，自动添加符合条件的游戏。", "ルールに合うゲームが自動で追加されます。"),
+        t("Mise à jour automatique", "Updates automatically", "Actualización automática", "Автоматическое обновление", "Automatische Aktualisierung", "自动更新", "自動更新"),
+        t("Une sélection qui évolue avec votre bibliothèque.", "A selection that grows with your library.", "Una selección que evoluciona con tu biblioteca.", "Подборка, которая меняется вместе с библиотекой.", "Eine Auswahl, die mit deiner Bibliothek wächst.", "随游戏库变化的精选合集。", "ライブラリに合わせて変わるコレクション。"),
+        t("Nom de la collection", "Collection name", "Nombre de la colección", "Название коллекции", "Name der Sammlung", "合集名称", "コレクション名"),
+        t("Règles", "Rules", "Reglas", "Правила", "Regeln", "规则", "ルール"),
+        t("Règle", "Rule", "Regla", "Правило", "Regel", "规则", "ルール"),
+        t("Inclure les jeux qui respectent :", "Include games matching:", "Incluir juegos que cumplan:", "Включать игры, соответствующие:", "Spiele einschließen, die erfüllen:", "包含符合以下条件的游戏：", "次の条件を満たすゲーム："),
+        t("Toutes les règles", "All rules", "Todas las reglas", "Все правила", "Alle Regeln", "所有规则", "すべてのルール"),
+        t("Au moins une", "At least one", "Al menos una", "Хотя бы одно", "Mindestens eine", "至少一条", "いずれかのルール"),
+        t("Aperçu des résultats", "Result preview", "Vista previa de resultados", "Предпросмотр результатов", "Ergebnisvorschau", "结果预览", "結果のプレビュー"),
+        t("La collection se mettra à jour automatiquement.", "The collection will update automatically.", "La colección se actualizará automáticamente.", "Коллекция будет обновляться автоматически.", "Die Sammlung wird automatisch aktualisiert.", "合集将自动更新。", "コレクションは自動更新されます。"),
+        t("Créer la collection", "Create collection", "Crear colección", "Создать коллекцию", "Sammlung erstellen", "创建合集", "コレクションを作成"),
+        t("Complétez cette règle.", "Complete this rule.", "Completa esta regla.", "Заполните это правило.", "Vervollständige diese Regel.", "请完善此规则。", "ルールを完成させてください。"),
+        t("Disponible", "Available", "Disponible", "Доступна", "Verfügbar", "可用", "利用可能"),
         t("Tous les jeux", "All games", "Todos los juegos", "Все игры", "Alle Spiele", "所有游戏", "すべてのゲーム"),
         t("Rechercher un jeu", "Search games", "Buscar un juego", "Найти игру", "Spiele suchen", "搜索游戏", "ゲームを検索"),
         t("Activité", "Activity", "Actividad", "Активность", "Aktivität", "动态", "アクティビティ"),

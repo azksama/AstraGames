@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -44,20 +45,27 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
     val smartCollections = listOf(
         SmartCollection("favorites", "Favoris", Icons.Default.Favorite) { it.favorite },
         SmartCollection("recent", "Récemment ajoutés", Icons.Default.NewReleases) { now - it.dateAdded < 604_800_000L },
-        SmartCollection("last_played", "Joués récemment", Icons.Default.History) { it.lastPlayedAt?.let { date -> now - date < 604_800_000L } == true },
+        SmartCollection("last_played", "Joués récemment", Icons.Default.PlayCircleOutline) { it.lastPlayedAt?.let { date -> now - date < 604_800_000L } == true },
         SmartCollection("never", "Jamais joués", Icons.Default.HourglassEmpty) { it.playCount == 0 },
         SmartCollection("missing", "Jeux manquants", Icons.Default.ErrorOutline) { it.missing },
         SmartCollection("no_cover", "Sans jaquette", Icons.Default.HideImage) { it.coverUri == null }
     )
     val selectedSmart = smartCollections.firstOrNull { it.key == smartKey }
     val selectedCustom = state.collections.firstOrNull { it.id == customCollectionId }
+    BackHandler(selectedSmart != null || selectedCustom != null || current != null) {
+        when {
+            selectedSmart != null -> smartKey = null
+            selectedCustom != null -> customCollectionId = null
+            current != null -> currentId = current.parentId
+        }
+    }
     val displayedGames = when {
         selectedSmart != null -> state.games.filter(selectedSmart.predicate)
         selectedCustom != null -> state.customCollectionGames[selectedCustom.id].orEmpty()
         currentId != null -> state.games.filter { it.libraryFolderId == currentId }
         else -> emptyList()
     }
-    Scaffold(
+    ScrollingScaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             CompactHeader(
@@ -78,43 +86,22 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
             }
         } else LazyColumn(Modifier.padding(padding).imePadding(), contentPadding = PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = PageBottomPadding)) {
             if (currentId == null) {
-                item { PageHeading("Collections"); Spacer(Modifier.height(20.dp)) }
-                item { SectionTitle("Collections intelligentes") }
-                item {
-                    Box(Modifier.fillMaxWidth()) {
-                        val columns = 3
-                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            smartCollections.chunked(columns).forEach { row ->
-                                Row(Modifier.height(IntrinsicSize.Min), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    row.forEach { smart ->
-                                        Card(
-                                            modifier = Modifier.weight(1f).fillMaxHeight(),
-                                            onClick = { smartKey = smart.key },
-                                            shape = RoundedCornerShape(14.dp),
-                                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainerLow)
-                                        ) {
-                                            Column(Modifier.fillMaxSize().padding(horizontal = 6.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterVertically), horizontalAlignment = Alignment.CenterHorizontally) {
-                                                Icon(smart.icon, null, Modifier.size(22.dp), tint = MaterialTheme.colorScheme.primary)
-                                                Text(AppLocalizer.text(smart.name, LocalAppLanguage.current), style = MaterialTheme.typography.labelMedium, textAlign = TextAlign.Center)
-                                                Text("${state.games.count(smart.predicate)} jeux", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                                            }
-                                        }
-                                    }
-                                }
-                            }
-                        }
+                item { PageHeading("Collections", "Vos jeux, organisés à votre façon."); Spacer(Modifier.height(20.dp)) }
+                items(smartCollections, key = { "builtin-${it.key}" }) { smart ->
+                    Row(Modifier.fillMaxWidth().clickable { smartKey = smart.key }.heightIn(min = 62.dp).padding(vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                        Icon(smart.icon, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                        Text(smart.name, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+                        Text(state.games.count(smart.predicate).toString(), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-
                 item {
-                    Row(Modifier.fillMaxWidth().padding(top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
-                        SectionTitle("Mes collections intelligentes", Modifier.weight(1f))
-                        TextButton(
-                            onClick = { editingCollection = null; collectionEditor = true },
-                            modifier = Modifier.height(36.dp),
-                            contentPadding = PaddingValues(horizontal = 9.dp, vertical = 0.dp)
-                        ) { Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(3.dp)); Text("Créer") }
-                    }
+                    Spacer(Modifier.height(24.dp))
+                    Text("Collections intelligentes", style = MaterialTheme.typography.titleLarge)
+                    Spacer(Modifier.height(8.dp))
+                    Text("Définissez vos règles. Les jeux correspondants sont ajoutés automatiquement.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(14.dp))
                 }
                 if (state.collections.isEmpty()) item { Text(
                     "Créez une collection avec vos critères.",
@@ -127,17 +114,33 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
                         shape = RoundedCornerShape(16.dp),
                         color = MaterialTheme.colorScheme.surfaceContainerLow
                     ) {
-                        Row(Modifier.padding(start = 12.dp, end = 4.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.FilterAlt, null, Modifier.size(24.dp))
-                            Spacer(Modifier.width(10.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text(collection.name, style = MaterialTheme.typography.titleSmall)
-                                val rules = state.collectionRules.count { it.collectionId == collection.id }
-                                Text("${state.customCollectionGames[collection.id].orEmpty().size} jeux • $rules règle(s)", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Icon(Icons.Default.AutoAwesome, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                                androidx.compose.material3.Text(collection.name, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                                Box {
+                                    var menu by remember { mutableStateOf(false) }
+                                    CompactActionButton({ menu = true }, Icons.Default.MoreHoriz, "Actions rapides")
+                                    DropdownMenu(menu, { menu = false }) {
+                                        DropdownMenuItem(text = { Text("Modifier") }, onClick = { menu = false; editingCollection = collection; collectionEditor = true })
+                                        DropdownMenuItem(text = { Text("Supprimer") }, onClick = { menu = false; deletingCollection = collection })
+                                    }
+                                }
                             }
-                            CompactActionButton({ editingCollection = collection; collectionEditor = true }, Icons.Default.Edit, "Modifier")
-                            CompactActionButton({ deletingCollection = collection }, Icons.Default.DeleteOutline, "Supprimer")
+                            val rules = state.collectionRules.filter { it.collectionId == collection.id }
+                            androidx.compose.material3.Text(rules.joinToString(" · ") {
+                                fr.astragames.app.data.repository.CollectionRuleDraft(it.field, it.operator, it.value).localizedSummary(state)
+                            }, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                Text("${state.customCollectionGames[collection.id].orEmpty().size} jeux", style = MaterialTheme.typography.labelSmall)
+                                Text("Mise à jour automatique", style = MaterialTheme.typography.labelSmall)
+                            }
                         }
+                    }
+                }
+                item {
+                    Button(onClick = { editingCollection = null; collectionEditor = true }, Modifier.fillMaxWidth().padding(top = 14.dp).heightIn(min = 50.dp)) {
+                        Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Créer une collection intelligente")
                     }
                 }
                 item { HorizontalDivider(Modifier.padding(vertical = 8.dp)); SectionTitle("Collections Astra") }
@@ -191,7 +194,7 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
         collection = editingCollection,
         existingRules = editingCollection?.let { selected -> state.collectionRules.filter { it.collectionId == selected.id } }.orEmpty(),
         state = state,
-        onSave = { id, name, mode, rules -> vm.saveCollection(id, name, mode, rules); collectionEditor = false },
+        onSave = { id, name, mode, rules -> vm.saveCollection(id, name, mode, rules) { collectionEditor = false } },
         onDismiss = { collectionEditor = false }
     )
     deletingCollection?.let { collection -> ConfirmDialog(

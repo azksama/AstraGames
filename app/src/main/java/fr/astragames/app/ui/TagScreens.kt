@@ -35,7 +35,7 @@ internal fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () 
     var moveDialog by remember { mutableStateOf(false) }
     var deleteCategory by remember { mutableStateOf<TagCategoryEntity?>(null) }
 
-    Scaffold(
+    ScrollingScaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             CompactHeader(if (mergesMode) "Fusions de tags" else if (categoriesMode) "Catégories de tags" else "Tags", "${state.tags.size} tags", onBack = onBack) {

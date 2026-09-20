@@ -36,7 +36,7 @@ internal fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
             focusRequested = true
         }
     }
-    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Recherche", onBack = onBack) }) { padding ->
+    ScrollingScaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Recherche", onBack = onBack) }) { padding ->
         Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
             OutlinedTextField(
                 value = state.filters.query,

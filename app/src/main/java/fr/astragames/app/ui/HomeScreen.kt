@@ -37,7 +37,7 @@ internal fun HomeScreen(
     onSearch: () -> Unit = onAllGames, onHistory: (() -> Unit)? = null, onUpdates: (() -> Unit)? = null
 ) {
     val recent = remember(state.games, state.playStats) { homeRecentGames(state) }
-    Scaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Astra") { IconButton(onClick = onPickSource) { Icon(Icons.Default.Add, AppLocalizer.text("Ajouter une source")) } } }) { padding ->
+    ScrollingScaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Astra") { IconButton(onClick = onPickSource) { Icon(Icons.Default.Add, AppLocalizer.text("Ajouter une source")) } } }) { padding ->
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { LazyColumn(
             Modifier.padding(padding).fillMaxHeight().widthIn(max = 900.dp).fillMaxWidth(),
             contentPadding = PaddingValues(start = 20.dp, top = 12.dp, end = 20.dp, bottom = PageBottomPadding),
@@ -70,7 +70,7 @@ internal fun HomeScreen(
                 if (previous.isEmpty()) Text("Tes autres parties récentes apparaîtront ici.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                     previous.forEach { game ->
-                        Column(Modifier.weight(1f).clip(RoundedCornerShape(16.dp)).clickable { onGame(game.id) }) {
+                        Column(Modifier.weight(1f).clickable { onGame(game.id) }) {
                             GameCover(game, Modifier.fillMaxWidth().aspectRatio(1.5f))
                             Spacer(Modifier.height(8.dp))
                             androidx.compose.material3.Text(game.title, style = MaterialTheme.typography.titleSmall, maxLines = 2, overflow = TextOverflow.Ellipsis)

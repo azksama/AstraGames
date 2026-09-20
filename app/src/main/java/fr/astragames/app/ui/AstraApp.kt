@@ -129,7 +129,6 @@ fun AstraApp(
                     val topLevel = route.isBlank() || route in topLevelRoutes
                     BoxWithConstraints(Modifier.fillMaxSize()) {
                         val wide = maxWidth >= 840.dp || (maxWidth >= 600.dp && maxHeight < 480.dp)
-                        val imeVisible = WindowInsets.ime.getBottom(LocalDensity.current) > 0
                         Scaffold(
                             contentWindowInsets = WindowInsets(0, 0, 0, 0),
                             snackbarHost = { SnackbarHost(snackbar) }
@@ -142,13 +141,12 @@ fun AstraApp(
                             } else Box(Modifier.padding(padding).fillMaxSize()) {
                                 Box(
                                     Modifier.fillMaxSize()
-                                        .padding(bottom = if (topLevel && !imeVisible) NavigationContentHeight + 16.dp else 0.dp)
-                                        .then(if (topLevel && !imeVisible) Modifier.navigationBarsPadding() else Modifier)
+                                        .then(if (topLevel) Modifier.navigationBarsPadding() else Modifier)
                                         .then(if (route in menuDestinations.map { it.route }) Modifier.pullDownSearch(route, navController).topLevelSwipe(route, navController) else Modifier)
-                                ) { CompositionLocalProvider(LocalPageBottomPadding provides 24.dp) {
+                                ) { CompositionLocalProvider(LocalPageBottomPadding provides if (topLevel) NavigationContentHeight + 40.dp else 24.dp) {
                                     AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
                                 } }
-                                if (topLevel && !imeVisible) {
+                                if (topLevel) {
                                     CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter))
 
                                 }
@@ -361,7 +359,7 @@ internal fun CompactHeader(
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     Row(
-        Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 56.dp).padding(horizontal = 20.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, AppLocalizer.text("Retour")) }

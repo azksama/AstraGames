@@ -98,10 +98,13 @@ internal fun GameDetailScreen(
             contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(22.dp)
         ) {
             item {
+                Box {
                 GameDetailHero(item, onCover = { previewCover = true }, onCopyTitle = {
                     clipboard.setText(AnnotatedString(item.title))
                     android.widget.Toast.makeText(context, AppLocalizer.text("Nom du jeu copié"), android.widget.Toast.LENGTH_SHORT).show()
                 })
+                GameDetailHeader(onBack = onBack, onEdit = { edit = true }, enabled = true)
+                }
             }
             item {
                 Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -194,9 +197,7 @@ internal fun GameDetailScreen(
                 Text("Ce jeu est introuvable. Rescannez sa source.", Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onErrorContainer)
             } }
         }
-        Box(Modifier.widthIn(max = 840.dp).fillMaxWidth()) {
-            GameDetailHeader(onBack = onBack, onEdit = { edit = true }, enabled = item != null)
-        }
+        if (item == null) GameDetailHeader(onBack = onBack, onEdit = {}, enabled = false)
     }
     if (item != null && edit) EditGameDialog(
         game = item,
@@ -341,10 +342,9 @@ internal fun CompatibilityDialog(
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                Column(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center)) {
-                    CompactHeader("Diagnostic", game.title, onBack = onDismiss) {
+                ScrollingColumn(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center), topBar = { CompactHeader("Diagnostic", game.title, onBack = onDismiss) {
                         IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Vérifier à nouveau") }
-                    }
+                    } }) {
                     if (report == null) CenterMessage("Vérification de la configuration…", Modifier.fillMaxSize(), loading = true)
                     else LazyColumn(
                         Modifier.weight(1f),
@@ -428,8 +428,7 @@ internal fun LaunchProfileDialog(
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-                Column(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center)) {
-                    CompactHeader("Profil de lancement", game.title, onBack = onDismiss)
+                ScrollingColumn(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center), topBar = { CompactHeader("Profil de lancement", game.title, onBack = onDismiss) }) {
                     LazyColumn(
                         Modifier.weight(1f), contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)

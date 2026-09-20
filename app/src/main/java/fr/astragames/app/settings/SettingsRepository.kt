@@ -22,6 +22,7 @@ data class AstraSettings(
     val language: AppLanguage = AppLanguage.ENGLISH,
     val scanOnLaunch: Boolean = true,
     val dynamicColor: Boolean = true,
+    val accentHue: Int = 255,
     val themeMode: ThemeMode = ThemeMode.SYSTEM,
     val viewMode: LibraryViewMode = LibraryViewMode.GRID,
     val coverSize: CoverSize = CoverSize.MEDIUM,
@@ -54,6 +55,7 @@ class SettingsRepository(private val context: Context) {
             language = AppLanguage.fromCode(values[LANGUAGE]),
             scanOnLaunch = values[SCAN_ON_LAUNCH] ?: true,
             dynamicColor = values[DYNAMIC_COLOR] ?: true,
+            accentHue = (values[ACCENT_HUE] ?: 255).coerceIn(0, 359),
             themeMode = enumValueOrDefault(values[THEME], ThemeMode.SYSTEM),
             viewMode = enumValueOrDefault(values[VIEW_MODE], LibraryViewMode.GRID),
             coverSize = enumValueOrDefault(values[COVER_SIZE], CoverSize.MEDIUM),
@@ -88,6 +90,7 @@ class SettingsRepository(private val context: Context) {
     suspend fun setLanguage(value: AppLanguage) = context.dataStore.edit { it[LANGUAGE] = value.code }
     suspend fun setScanOnLaunch(value: Boolean) = context.dataStore.edit { it[SCAN_ON_LAUNCH] = value }
     suspend fun setDynamicColor(value: Boolean) = context.dataStore.edit { it[DYNAMIC_COLOR] = value }
+    suspend fun setAccentHue(value: Int) = context.dataStore.edit { it[ACCENT_HUE] = value.coerceIn(0, 359) }
     suspend fun setTheme(value: ThemeMode) = context.dataStore.edit { it[THEME] = value.name }
     suspend fun setViewMode(value: LibraryViewMode) = context.dataStore.edit { it[VIEW_MODE] = value.name }
     suspend fun setCoverSize(value: CoverSize) = context.dataStore.edit { it[COVER_SIZE] = value.name }
@@ -156,6 +159,7 @@ class SettingsRepository(private val context: Context) {
         private val LANGUAGE = stringPreferencesKey("language")
         private val SCAN_ON_LAUNCH = booleanPreferencesKey("scan_on_launch")
         private val DYNAMIC_COLOR = booleanPreferencesKey("dynamic_color")
+        private val ACCENT_HUE = intPreferencesKey("accent_hue")
         private val THEME = stringPreferencesKey("theme")
         private val VIEW_MODE = stringPreferencesKey("view_mode")
         private val COVER_SIZE = stringPreferencesKey("cover_size")

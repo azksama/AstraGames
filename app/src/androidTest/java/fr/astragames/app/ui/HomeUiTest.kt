@@ -61,13 +61,13 @@ class HomeUiTest {
             game("fourth", "Older game", 1725800000000, 0xff334455.toInt())
         )
         compose.setContent {
-            CompositionLocalProvider(LocalAppLanguage provides AppLanguage.ENGLISH, LocalPageBottomPadding provides 104.dp) {
+            CompositionLocalProvider(LocalAppLanguage provides AppLanguage.ENGLISH, LocalPageBottomPadding provides 108.dp) {
                 AstraTheme {
                     val nav = rememberNavController()
                     val entry by nav.currentBackStackEntryAsState()
                     Surface(Modifier.fillMaxSize()) {
                         Box {
-                            NavHost(navController = nav, startDestination = "home", modifier = Modifier.padding(bottom = 88.dp)) {
+                            NavHost(navController = nav, startDestination = "home") {
                                 composable("home") { HomeScreen(AstraUiState(games = games), opened::add, resumed::add, { navigate(nav, "library") }, {}) }
                                 composable("library") { Text("All games opened") }
                                 composable("collections") { Text("Collections opened") }

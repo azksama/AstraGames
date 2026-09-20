@@ -228,6 +228,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                     collections = data.collections,
                     collectionRules = data.collectionRules,
                     customCollectionGames = index.collectionGames,
+                    gameTagRefs = data.refs,
                     playStats = index.playStatsByGame
                 ),
                 index
@@ -452,9 +453,9 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             .onSuccess { events.emit(UiEvent.Message("${ids.size} jeu(x) retiré(s) de la bibliothèque")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Suppression impossible")) }
     }
-    fun saveCollection(id: String?, name: String, matchMode: String, rules: List<CollectionRuleDraft>) = viewModelScope.launch {
+    fun saveCollection(id: String?, name: String, matchMode: String, rules: List<CollectionRuleDraft>, onSaved: () -> Unit = {}) = viewModelScope.launch {
         runCatchingCancellable { repository.createOrUpdateCollection(id, name, matchMode, rules) }
-            .onSuccess { events.emit(UiEvent.Message("Collection intelligente enregistrée")) }
+            .onSuccess { onSaved(); events.emit(UiEvent.Message("Collection intelligente enregistrée")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Collection invalide")) }
     }
     fun deleteCollection(id: String) = viewModelScope.launch {
@@ -805,6 +806,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun setCoverSize(size: CoverSize) = viewModelScope.launch { settingsRepository.setCoverSize(size) }
     fun setGridColumns(columns: Int) = viewModelScope.launch { settingsRepository.setGridColumns(columns) }
     fun setSearchEngine(engine: SearchEngine) = viewModelScope.launch { settingsRepository.setSearchEngine(engine) }
+    fun setAccentHue(hue: Int) = viewModelScope.launch { settingsRepository.setAccentHue(hue) }
     fun setCoverBlurMode(mode: CoverBlurMode) = viewModelScope.launch { settingsRepository.setCoverBlurMode(mode) }
     fun setOpenSearchInExternalBrowser(value: Boolean) = viewModelScope.launch {
         settingsRepository.setOpenSearchInExternalBrowser(value)

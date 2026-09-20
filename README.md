@@ -20,7 +20,7 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - sélection rapide et groupée des tags pour chaque jeu, sans affectation globale implicite ;
 - dossiers et sous-dossiers Astra virtuels navigables, renommables et supprimables sans supprimer les jeux ;
 - panneau de filtres compact par moteur, source, dossier Astra, dossier parent système réel, tags, état et tri, sans exposer les sous-dossiers comme entrées séparées ;
-- collections intelligentes intégrées et personnalisables avec règles moteur, tag recherchable et trié alphabétiquement, dossier, favori, jaquette, dates et durée de jeu ; les nouvelles collections appliquent toutes leurs règles, les anciennes conservent leur mode enregistré ;
+- collections intelligentes intégrées et personnalisables avec règles moteur, tag recherchable et trié alphabétiquement, dossier, favori, jaquette, disponibilité, dates et durée de jeu ; éditeur avec aperçu réel des résultats et choix de toutes les règles ou au moins une ;
 - résolution guidée des doublons : comparaison côte à côte, choix du principal, fusion des métadonnées et de l’historique, récupération des sauvegardes et stratégie de conflits ;
 - suivi du temps de jeu par sessions et affichage de la durée cumulée ;
 - gestionnaire de runtimes JoiPlay avec détection dynamique des variantes installées, catalogue officiel mis en cache sept jours et notification des mises à jour ;
@@ -33,9 +33,10 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - édition complète des fiches et date du dernier lancement ;
 - ajout textuel de tags par virgules ou crochets pendant la configuration et l’édition, avec réutilisation automatique des tags existants ;
 - refonte UI/UX inspirée de `design_astra.pen` : polices Geist/Inter embarquées, affiches panoramiques, listes compactes et réglages en lignes ;
-- palette Astra fixe : fond `#09090f`, cartes et menu `#191e29`, bordures `#2b3242`, actions `#302147`, textes secondaires `#c9b7ff` et titres blancs ;
+- palette Astra par défaut, personnalisable avec le curseur de teinte dans Apparence : fond `#09090f`, cartes et menu `#191e29`, bordures `#2b3242`, actions `#302147`, textes secondaires `#c9b7ff` et titres blancs ;
 - flou des jaquettes désactivable, automatique au démarrage ou manuel, avec bascule rapide depuis Jeux ;
-- navigation flottante élargie à quatre entrées (Accueil, Jeux, Collections, Paramètres), sans bande opaque derrière la pilule ;
+- navigation flottante élargie à quatre entrées (Accueil, Jeux, Collections, Paramètres), sans bande opaque derrière la pilule et maintenue en place sous le clavier Android ;
+- en-têtes qui défilent avec les pages, avec recherche ancrée en haut de Jeux après leur disparition ;
 - accueil avec icône Astra/GAMES, dernière partie en affiche panoramique, bouton de reprise et deux jeux précédents ; bibliothèque complète accessible par Jeux ou Tout voir ;
 - accès Historique et Mises à jour dans la section Activité de l’accueil ;
 - navigation latérale sur grand écran, largeur de lecture limitée et commandes accessibles avec texte agrandi ;

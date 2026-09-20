@@ -197,8 +197,7 @@ private fun SaveEditorDialog(game: GameEntity, save: GameSave, vm: AstraViewMode
     ) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-        Column(Modifier.fillMaxHeight().widthIn(max = 920.dp).fillMaxWidth().align(Alignment.Center).padding(horizontal = 16.dp)) {
-            CompactHeader("Éditer", save.name, onBack = { if (!busy) onDismiss() })
+        ScrollingColumn(Modifier.fillMaxHeight().widthIn(max = 920.dp).fillMaxWidth().align(Alignment.Center).padding(horizontal = 16.dp), topBar = { CompactHeader("Éditer", save.name, onBack = { if (!busy) onDismiss() }) }) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             validation?.let { Text(it, color = MaterialTheme.colorScheme.error) }

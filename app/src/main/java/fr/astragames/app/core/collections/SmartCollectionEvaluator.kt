@@ -42,6 +42,7 @@ object SmartCollectionEvaluator {
             (game.libraryFolderId in ids) xor (rule.operator == "NOT")
         }
         "FAVORITE" -> compareBoolean(game.favorite, rule.operator, rule.value)
+        "AVAILABLE" -> compareBoolean(!game.missing, rule.operator, rule.value)
         "COVER" -> compareBoolean(!game.coverUri.isNullOrBlank(), rule.operator, rule.value)
         "DATE_ADDED" -> compareAge(game.dateAdded, rule.operator, rule.value, now)
         "LAST_PLAYED" -> if (rule.operator == "NEVER") game.lastPlayedAt == null

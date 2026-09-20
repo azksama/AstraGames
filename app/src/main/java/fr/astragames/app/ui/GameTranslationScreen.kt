@@ -39,8 +39,7 @@ internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslation
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = !state.busy, dismissOnClickOutside = false)
     ) {
         Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-            Column {
-                CompactHeader("Traduire le jeu", onBack = if (!state.busy) onDismiss else null)
+            ScrollingColumn(topBar = { CompactHeader("Traduire le jeu", onBack = if (!state.busy) onDismiss else null) }) {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
                     androidx.compose.material3.Text(game.title, style = MaterialTheme.typography.titleMedium)
                     Text("Google Translate (ML Kit) traduit sur cet appareil, sans compte ni clé API.")

@@ -49,6 +49,7 @@ data class AstraUiState(
     val filteredGames: List<GameEntity> = emptyList(),
     val sources: List<GameSourceEntity> = emptyList(),
     val tags: List<TagEntity> = emptyList(),
+    val gameTagRefs: List<fr.astragames.app.data.local.GameTagCrossRef> = emptyList(),
     val tagCategories: List<TagCategoryEntity> = emptyList(),
     val folders: List<LibraryFolderEntity> = emptyList(),
     val systemFolders: List<SystemFolderFilter> = emptyList(),

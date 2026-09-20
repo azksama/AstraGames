@@ -155,92 +155,6 @@ internal fun QuickGameActionsSheet(
 }
 
 @Composable
-internal fun SmartCollectionEditorDialog(
-    collection: CollectionEntity?,
-    existingRules: List<CollectionRuleEntity>,
-    state: AstraUiState,
-    onSave: (String?, String, String, List<CollectionRuleDraft>) -> Unit,
-    onDismiss: () -> Unit
-) {
-    var name by remember(collection?.id) { mutableStateOf(collection?.name.orEmpty()) }
-    val mode = collection?.matchMode ?: "ALL"
-    val rules = remember(collection?.id, existingRules) {
-        mutableStateListOf<CollectionRuleDraft>().apply {
-            addAll(existingRules.map { CollectionRuleDraft(it.field, it.operator, it.value) })
-        }
-    }
-    var addingRule by remember { mutableStateOf(false) }
-    var editingIndex by remember { mutableStateOf<Int?>(null) }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
-            Column {
-                CompactHeader(if (collection == null) "Nouvelle collection" else "Modifier la collection", onBack = onDismiss) {
-                    TextButton(onClick = { onSave(collection?.id, name, mode, rules.toList()) }, enabled = name.isNotBlank() && rules.isNotEmpty()) { Text("Enregistrer") }
-                }
-                LazyColumn(contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    item { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Nom") }, singleLine = true) }
-                    item { FilledTonalButton(onClick = { editingIndex = null; addingRule = true }, Modifier.fillMaxWidth()) {
-                        Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Ajouter une règle")
-                    } }
-                    itemsIndexed(rules, key = { index, _ -> "rule-$index" }) { index, rule ->
-                        RoundedListItem(
-                            modifier = Modifier.clickable { editingIndex = index; addingRule = true },
-                            headlineContent = { Text(rule.summary(state)) },
-                            supportingContent = { Text(rule.operatorLabel()) },
-                            leadingContent = { Icon(Icons.AutoMirrored.Filled.Rule, null) },
-                            trailingContent = { IconButton(onClick = { rules.removeAt(index) }) { Icon(Icons.Default.Close, "Retirer") } }
-                        )
-                    }
-                    item { Spacer(Modifier.height(24.dp)) }
-                }
-            }
-        }
-    }
-    if (addingRule) RuleEditorDialog(
-        initial = editingIndex?.let(rules::get), state = state,
-        onSave = { rule ->
-            val index = editingIndex
-            if (index == null) rules += rule else rules[index] = rule
-            addingRule = false
-        },
-        onDismiss = { addingRule = false }
-    )
-}
-
-@Composable
-internal fun RuleEditorDialog(
-    initial: CollectionRuleDraft?, state: AstraUiState,
-    onSave: (CollectionRuleDraft) -> Unit, onDismiss: () -> Unit
-) {
-    val fields = listOf("ENGINE", "TAG", "FOLDER", "FAVORITE", "COVER", "DATE_ADDED", "LAST_PLAYED", "PLAY_TIME")
-    var field by remember { mutableStateOf(initial?.field ?: "ENGINE") }
-    var operator by remember(field) { mutableStateOf(initial?.takeIf { it.field == field }?.operator ?: defaultOperator(field)) }
-    var value by remember(field) { mutableStateOf(initial?.takeIf { it.field == field }?.value ?: defaultRuleValue(field, state)) }
-    val operators = operatorsFor(field)
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Règle de collection") },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                DropdownSelector("Champ", fields, field, { it.fieldLabel() }) { field = it }
-                DropdownSelector("Condition", operators, operator, { it.operatorLabelRaw() }) { operator = it }
-                when (field) {
-                    "ENGINE" -> DropdownSelector("Moteur", GameEngine.entries.map { it.name }, value, { it.readableEngine() }) { value = it }
-                    "TAG" -> SearchableTagSelector(state.tags, value) { value = it }
-                    "FOLDER" -> DropdownSelector("Dossier", state.folders.map { it.id }, value, { id -> state.folders.firstOrNull { it.id == id }?.name ?: "Dossier" }) { value = it }
-                    "FAVORITE", "COVER" -> DropdownSelector("Valeur", listOf("true", "false"), value, { if (it == "true") "Oui" else "Non" }) { value = it }
-                    "LAST_PLAYED" -> if (operator != "NEVER") OutlinedTextField(value, { value = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Nombre de jours") }, singleLine = true)
-                    "DATE_ADDED" -> OutlinedTextField(value, { value = it.filter(Char::isDigit) }, Modifier.fillMaxWidth(), label = { Text("Nombre de jours") }, singleLine = true)
-                    "PLAY_TIME" -> OutlinedTextField(value, { value = it.filter { c -> c.isDigit() || c == '.' } }, Modifier.fillMaxWidth(), label = { Text("Durée en heures") }, singleLine = true)
-                }
-            }
-        },
-        confirmButton = { TextButton(onClick = { onSave(CollectionRuleDraft(field, operator, value)) }, enabled = operator == "NEVER" || value.isNotBlank()) { Text("Ajouter") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
-    )
-}
-
-@Composable
 internal fun SearchableTagSelector(tags: List<TagEntity>, selectedId: String, onSelect: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     val sortedTags = remember(tags, query) {
@@ -307,7 +221,7 @@ internal fun defaultRuleValue(field: String, state: AstraUiState) = when (field)
         java.text.Collator.getInstance(java.util.Locale.FRENCH).compare(first.name, second.name)
     }?.id.orEmpty()
     "FOLDER" -> state.folders.firstOrNull()?.id.orEmpty()
-    "FAVORITE", "COVER" -> "true"
+    "FAVORITE", "COVER", "AVAILABLE" -> "true"
     else -> "7"
 }
 
@@ -320,7 +234,7 @@ internal fun operatorsFor(field: String) = when (field) {
 
 internal fun String.fieldLabel() = when (this) {
     "ENGINE" -> "Moteur"; "TAG" -> "Tag"; "FOLDER" -> "Dossier"; "FAVORITE" -> "Favori"
-    "COVER" -> "Jaquette"; "DATE_ADDED" -> "Date d’ajout"; "LAST_PLAYED" -> "Dernier lancement"; "PLAY_TIME" -> "Temps de jeu"
+    "AVAILABLE" -> "Disponible"; "COVER" -> "Jaquette"; "DATE_ADDED" -> "Date d’ajout"; "LAST_PLAYED" -> "Dernier lancement"; "PLAY_TIME" -> "Temps de jeu"
     else -> this
 }
 
@@ -337,10 +251,21 @@ internal fun CollectionRuleDraft.summary(state: AstraUiState): String {
         "ENGINE" -> value.readableEngine()
         "TAG" -> state.tags.firstOrNull { it.id == value }?.name ?: "Tag supprimé"
         "FOLDER" -> state.folders.firstOrNull { it.id == value }?.name ?: "Dossier supprimé"
-        "FAVORITE", "COVER" -> if (value == "true") "Oui" else "Non"
+        "FAVORITE", "COVER", "AVAILABLE" -> if (value == "true") "Oui" else "Non"
         "PLAY_TIME" -> "$value h"
         "LAST_PLAYED" -> if (operator == "NEVER") "Jamais" else "$value jours"
         else -> "$value jours"
     }
     return "${field.fieldLabel()} • $shownValue"
+}
+
+internal fun CollectionRuleDraft.localizedSummary(state: AstraUiState): String {
+    val shownValue = when (field) {
+        "ENGINE" -> value.readableEngine()
+        "TAG" -> state.tags.firstOrNull { it.id == value }?.name ?: AppLocalizer.text("Tag supprimé")
+        "FOLDER" -> state.folders.firstOrNull { it.id == value }?.name ?: AppLocalizer.text("Dossier supprimé")
+        "FAVORITE", "COVER", "AVAILABLE" -> AppLocalizer.text(if (value == "true") "Oui" else "Non")
+        else -> value
+    }
+    return listOf(AppLocalizer.text(field.fieldLabel()), AppLocalizer.text(operatorLabel()), shownValue.takeUnless { operator == "NEVER" }).filterNotNull().joinToString(" ")
 }
