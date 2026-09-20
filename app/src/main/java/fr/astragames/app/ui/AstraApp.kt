@@ -97,7 +97,9 @@ fun AstraApp(
     }
     val locked by viewModel.isLocked.collectAsStateWithLifecycle()
     if (locked) {
-        LockScreen(state, viewModel)
+        CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
+            LockScreen(state, viewModel)
+        }
         return
     }
     val navController = rememberNavController()
@@ -260,7 +262,7 @@ internal fun Modifier.topLevelSwipe(route: String, nav: NavHostController): Modi
 @Composable
 internal fun CompactNavigationRail(route: String, nav: NavHostController) {
     Surface(
-        Modifier.width(104.dp).fillMaxHeight().padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
+        Modifier.width(if (LandscapeLayout) 80.dp else 104.dp).fillMaxHeight().padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
         RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 4.dp
     ) {
         Column(
@@ -359,7 +361,7 @@ internal fun CompactHeader(
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     Row(
-        Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 64.dp).padding(horizontal = 20.dp, vertical = 8.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = if (LandscapeLayout) 48.dp else 64.dp).padding(horizontal = 20.dp, vertical = if (LandscapeLayout) 0.dp else 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, AppLocalizer.text("Retour")) }
@@ -368,7 +370,7 @@ internal fun CompactHeader(
         }
         Column(Modifier.weight(1f)) {
             Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (title == "Astra") androidx.compose.material3.Text("GAMES", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 3.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (title == "Astra" && !LandscapeLayout) androidx.compose.material3.Text("GAMES", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 3.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
             else if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         actions()

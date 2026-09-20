@@ -62,7 +62,7 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             Column {
-            CompactHeader(if (selectedGames.isEmpty()) "Astra" else "${selectedGames.size} sélectionné(s)", null) {
+            CompactHeader(if (selectedGames.isEmpty()) { if (LandscapeLayout) "Tous les jeux" else "Astra" } else "${selectedGames.size} sélectionné(s)", if (LandscapeLayout) "${state.filteredGames.size} jeux" else null) {
                 if (selectedGames.isNotEmpty()) {
                     Box {
                         IconButton(onClick = { selectionMenu = true }) { Icon(Icons.Default.MoreVert, AppLocalizer.text("Actions rapides")) }
@@ -100,7 +100,7 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
                 }
                 }
             }
-            Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) { PageHeading("Tous les jeux", "${state.filteredGames.size} jeux") }
+            if (!LandscapeLayout) Box(Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) { PageHeading("Tous les jeux", "${state.filteredGames.size} jeux") }
             FilterStrip(state, vm)
             }
         }
@@ -319,9 +319,9 @@ internal fun GameCollection(
                 horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp)
             ) { items(games, key = { it.id }) { GameGridCard(it, onGame, onFavorite, it.id in selected, onLongGame, onQuickGame) } }
         }
-    } else LazyColumn(contentPadding = PaddingValues(top = 6.dp, bottom = PageBottomPadding)) {
+    } else LazyVerticalGrid(GridCells.Fixed(if (LandscapeLayout) 2 else 1), contentPadding = PaddingValues(top = 6.dp, bottom = PageBottomPadding)) {
         items(games, key = { it.id }) { game ->
-            ListItem(
+            Column { ListItem(
                 modifier = Modifier.semantics { this.selected = game.id in selected }.combinedClickable(onClick = { onGame(game.id) }, onLongClick = onLongGame?.let { { it(game.id) } }),
                 headlineContent = { MaterialText(game.title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis) },
                 supportingContent = { MaterialText(game.engine.readableEngine() + if (game.missing) " • ${AppLocalizer.text("Manquant", LocalAppLanguage.current)}" else "", style = MaterialTheme.typography.bodySmall) },
@@ -335,6 +335,7 @@ internal fun GameCollection(
                 colors = ListItemDefaults.colors(containerColor = if (game.id in selected) MaterialTheme.colorScheme.secondaryContainer else Color.Transparent)
             )
             HorizontalDivider(Modifier.padding(horizontal = 20.dp), color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = .6f))
+            }
         }
     }
 }

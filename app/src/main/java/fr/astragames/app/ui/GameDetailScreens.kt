@@ -5,6 +5,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
@@ -93,110 +94,118 @@ internal fun GameDetailScreen(
     }
     Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background), contentAlignment = Alignment.TopCenter) {
         if (item == null) CenterMessage("Chargement…", Modifier.fillMaxSize(), loading = true)
-        else LazyColumn(
-            Modifier.navigationBarsPadding().widthIn(max = 840.dp).fillMaxWidth(),
-            contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(22.dp)
-        ) {
-            item {
+        else {
+            val hero: @Composable () -> Unit = {
                 Box {
-                GameDetailHero(item, onCover = { previewCover = true }, onCopyTitle = {
-                    clipboard.setText(AnnotatedString(item.title))
-                    android.widget.Toast.makeText(context, AppLocalizer.text("Nom du jeu copié"), android.widget.Toast.LENGTH_SHORT).show()
-                })
-                GameDetailHeader(onBack = onBack, onEdit = { edit = true }, enabled = true)
+                    GameDetailHero(item, onCover = { previewCover = true }, onCopyTitle = {
+                        clipboard.setText(AnnotatedString(item.title))
+                        android.widget.Toast.makeText(context, AppLocalizer.text("Nom du jeu copié"), android.widget.Toast.LENGTH_SHORT).show()
+                    })
+                    GameDetailHeader(onBack = onBack, onEdit = { edit = true }, enabled = true)
                 }
             }
-            item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f).heightIn(min = 54.dp)) {
-                        Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("Jouer")
-                    }
-                    FilledTonalIconToggleButton(checked = item.favorite, onCheckedChange = { vm.toggleFavorite(item.id) }, modifier = Modifier.size(54.dp)) {
-                        Icon(if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, AppLocalizer.text("Favori"), Modifier.size(22.dp))
-                    }
-                }
-            }
-            item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    SummaryStat("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration(), Modifier.weight(1f))
-                    SummaryStat("Lancements", item.playCount.toString(), Modifier.weight(1f))
-                    SummaryStat("Moteur", item.engine.readableEngine(), Modifier.weight(1f))
-                }
-            }
-            if (latestUpdate != null && latestUpdate != item.version) item {
-                Surface(onClick = { confirmUpdate = true }, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
-                    Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                        Icon(Icons.Default.Update, null, Modifier.size(20.dp))
-                        Text("Nouvelle version disponible : ${latestUpdate}", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
-                        Icon(Icons.Default.CheckCircle, AppLocalizer.text("Mise à jour effectuée"), Modifier.size(20.dp))
-                    }
-                }
-            }
-            item {
-                OutlinedButton(onClick = { showTools = true }, Modifier.fillMaxWidth().padding(horizontal = 20.dp).heightIn(min = 48.dp)) {
-                    Icon(Icons.Default.Build, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Outils")
-                }
-            }
-            item {
-                Card(
-                    onClick = { showCompatibilityActions = true },
-                    modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
-                    colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
-                ) {
-                    Column(Modifier.fillMaxWidth().padding(14.dp)) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(if (diagnostic?.canLaunch == true) Icons.Default.CheckCircle else Icons.Default.BuildCircle, null, Modifier.size(22.dp), tint = if (diagnostic?.canLaunch == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(8.dp))
-                            Column(Modifier.weight(1f)) {
-                                Text("Compatibilité", fontWeight = FontWeight.SemiBold)
-                                Text(diagnostic?.summary ?: "Vérification en cours…", style = MaterialTheme.typography.bodySmall)
-                            }
-                            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir")
+            val details: LazyListScope.() -> Unit = {
+                item {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Button(onClick = { vm.launchGame(item.id) }, Modifier.weight(1f).heightIn(min = 54.dp)) {
+                            Icon(Icons.Default.PlayArrow, null); Spacer(Modifier.width(8.dp)); Text("Jouer")
+                        }
+                        FilledTonalIconToggleButton(checked = item.favorite, onCheckedChange = { vm.toggleFavorite(item.id) }, modifier = Modifier.size(54.dp)) {
+                            Icon(if (item.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, AppLocalizer.text("Favori"), Modifier.size(22.dp))
                         }
                     }
                 }
-            }
-            item {
-                Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Text("Tags", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); TextButton(onClick = { pickTags = true }) { Icon(Icons.Default.Add, null); Text("Choisir") }
-                }
-                if (assignedTags.isEmpty()) Text("Aucun tag associé", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp))
-                else LazyRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(assignedTags, key = { it.id }) { tag -> AssistChip(onClick = { onSearchTag(tag.id) }, label = { Text(tag.name) }) } }
-            }
-            item.f95Url?.let { f95Url ->
                 item {
-                    OutlinedButton(onClick = { uriHandler.openUri(f95Url) }, Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir le thread F95Zone")
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                        SummaryStat("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration(), Modifier.weight(1f))
+                        SummaryStat("Lancements", item.playCount.toString(), Modifier.weight(1f))
+                        SummaryStat("Moteur", item.engine.readableEngine(), Modifier.weight(1f))
                     }
                 }
-            }
-            if (!item.description.isNullOrBlank()) item {
-                Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                    ExpandableDetailSection("Description", descriptionExpanded, { descriptionExpanded = !descriptionExpanded }) {
-                        Text(item.description, style = MaterialTheme.typography.bodyMedium)
+                if (latestUpdate != null && latestUpdate != item.version) item {
+                    Surface(onClick = { confirmUpdate = true }, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                        Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                            Icon(Icons.Default.Update, null, Modifier.size(20.dp))
+                            Text("Nouvelle version disponible : ${latestUpdate}", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                            Icon(Icons.Default.CheckCircle, AppLocalizer.text("Mise à jour effectuée"), Modifier.size(20.dp))
+                        }
                     }
                 }
-            }
-            item {
-                Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                    ExpandableDetailSection("Informations", informationExpanded, { informationExpanded = !informationExpanded }) {
-                        InfoLine("Moteur", item.engine.readableEngine())
-                        InfoLine("Lancements", item.playCount.toString())
-                        InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
-                        InfoLine("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration())
-                        InfoLine("Source", item.physicalPath ?: item.documentUri)
+                item {
+                    OutlinedButton(onClick = { showTools = true }, Modifier.fillMaxWidth().padding(horizontal = 20.dp).heightIn(min = 48.dp)) {
+                        Icon(Icons.Default.Build, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Outils")
                     }
                 }
+                item {
+                    Card(
+                        onClick = { showCompatibilityActions = true },
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
+                        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer)
+                    ) {
+                        Column(Modifier.fillMaxWidth().padding(14.dp)) {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Icon(if (diagnostic?.canLaunch == true) Icons.Default.CheckCircle else Icons.Default.BuildCircle, null, Modifier.size(22.dp), tint = if (diagnostic?.canLaunch == false) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)
+                                Spacer(Modifier.width(8.dp))
+                                Column(Modifier.weight(1f)) {
+                                    Text("Compatibilité", fontWeight = FontWeight.SemiBold)
+                                    Text(diagnostic?.summary ?: "Vérification en cours…", style = MaterialTheme.typography.bodySmall)
+                                }
+                                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir")
+                            }
+                        }
+                    }
+                }
+                item {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Text("Tags", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); TextButton(onClick = { pickTags = true }) { Icon(Icons.Default.Add, null); Text("Choisir") }
+                    }
+                    if (assignedTags.isEmpty()) Text("Aucun tag associé", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp))
+                    else LazyRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(assignedTags, key = { it.id }) { tag -> AssistChip(onClick = { onSearchTag(tag.id) }, label = { Text(tag.name) }) } }
+                }
+                item.f95Url?.let { f95Url ->
+                    item {
+                        OutlinedButton(onClick = { uriHandler.openUri(f95Url) }, Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                            Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir le thread F95Zone")
+                        }
+                    }
+                }
+                if (!item.description.isNullOrBlank()) item {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                        ExpandableDetailSection("Description", descriptionExpanded, { descriptionExpanded = !descriptionExpanded }) {
+                            Text(item.description, style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+                item {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                        ExpandableDetailSection("Informations", informationExpanded, { informationExpanded = !informationExpanded }) {
+                            InfoLine("Moteur", item.engine.readableEngine())
+                            InfoLine("Lancements", item.playCount.toString())
+                            InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
+                            InfoLine("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration())
+                            InfoLine("Source", item.physicalPath ?: item.documentUri)
+                        }
+                    }
+                }
+                item { OutlinedButton(onClick = { pickFolder = true }, Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                    Icon(Icons.Default.FolderCopy, null); Spacer(Modifier.width(8.dp))
+                    Text(state.folders.firstOrNull { it.id == item.libraryFolderId }?.name ?: "Classer dans un dossier")
+                } }
+                if (item.missing) item { Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
+                    Text("Ce jeu est introuvable. Rescannez sa source.", Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onErrorContainer)
+                } }
             }
-            item { OutlinedButton(onClick = { pickFolder = true }, Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
-                Icon(Icons.Default.FolderCopy, null); Spacer(Modifier.width(8.dp))
-                Text(state.folders.firstOrNull { it.id == item.libraryFolderId }?.name ?: "Classer dans un dossier")
-            } }
-            if (item.missing) item { Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
-                Text("Ce jeu est introuvable. Rescannez sa source.", Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onErrorContainer)
-            } }
+            if (LandscapeLayout) Row(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
+                Box(Modifier.weight(.45f).fillMaxHeight()) { hero() }
+                LazyColumn(Modifier.weight(.55f).fillMaxHeight(), contentPadding = PaddingValues(top = 16.dp, bottom = 32.dp), verticalArrangement = Arrangement.spacedBy(16.dp), content = details)
+            } else LazyColumn(Modifier.navigationBarsPadding().widthIn(max = 840.dp).fillMaxWidth(),
+                contentPadding = PaddingValues(bottom = 96.dp), verticalArrangement = Arrangement.spacedBy(22.dp)) {
+                item { hero() }
+                details()
+            }
         }
+
         if (item == null) GameDetailHeader(onBack = onBack, onEdit = {}, enabled = false)
     }
     if (item != null && edit) EditGameDialog(
@@ -276,7 +285,7 @@ internal fun GameDetailScreen(
 @Composable
 internal fun GameDetailHeader(onBack: () -> Unit, onEdit: () -> Unit, enabled: Boolean) {
     Row(
-        Modifier.fillMaxWidth().statusBarsPadding().height(52.dp).padding(horizontal = 12.dp),
+        Modifier.fillMaxWidth().statusBarsPadding().padding(top = 12.dp, bottom = 8.dp).height(52.dp).padding(horizontal = 20.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         CircularHeaderButton(onBack, Icons.AutoMirrored.Filled.ArrowBack, "Retour")
@@ -488,12 +497,12 @@ internal fun LaunchProfileDialog(
 
 @Composable
 internal fun GameDetailHero(game: GameEntity, onCover: () -> Unit, onCopyTitle: () -> Unit) {
-    Box(Modifier.fillMaxWidth().heightIn(min = 330.dp).statusBarsPadding()) {
+    Box(Modifier.fillMaxWidth().then(if (LandscapeLayout) Modifier.fillMaxHeight() else Modifier.heightIn(min = 330.dp)).statusBarsPadding()) {
         GameCover(game, Modifier.matchParentSize().clickable(onClickLabel = AppLocalizer.text("Jaquette"), onClick = onCover))
         Box(Modifier.matchParentSize().background(Brush.verticalGradient(listOf(Color(0x4409090F), Color.Transparent, MaterialTheme.colorScheme.background))))
         Column(Modifier.fillMaxWidth().align(Alignment.BottomStart).padding(start = 20.dp, end = 20.dp, top = 96.dp, bottom = 10.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             game.developer?.let { androidx.compose.material3.Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.primary) }
-            androidx.compose.material3.Text(game.title, Modifier.clickable(onClick = onCopyTitle), style = MaterialTheme.typography.displayMedium, maxLines = 3, overflow = TextOverflow.Ellipsis)
+            androidx.compose.material3.Text(game.title, Modifier.clickable(onClick = onCopyTitle), style = if (LandscapeLayout) MaterialTheme.typography.headlineMedium else MaterialTheme.typography.displayMedium, maxLines = if (LandscapeLayout) 2 else 3, overflow = TextOverflow.Ellipsis)
             androidx.compose.material3.Text(listOfNotNull(game.engine.readableEngine(), game.version).joinToString(" · "), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

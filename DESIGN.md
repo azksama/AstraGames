@@ -13,7 +13,7 @@ Astra est une médiathèque Android pour des catalogues très volumineux. L'inte
 
 ## Adaptation
 
-- La navigation à quatre destinations (Accueil, Jeux, Collections, Paramètres) utilise des cibles de 56 dp avec un fond de sélection visible et une sémantique d’onglet ; sur écran large, un rail de 104 dp conserve ces destinations.
+- La navigation à quatre destinations (Accueil, Jeux, Collections, Paramètres) utilise des cibles de 56 dp avec un fond de sélection visible et une sémantique d’onglet ; sur écran large, un rail de 104 dp conserve ces destinations (80 dp en paysage).
 - La bibliothèque laisse l'utilisateur choisir précisément 2, 3 ou 4 colonnes.
 - À partir de 600 dp, la grille devient adaptative ; à partir de 840 dp, ou en paysage entre 600 et 839 dp avec une fenêtre courte, la navigation passe sur un rail latéral compact.
 - Les vues en liste restent disponibles pour les écrans étroits et la recherche.
@@ -41,6 +41,10 @@ Astra est une médiathèque Android pour des catalogues très volumineux. L'inte
 - Les dossiers Astra restent virtuels.
 - Les métadonnées utilisateur, favoris, tags et dossiers survivent à un déplacement reconnu par fingerprint.
 - Les permissions sont demandées par le Storage Access Framework et conservées de façon persistante.
+
+## Paysage
+
+La maquette horizontale de 780 × 360 sert de guide. À partir de 600 dp avec une fenêtre plus large que haute, les écrans répartissent leur contenu sur deux panneaux. L’accueil conserve la reprise à gauche et les dix jeux récents à droite ; la fiche conserve l’affiche à gauche et les commandes à droite. Collections, paramètres et éditeur disposent de panneaux défilants séparés. Voir [UI 1.9](docs/UI_1.9.md).
 
 ## Parcours
 

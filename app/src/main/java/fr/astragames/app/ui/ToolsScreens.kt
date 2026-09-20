@@ -60,50 +60,10 @@ import java.util.Locale
 
 @Composable
 internal fun LockScreen(state: AstraUiState, vm: AstraViewModel) {
-    var pin by remember { mutableStateOf("") }
     LaunchedEffect(state.settings.lockBiometricEnabled) {
         if (state.settings.lockBiometricEnabled) vm.requestBiometricUnlock()
     }
-    Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding(), contentAlignment = Alignment.Center) {
-    Column(Modifier.widthIn(max = 480.dp).fillMaxWidth().verticalScroll(rememberScrollState()).padding(28.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(Icons.Default.Lock, null, Modifier.size(56.dp), tint = MaterialTheme.colorScheme.primary)
-        Spacer(Modifier.height(16.dp))
-        Text("Astra est verrouille", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(8.dp))
-        Text("Utilisez votre empreinte ou votre code pour continuer.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Spacer(Modifier.height(24.dp))
-        if (state.settings.lockBiometricEnabled) {
-            FilledTonalButton(onClick = vm::requestBiometricUnlock, modifier = Modifier.fillMaxWidth()) {
-                Icon(Icons.Default.Fingerprint, null); Spacer(Modifier.width(8.dp)); Text("Deverrouiller par biometrie")
-            }
-            Spacer(Modifier.height(12.dp))
-        }
-        if (state.settings.lockPinEnabled) {
-            OutlinedTextField(
-                value = pin,
-                onValueChange = { value -> pin = value.filter(Char::isDigit).take(8) },
-                label = { Text("Code") },
-                visualTransformation = PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword, imeAction = ImeAction.Done),
-                keyboardActions = KeyboardActions(onDone = { if (pin.length >= 4) vm.verifyLockPin(pin) { if (!it) pin = "" } }),
-                singleLine = true,
-                modifier = Modifier.fillMaxWidth()
-            )
-            Spacer(Modifier.height(12.dp))
-            Button(onClick = { vm.verifyLockPin(pin) { if (!it) pin = "" } }, modifier = Modifier.fillMaxWidth(), enabled = pin.length >= 4) { Text("Deverrouiller") }
-            Spacer(Modifier.height(16.dp))
-            val keys = listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "<")
-            keys.chunked(3).forEach { row ->
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    row.forEach { key ->
-                        OutlinedButton(onClick = { when (key) { "<" -> pin = pin.dropLast(1); "" -> Unit; else -> pin = (pin + key).take(8) } }, enabled = key.isNotBlank(), modifier = Modifier.weight(1f).heightIn(min = 48.dp), contentPadding = PaddingValues(horizontal = 8.dp, vertical = 8.dp)) { Text(if (key == "<") "Effacer" else key) }
-                    }
-                }
-                Spacer(Modifier.height(8.dp))
-            }
-        }
-    }
-    }
+    LockContent(state.settings.lockBiometricEnabled, state.settings.lockPinEnabled, vm::requestBiometricUnlock) { pin, result -> vm.verifyLockPin(pin, result) }
 }
 
 @Composable

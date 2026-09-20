@@ -11,10 +11,15 @@ class HomeScreenTest {
         lastModified = 1, fingerprint = id, lastPlayedAt = lastPlayed
     )
 
-    @Test fun homeUsesTheLastThreeDistinctVisibleGamesRegardlessOfLibraryFilters() {
+    @Test fun homeUsesTheLastTenVisibleGamesRegardlessOfLibraryFilters() {
         val games = listOf(game("second", 20), game("never", null), game("hidden", 50).copy(hidden = true), game("fourth", 1), game("first", 30), game("third", 10))
         val state = AstraUiState(games = games, filteredGames = listOf(games[1]))
-        assertEquals(listOf("first", "second", "third"), homeRecentGames(state).map { it.id })
+        assertEquals(listOf("first", "second", "third", "fourth"), homeRecentGames(state).map { it.id })
+    }
+
+    @Test fun recentGamesAreCappedAtTen() {
+        val recent = homeRecentGames(AstraUiState(games = (1..20).map { game(it.toString(), it.toLong()) }))
+        assertEquals((20 downTo 11).map(Int::toString), recent.map { it.id })
     }
 
     @Test fun aFreshLibraryDoesNotInventARecentSession() {

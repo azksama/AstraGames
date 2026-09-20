@@ -3,6 +3,7 @@ package fr.astragames.app.ui
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -73,9 +74,11 @@ internal fun SmartCollectionEditorDialog(
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             ScrollingScaffold(topBar = { CompactHeader("Collections", onBack = onDismiss) }) { padding ->
                 Box(Modifier.fillMaxSize().padding(padding).navigationBarsPadding().imePadding(), contentAlignment = Alignment.TopCenter) {
-                    LazyColumn(Modifier.widthIn(max = 760.dp).fillMaxWidth(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
+                    val intro: LazyListScope.() -> Unit = {
                         item { PageHeading(if (collection == null) "Nouvelle collection" else "Modifier la collection", "Une sélection qui évolue avec votre bibliothèque.") }
                         item { OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Nom de la collection") }, singleLine = true, shape = RoundedCornerShape(12.dp)) }
+                    }
+                    val ruleContent: LazyListScope.() -> Unit = {
                         item {
                             Text("Règles", style = MaterialTheme.typography.titleLarge)
                             Spacer(Modifier.height(8.dp))
@@ -92,6 +95,8 @@ internal fun SmartCollectionEditorDialog(
                         item { OutlinedButton(onClick = { rules += CollectionRuleDraft("ENGINE", "IS", defaultRuleValue("ENGINE", state)) }, Modifier.fillMaxWidth()) {
                             Icon(Icons.Default.Add, null); Spacer(Modifier.width(8.dp)); Text("Ajouter une règle")
                         } }
+                    }
+                    val actions: LazyListScope.() -> Unit = {
                         item {
                             Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.surfaceContainer) {
                                 Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -104,6 +109,11 @@ internal fun SmartCollectionEditorDialog(
                         item { Button(onClick = { onSave(collection?.id, name.trim(), mode, snapshot) }, enabled = name.isNotBlank() && valid,
                             modifier = Modifier.fillMaxWidth().heightIn(min = 50.dp)) { Text(if (collection == null) "Créer la collection" else "Enregistrer") } }
                     }
+                    if (LandscapeLayout) Row(Modifier.fillMaxSize()) {
+                        LazyColumn(Modifier.weight(.42f).fillMaxHeight(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) { intro(); actions() }
+                        LazyColumn(Modifier.weight(.58f).fillMaxHeight(), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp), content = ruleContent)
+                    } else LazyColumn(Modifier.widthIn(max = 760.dp).fillMaxWidth(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) { intro(); ruleContent(); actions() }
+
                 }
             }
         }
@@ -113,16 +123,25 @@ internal fun SmartCollectionEditorDialog(
 @Composable
 private fun RuleCard(index: Int, rule: CollectionRuleDraft, state: AstraUiState, onChange: (CollectionRuleDraft) -> Unit, onRemove: () -> Unit) {
     Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.background, border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)) {
-        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Column(Modifier.fillMaxWidth().padding(if (LandscapeLayout) 10.dp else 14.dp), verticalArrangement = Arrangement.spacedBy(if (LandscapeLayout) 8.dp else 12.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Règle", Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
-                Text((index + 1).toString(), style = MaterialTheme.typography.labelMedium)
+                Text("Règle", style = MaterialTheme.typography.labelMedium)
+                Spacer(Modifier.width(6.dp))
+                Text((index + 1).toString(), Modifier.weight(1f), style = MaterialTheme.typography.labelMedium)
                 IconButton(onClick = onRemove) { Icon(Icons.Default.DeleteOutline, AppLocalizer.text("Retirer"), Modifier.size(20.dp)) }
             }
-            DropdownSelector("Champ", ruleFields, rule.field, { it.fieldLabel() }) { field ->
-                onChange(CollectionRuleDraft(field, defaultOperator(field), defaultRuleValue(field, state)))
+            val fieldPicker: @Composable () -> Unit = {
+                DropdownSelector("Champ", ruleFields, rule.field, { it.fieldLabel() }) { field ->
+                    onChange(CollectionRuleDraft(field, defaultOperator(field), defaultRuleValue(field, state)))
+                }
             }
-            DropdownSelector("Condition", operatorsFor(rule.field), rule.operator, { it.operatorLabelRaw() }) { onChange(rule.copy(operator = it)) }
+            val operatorPicker: @Composable () -> Unit = {
+                DropdownSelector("Condition", operatorsFor(rule.field), rule.operator, { it.operatorLabelRaw() }) { onChange(rule.copy(operator = it)) }
+            }
+            if (LandscapeLayout && androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.2f) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                Box(Modifier.weight(1f)) { fieldPicker() }
+                Box(Modifier.weight(1f)) { operatorPicker() }
+            } else { fieldPicker(); operatorPicker() }
             when (rule.field) {
                 "ENGINE" -> DropdownSelector("Moteur", GameEngine.entries.map { it.name }, rule.value, { it.readableEngine() }) { onChange(rule.copy(value = it)) }
                 "TAG" -> SearchableTagSelector(state.tags, rule.value) { onChange(rule.copy(value = it)) }

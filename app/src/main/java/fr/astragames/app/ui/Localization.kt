@@ -52,6 +52,11 @@ object AppLocalizer {
     ) = Translation(source, english, spanish, russian, german, chinese, japanese)
 
     private val catalog = listOf(
+        t("Astra est verrouillé", "Astra is locked", "Astra está bloqueado", "Astra заблокирован", "Astra ist gesperrt", "Astra 已锁定", "Astra はロック中です"),
+        t("Déverrouiller Astra", "Unlock Astra", "Desbloquear Astra", "Разблокировать Astra", "Astra entsperren", "解锁 Astra", "Astra のロックを解除"),
+        t("Déverrouiller", "Unlock", "Desbloquear", "Разблокировать", "Entsperren", "解锁", "ロック解除"),
+        t("Déverrouiller par biométrie", "Unlock with biometrics", "Desbloquear con biometría", "Разблокировать биометрией", "Mit Biometrie entsperren", "使用生物识别解锁", "生体認証で解除"),
+        t("Code incorrect", "Incorrect code", "Código incorrecto", "Неверный код", "Falscher Code", "密码错误", "コードが違います"),
         t("Teinte de l’application", "App hue", "Tono de la aplicación", "Оттенок приложения", "App-Farbton", "应用色调", "アプリの色合い"),
         t("Vos jeux, organisés à votre façon.", "Your games, organized your way.", "Tus juegos, organizados a tu manera.", "Ваши игры в удобном для вас порядке.", "Deine Spiele, nach deinen Wünschen sortiert.", "按你的方式整理游戏。", "自分らしくゲームを整理。"),
         t("Créer une collection intelligente", "Create smart collection", "Crear colección inteligente", "Создать умную коллекцию", "Intelligente Sammlung erstellen", "创建智能合集", "スマートコレクションを作成"),

@@ -81,19 +81,18 @@ class HomeUiTest {
         }
         compose.onNodeWithText("Astra").assertIsDisplayed()
         compose.onNodeWithText("GAMES").assertIsDisplayed()
-        compose.onNodeWithText("The Clockwork Garden").assertIsDisplayed()
-        compose.onNodeWithText("Older game").assertDoesNotExist()
+        compose.onAllNodesWithText("The Clockwork Garden").onFirst().assertIsDisplayed()
         compose.onNodeWithContentDescription("Home").assertIsSelected()
         compose.onNodeWithContentDescription("Games").assertIsNotSelected()
         compose.onNodeWithContentDescription("Updates").assertDoesNotExist()
         compose.onNodeWithContentDescription("History").assertDoesNotExist()
         compose.onNodeWithText("Resume game").performScrollTo().performClick()
         assertEquals(listOf("first"), resumed)
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Northern Lights"))
-        compose.onNode(hasScrollToNodeAction()).performTouchInput { swipeUp() }
+        compose.onNodeWithTag("home-page").performScrollToNode(hasText("Your games"))
+        compose.onNodeWithTag("home-page").performTouchInput { swipeUp() }
         compose.onNodeWithText("Northern Lights").performClick()
         assertEquals(listOf("second"), opened)
-        compose.onNodeWithText("The Clockwork Garden").performScrollTo()
+        compose.onAllNodesWithText("The Clockwork Garden").onFirst().performScrollTo()
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
         val output = File(context.cacheDir, "ui-review").apply { mkdirs() }.resolve("home-phone.png")
         output.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }

@@ -37,9 +37,10 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - flou des jaquettes désactivable, automatique au démarrage ou manuel, avec bascule rapide depuis Jeux ;
 - navigation flottante élargie à quatre entrées (Accueil, Jeux, Collections, Paramètres), sans bande opaque derrière la pilule et maintenue en place sous le clavier Android ;
 - en-têtes qui défilent avec les pages, avec recherche ancrée en haut de Jeux après leur disparition ;
-- accueil avec icône Astra/GAMES, dernière partie en affiche panoramique, bouton de reprise et deux jeux précédents ; bibliothèque complète accessible par Jeux ou Tout voir ;
+- accueil avec icône Astra/GAMES, dernière partie en affiche panoramique, bouton de reprise et dix derniers jeux lancés dans une grille à défilement vertical ; bibliothèque complète accessible par Jeux ou Tout voir ;
 - accès Historique et Mises à jour dans la section Activité de l’accueil ;
-- navigation latérale sur grand écran, largeur de lecture limitée et commandes accessibles avec texte agrandi ;
+- navigation latérale sur grand écran et en paysage, panneaux côte à côte adaptés à la maquette, largeur de lecture limitée et commandes accessibles avec texte agrandi ;
+- volets des paramètres fermés par défaut et verrouillage aux couleurs d’Astra avec le vrai logo et saisie du code masquée ;
 - Baseline Profile embarqué et module de génération Macrobenchmark pour accélérer le démarrage et les parcours principaux ;
 - copie rapide du nom d’une jaquette en touchant son libellé et raccourci vers le dossier de sauvegarde d’un jeu ;
 - verrouillage biométrique et code chiffré, historique des sessions, bouton Outils, éditeur de sauvegardes et gestionnaire de mods ;

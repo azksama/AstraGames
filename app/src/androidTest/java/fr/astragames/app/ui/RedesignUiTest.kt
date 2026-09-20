@@ -67,6 +67,8 @@ class RedesignUiTest {
         AppLocalizer.language = previousLanguage
     }
 
+    private fun landscape() = app.resources.configuration.let { it.screenWidthDp >= 600 && it.screenWidthDp > it.screenHeightDp }
+
     private var imeBottom = 0
 
     private fun content() = compose.setContent {
@@ -89,8 +91,8 @@ class RedesignUiTest {
         content()
         compose.onNodeWithText("Bibliothèque").assertIsDisplayed()
         capture("home")
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Mossbound"))
-        compose.onNode(hasScrollToNodeAction()).performTouchInput { swipeUp() }
+        if (!landscape()) compose.onNodeWithTag("home-recent-games").performScrollTo()
+        compose.onNodeWithTag("home-recent-games").performScrollToNode(hasText("Mossbound"))
         compose.onNodeWithText("Mossbound").performClick()
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Mossbound").fetchSemanticsNodes().isNotEmpty() }
         compose.waitUntil(10_000) { compose.onAllNodesWithText("Jouer").fetchSemanticsNodes().isNotEmpty() }
@@ -103,13 +105,13 @@ class RedesignUiTest {
         // Dismiss the tools sheet using the real system back action.
         androidx.test.espresso.Espresso.pressBack()
         androidx.test.espresso.Espresso.pressBack()
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Historique"))
-        compose.onNode(hasScrollToNodeAction()).performTouchInput { swipeUp() }
+        compose.onNodeWithTag("home-page").performScrollToNode(hasText("Historique"))
+        compose.onNodeWithTag("home-page").performTouchInput { swipeUp() }
         compose.onNodeWithText("Historique").performClick()
         compose.onNodeWithText("Aucune session enregistree").assertExists()
         compose.onNodeWithContentDescription("Retour").performClick()
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Mises à jour"))
-        compose.onNode(hasScrollToNodeAction()).performTouchInput { swipeUp() }
+        compose.onNodeWithTag("home-page").performScrollToNode(hasText("Mises à jour"))
+        compose.onNodeWithTag("home-page").performTouchInput { swipeUp() }
         compose.onNodeWithText("Mises à jour").performClick()
         compose.onNodeWithContentDescription("Vérifier les mises à jour").assertExists()
         compose.onNodeWithContentDescription("Retour").performClick()
@@ -121,7 +123,7 @@ class RedesignUiTest {
         androidx.test.espresso.Espresso.closeSoftKeyboard()
         compose.onNodeWithContentDescription("Retour").performClick()
         compose.onNodeWithContentDescription("Collections").performClick()
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Collections intelligentes"))
+        compose.onAllNodes(hasScrollToNodeAction()).onLast().performScrollToNode(hasText("Collections intelligentes"))
         compose.onNodeWithText("Collections intelligentes").assertIsDisplayed()
         capture("collections")
     }
@@ -129,11 +131,14 @@ class RedesignUiTest {
     @Test fun settingsRestoreUsesTheCorrectActionAndCanBeCancelled() {
         content()
         compose.onNodeWithContentDescription("Paramètres").performClick()
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Sources et scan"))
+        compose.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("Sources et scan"))
         compose.onNodeWithText("Sources et scan").assertIsDisplayed()
         capture("settings")
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Restaurer une sauvegarde"))
-        compose.onNode(hasScrollToNodeAction()).performTouchInput { swipeUp() }
+        compose.onAllNodes(hasScrollToNodeAction()).onLast().performScrollToNode(hasText("Sauvegarde et restauration"))
+        compose.onAllNodes(hasScrollToNodeAction()).onLast().performTouchInput { swipeUp(startY = height * .7f, endY = height * .1f) }
+        compose.onNodeWithText("Sauvegarde et restauration").performClick()
+        compose.onAllNodes(hasScrollToNodeAction()).onLast().performScrollToNode(hasText("Restaurer une sauvegarde"))
+        compose.onAllNodes(hasScrollToNodeAction()).onLast().performTouchInput { swipeUp() }
         compose.onNodeWithText("Restaurer une sauvegarde").performClick()
         capture("restore-dialog")
         compose.onNodeWithText("Restaurer").assertIsDisplayed()
@@ -145,17 +150,17 @@ class RedesignUiTest {
         val games = (0 until 45).map { i -> state.games[i % 3].copy(id = "grid-$i", title = "Jeu $i", engine = if (i % 2 == 0) "RPG_MAKER_VX_ACE" else "RENPY") }
         state = state.copy(games = games, filteredGames = games, settings = state.settings.copy(viewMode = LibraryViewMode.GRID, gridColumns = 3))
         content()
-        val initial = compose.onNodeWithText("Astra").fetchSemanticsNode().boundsInRoot.top
+        val initial = if (!landscape()) compose.onNodeWithText("Astra").fetchSemanticsNode().boundsInRoot.top else 0f
         listOf("Collections", "Paramètres", "Jeux").forEach { destination ->
             compose.onNodeWithContentDescription(destination).performClick()
-            assertEquals(initial, compose.onNodeWithText("Astra").fetchSemanticsNode().boundsInRoot.top, 1f)
+            if (!landscape()) assertEquals(initial, compose.onNodeWithText("Astra").fetchSemanticsNode().boundsInRoot.top, 1f)
         }
         capture("grid")
         val headerHeight = compose.onNodeWithTag("scrolling-header").fetchSemanticsNode().boundsInRoot.height
         val searchTop = compose.onNodeWithText("Rechercher un jeu").fetchSemanticsNode().boundsInRoot.top
         val grid = compose.onNode(hasScrollToNodeAction() and SemanticsMatcher.keyIsDefined(androidx.compose.ui.semantics.SemanticsProperties.VerticalScrollAxisRange))
         grid.performTouchInput { swipeUp() }
-        compose.onNodeWithText("Astra").assertIsNotDisplayed()
+        if (!landscape()) compose.onNodeWithText("Astra").assertIsNotDisplayed()
         compose.onNodeWithText("Tous les jeux").assertIsNotDisplayed()
         val pinned = compose.onNodeWithText("Rechercher un jeu").fetchSemanticsNode().boundsInRoot.top
         assertTrue(pinned < searchTop - 50f)
@@ -164,7 +169,7 @@ class RedesignUiTest {
         capture("grid-scrolled")
         grid.performScrollToIndex(0)
         grid.performTouchInput { swipe(Offset(centerX, 10f), Offset(centerX, headerHeight + 14f), 1000) }
-        compose.onNodeWithText("Astra").assertIsDisplayed()
+        compose.onNodeWithText(if (landscape()) "Tous les jeux" else "Astra").assertIsDisplayed()
     }
 
     @Test fun keyboardKeepsNavigationAtTheSamePosition() {
@@ -196,11 +201,12 @@ class RedesignUiTest {
         } } }
         compose.onNodeWithText("Nom de la collection").performTextInput("Mes RPG")
         androidx.test.espresso.Espresso.closeSoftKeyboard()
-        compose.onNodeWithText("Au moins une").performClick()
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Créer la collection"))
+        compose.onNodeWithText("Au moins une").performScrollTo().performClick()
+        compose.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("Créer la collection"))
         compose.onNodeWithText("Créer la collection").assertIsNotEnabled()
-        compose.onNodeWithText("Ajouter une règle").performScrollTo().performClick()
-        compose.onNode(hasScrollToNodeAction()).performScrollToNode(hasText("Créer la collection"))
+        compose.onAllNodes(hasScrollToNodeAction()).onLast().performScrollToNode(hasText("Ajouter une règle"))
+        compose.onNodeWithText("Ajouter une règle").performClick()
+        compose.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("Créer la collection"))
         compose.onNodeWithText("Créer la collection").assertIsEnabled()
         capture("collection-editor")
         compose.onNodeWithText("Créer la collection").performClick()
@@ -224,6 +230,41 @@ class RedesignUiTest {
             compose.onNodeWithText("Réinitialiser").performClick()
             assertEquals(255, SettingsRepository(app).settings.first().accentHue)
         } finally { settings.setAccentHue(previous) }
+    }
+
+    @Test fun recentTenAndCollapsedPreferencesStayAccessible() {
+        val games = (1..14).map { i -> state.games[i % 3].copy(id = "recent-$i", title = "Recent $i", lastPlayedAt = i.toLong()) }
+        state = state.copy(games = games, filteredGames = games)
+        content()
+        if (!landscape()) compose.onNodeWithTag("home-recent-games").performScrollTo()
+        compose.onNodeWithTag("home-recent-games").performScrollToNode(hasText("Recent 5"))
+        compose.onNodeWithText("Recent 5").assertIsDisplayed()
+        compose.onNodeWithText("Recent 4").assertDoesNotExist()
+        capture("recent-ten")
+        compose.onNodeWithContentDescription("Paramètres").performClick()
+        compose.onNodeWithContentDescription("Teinte de l’application").assertDoesNotExist()
+        compose.onNodeWithText("Restaurer une sauvegarde").assertDoesNotExist()
+        compose.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasText("Apparence"))
+        compose.onNodeWithText("Apparence").performClick()
+        compose.onAllNodes(hasScrollToNodeAction()).onFirst().performScrollToNode(hasContentDescription("Teinte de l’application"))
+        compose.onNodeWithContentDescription("Teinte de l’application").assertIsDisplayed()
+    }
+
+    @Test fun smartCollectionCountSharesTheNameRowAndRulesStayClose() {
+        state = state.copy(
+            collections = listOf(fr.astragames.app.data.local.CollectionEntity("review-smart", "Mes RPG")),
+            collectionRules = listOf(fr.astragames.app.data.local.CollectionRuleEntity("review-rule", "review-smart", "ENGINE", "IS", "RPG_MAKER_MV")),
+            customCollectionGames = mapOf("review-smart" to state.games))
+        content()
+        compose.onNodeWithContentDescription("Collections").performClick()
+        compose.onAllNodes(hasScrollToNodeAction()).onLast().performScrollToNode(hasText("Mes RPG"))
+        val name = compose.onNodeWithText("Mes RPG", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val count = compose.onNodeWithText("3 jeux", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val rules = compose.onNodeWithText("Moteur Est RPG Maker MV", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue(count.left >= name.right)
+        assertEquals(name.center.y, count.center.y, 10f)
+        assertTrue(rules.top >= name.bottom && rules.top - name.bottom < 20f)
+        capture("smart-collections")
     }
 
 }

@@ -64,20 +64,20 @@ internal fun SettingsScreen(
     var showDuplicates by remember { mutableStateOf(false) }
     var showDeleted by remember { mutableStateOf(false) }
     var showAudit by remember { mutableStateOf(false) }
-    var sourcesExpanded by rememberSaveable { mutableStateOf(true) }
-    var appearanceExpanded by rememberSaveable { mutableStateOf(true) }
-    var joiplayExpanded by rememberSaveable { mutableStateOf(true) }
-    var organizationExpanded by rememberSaveable { mutableStateOf(true) }
-    var backupExpanded by rememberSaveable { mutableStateOf(true) }
-    var securityExpanded by rememberSaveable { mutableStateOf(true) }
+    var sourcesExpanded by rememberSaveable { mutableStateOf(false) }
+    var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
+    var joiplayExpanded by rememberSaveable { mutableStateOf(false) }
+    var organizationExpanded by rememberSaveable { mutableStateOf(false) }
+    var backupExpanded by rememberSaveable { mutableStateOf(false) }
+    var securityExpanded by rememberSaveable { mutableStateOf(false) }
     var showPinSetup by remember { mutableStateOf(false) }
     var intervalMenu by remember { mutableStateOf(false) }
     var showRuntimes by remember { mutableStateOf(false) }
     var confirmRestore by remember { mutableStateOf(false) }
-    ScrollingScaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Astra") }) { padding ->
-        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) { LazyColumn(Modifier.padding(padding).widthIn(max = 760.dp).fillMaxWidth(), contentPadding = PaddingValues(bottom = PageBottomPadding)) {
+    ScrollingScaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader(if (LandscapeLayout) "Paramètres" else "Astra") }) { padding ->
+        AdaptiveLists(Modifier.padding(padding), horizontalPadding = 0.dp, first = {
             item { Column(Modifier.padding(horizontal = 20.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(20.dp)) {
-                PageHeading("Paramètres")
+                if (!LandscapeLayout) PageHeading("Paramètres")
                 LibrarySummary(state)
             } }
             item { SettingsSectionHeader("Apparence", appearanceExpanded) { appearanceExpanded = !appearanceExpanded } }
@@ -174,6 +174,7 @@ internal fun SettingsScreen(
                 leadingContent = { Icon(Icons.Default.Extension, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
             ) }
             }
+        }, second = {
             item { SettingsSectionHeader("Organisation", organizationExpanded) { organizationExpanded = !organizationExpanded } }
             if (organizationExpanded) {
             item { RoundedListItem(
@@ -247,9 +248,9 @@ internal fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
-        }
+        })
     }
-    }
+
     sourceToDelete?.let { source -> ConfirmDialog(
         "Retirer la source « ${source.displayName} » ?",
         "Les jeux de cette source seront retirés de la bibliothèque Astra. Aucun fichier ne sera supprimé du téléphone.",
