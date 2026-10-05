@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.rememberScrollState
@@ -51,10 +52,10 @@ internal fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel, onBack: 
                                 GameCover(update.game, Modifier.width(36.dp).aspectRatio(.72f))
                                 Spacer(Modifier.width(8.dp))
                                 Column(Modifier.weight(1f)) {
-                                    Text(update.game.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                    MaterialText(update.game.title, style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                     Spacer(Modifier.height(2.dp))
-                                    Text(
-                                        "${update.currentVersion ?: "Version inconnue"} → ${update.latestVersion}",
+                                    MaterialText(
+                                        "${update.currentVersion ?: AppLocalizer.text("Version inconnue", LocalAppLanguage.current)} → ${update.latestVersion}",
                                         style = MaterialTheme.typography.bodySmall,
                                         color = MaterialTheme.colorScheme.primary
                                     )
@@ -92,14 +93,14 @@ internal fun ScanProgressOverlay(progress: ScanProgressState, onCancel: () -> Un
                 CircularProgressIndicator(Modifier.size(58.dp), strokeWidth = 5.dp)
                 Spacer(Modifier.height(24.dp))
                 Text("Synchronisation en cours", style = MaterialTheme.typography.headlineSmall)
-                if (progress.sourceName.isNotBlank()) Text(
+                if (progress.sourceName.isNotBlank()) MaterialText(
                     progress.sourceName,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.primary
                 )
                 Spacer(Modifier.height(14.dp))
                 Text(progress.phase.ifBlank { "Préparation…" }, style = MaterialTheme.typography.bodyLarge)
-                if (progress.currentPath.isNotBlank()) Text(
+                if (progress.currentPath.isNotBlank()) MaterialText(
                     progress.currentPath,
                     Modifier.padding(top = 6.dp),
                     color = MaterialTheme.colorScheme.onSurfaceVariant,

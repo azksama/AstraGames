@@ -104,4 +104,40 @@ class TranslationPatchTest {
         patch.apply(changes(files), "en", "fr")
         assertTrue(patch.exists())
     }
+
+    @Test fun orphanPendingMarkerNeverAllowsLaunchingOrStartingAnotherPatch() {
+        val files = MemoryFiles()
+        files.write(".astra-translation/pending", "Map001.json".toByteArray())
+        val patch = TranslationPatch(files)
+        assertFalse(patch.isLaunchSafe())
+        assertThrows(IllegalStateException::class.java) { patch.apply(changes(files), "en", "fr") }
+    }
+
+    @Test fun duplicateJournalKeysAreRejectedWithoutChangingAnyGameFile() {
+        val files = MemoryFiles(); val patch = TranslationPatch(files)
+        patch.apply(changes(files), "en", "fr")
+        val journal = files.read(TranslationPatch.MANIFEST)!!.toString(Charsets.UTF_8)
+        files.write(TranslationPatch.MANIFEST, journal.replaceFirst("{", "{\"version\":1,").toByteArray())
+        assertFalse(patch.isLaunchSafe())
+        assertThrows(IllegalArgumentException::class.java) { patch.restore() }
+        assertEquals("translated Actors.json", files.read("Actors.json")!!.toString(Charsets.UTF_8))
+    }
+
+    @Test fun restoreRechecksConflictsAfterPreflightBeforeEveryWrite() {
+        val files = MemoryFiles()
+        TranslationPatch(files).apply(changes(files), "en", "fr")
+        var mapReads = 0
+        val concurrent = object : TranslationFiles {
+            override fun read(path: String): ByteArray? {
+                if (path == "Map001.json" && ++mapReads == 2) files.write(path, "external update".toByteArray())
+                return files.read(path)
+            }
+            override fun write(path: String, bytes: ByteArray) = files.write(path, bytes)
+            override fun delete(path: String) = files.delete(path)
+        }
+        assertThrows(IllegalStateException::class.java) { TranslationPatch(concurrent).restore() }
+        assertEquals("external update", files.read("Map001.json")!!.toString(Charsets.UTF_8))
+        assertTrue(TranslationPatch(files).exists())
+        assertFalse(TranslationPatch(files).isLaunchSafe())
+    }
 }

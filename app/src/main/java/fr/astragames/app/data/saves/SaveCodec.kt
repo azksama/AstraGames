@@ -24,7 +24,10 @@ internal object SaveCodec {
         edits.forEach { edit ->
             val entry = available[edit.path] ?: error("Chemin introuvable : ${edit.path}")
             require(entry.editable && entry.type == edit.type) { "Valeur non editable : ${edit.path}" }
-            SaveValues.parse(edit)
+            val value = SaveValues.parse(edit)
+            if (engine in setOf("RPG_MAKER_MV", "RPG_MAKER_MZ") && value is Long) {
+                require(value in -9_007_199_254_740_991L..9_007_199_254_740_991L) { "Entier hors de la precision JavaScript du jeu." }
+            }
         }
         return when (engine) {
             "RENPY" -> {
@@ -38,7 +41,7 @@ internal object SaveCodec {
                         is Long -> PickleSplicer.spliceInt(bytes, range, value)
                         is Double -> PickleSplicer.spliceFloat(bytes, range, value)
                         is Boolean -> PickleSplicer.spliceBool(bytes, range, value)
-                        is String -> PickleSplicer.spliceString(bytes, range, value)
+                        is String -> PickleSplicer.spliceString(bytes, range, value, legacyString = node is PickleNode.PBytes && node.legacyString)
                         else -> error("Type non editable.")
                     }
                 }
@@ -51,12 +54,17 @@ internal object SaveCodec {
                 RpgMakerSaveCodec.encode(decoded)
             }
             else -> {
-                val roots = Marshal.loadAll(original)
-                val root = rgssRoot(roots)
-                edits.forEach { check(MarshalFlattener.applyEdit(root, it.path, it.newValue, it.type)) }
+                // Keep the actual stream roots mutable too: XP/VX store scalar headers in separate streams.
+                val roots = Marshal.loadAll(original).toMutableList()
+                val root = MarshalValue.ArrayValue(roots)
+                edits.forEach {
+                    val path = if (roots.size == 1) "root[0]" + it.path.removePrefix("root") else it.path
+                    check(MarshalFlattener.applyEdit(root, path, it.newValue, it.type))
+                }
                 roots.fold(ByteArray(0)) { output, value -> output + Marshal.dump(value) }
             }
         }.also { patched ->
+            require(patched.size <= MAX_SAVE_BYTES) { "Sauvegarde modifiee trop volumineuse." }
             val after = entries(read(engine, patched)).associateBy { it.path }
             edits.forEach { edit ->
                 val actual = after[edit.path] ?: error("Verification impossible : ${edit.path}")

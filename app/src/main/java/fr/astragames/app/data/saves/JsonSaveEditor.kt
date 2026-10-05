@@ -18,7 +18,10 @@ object JsonSaveEditor {
                 is String -> result += SaveEntry(path, SaveEntryType.STRING, value, true)
                 is JSONObject -> {
                     result += SaveEntry(path, SaveEntryType.OBJECT, "{" + value.length() + "}", false)
-                    value.keys().asSequence().forEach { key -> walk(value.opt(key), path + "." + encodeKey(key), depth + 1) }
+                    value.keys().asSequence().forEach { key ->
+                        // JsonEx uses these keys for constructors and object references, not game values.
+                        if (key !in setOf("@", "@c", "@r")) walk(value.opt(key), path + "." + encodeKey(key), depth + 1)
+                    }
                 }
                 is JSONArray -> {
                     result += SaveEntry(path, SaveEntryType.LIST, "[" + value.length() + "]", false)
@@ -86,18 +89,22 @@ object JsonSaveEditor {
 
 object SaveFieldClassifier {
     fun classify(entries: List<SaveEntry>): SimpleSaveFields {
+        fun fieldName(path: String): String = path.split('.', '[', ']', ':')
+            .lastOrNull { it.isNotBlank() && it != "@a" && it.toIntOrNull() == null }
+            .orEmpty().trim('_', '@').lowercase(Locale.ROOT)
         fun first(vararg needles: String) = entries.firstOrNull { entry ->
-            entry.editable && needles.any { needle -> entry.path.lowercase(Locale.ROOT).contains(needle) }
+            entry.editable && entry.type in setOf(SaveEntryType.INT, SaveEntryType.FLOAT, SaveEntryType.VARIABLE) &&
+                fieldName(entry.path) in needles
         }
         fun many(vararg needles: String) = entries.filter { entry ->
             entry.editable && needles.any { needle -> entry.path.lowercase(Locale.ROOT).contains(needle) }
         }.take(40)
         return SimpleSaveFields(
-            money = first("gold", "money", "argent", "_gold", "partygold"),
-            level = first("level", "niveau", "_level"),
-            experience = first("exp", "experience", "xp", "_exp"),
-            hp = first(".hp", "_hp", "hitpoints", "hit_points", "currenthp"),
-            mp = first(".mp", "_mp", "mana", ".sp", "_sp", "[sp]", "currentmp"),
+            money = first("gold", "money", "argent", "partygold"),
+            level = first("level", "niveau"),
+            experience = first("exp", "experience", "xp"),
+            hp = first("hp", "hitpoints", "hit_points", "currenthp"),
+            mp = first("mp", "mana", "sp", "currentmp"),
             inventory = many("item", "invent", "bag", "equip"),
             relations = many("affection", "relation", "love", "friend"),
             progress = many("chapter", "progress", "scene", "label", "map"),

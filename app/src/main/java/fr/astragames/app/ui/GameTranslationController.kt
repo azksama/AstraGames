@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import android.net.Uri
 import fr.astragames.app.AstraApplication
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.translation.GameTranslationManager
@@ -28,7 +29,8 @@ internal data class GameTranslationState(
 internal class GameTranslationController(
     private val app: AstraApplication,
     private val scope: CoroutineScope,
-    private val manager: GameTranslationManager = GameTranslationManager(app)
+    private val manager: GameTranslationManager = GameTranslationManager(app),
+    private val beforeExternalPicker: () -> Unit = {}
 ) {
     private val mutableState = MutableStateFlow(GameTranslationState())
     val state = mutableState.asStateFlow()
@@ -56,6 +58,30 @@ internal class GameTranslationController(
         mutableState.update { it.copy(analysis = manager.analyze(game), message = "Originaux restaurés") }
     }
 
+    fun prepareExternalPicker() = beforeExternalPicker()
+
+    fun exportManual(game: GameEntity, source: String, target: String, destination: Uri) = run(game, "Export des textes") {
+        val installations = app.container.dao.observeInstallationsForGame(game.id).first()
+        check(installations.isEmpty()) { "Désinstallez les mods avant de traduire ce jeu." }
+        val result = manager.exportManual(game, source, target, destination) { progress ->
+            mutableState.update { it.copy(progress = progress) }
+        }
+        mutableState.update { it.copy(analysis = result, message = "Fichier exporté. Faites traduire les champs translation, puis importez le JSON ici.") }
+    }
+
+    fun importManual(game: GameEntity, source: Uri) = run(game, "Validation du fichier traduit") {
+        val installations = app.container.dao.observeInstallationsForGame(game.id).first()
+        check(installations.isEmpty()) { "Désinstallez les mods avant de traduire ce jeu." }
+        val result = manager.importManual(game, source) { progress ->
+            mutableState.update { it.copy(progress = progress) }
+        }
+        mutableState.update { it.copy(analysis = result, message = when {
+            !result.installed -> "Aucun texte modifié"
+            result.preservedFragments > 0 -> "Traduction partielle appliquée"
+            else -> "Traduction appliquée"
+        }) }
+    }
+
     fun cancel() { job?.cancel() }
 
     private fun run(game: GameEntity, phase: String, block: suspend () -> Unit) {
@@ -65,7 +91,7 @@ internal class GameTranslationController(
         job = scope.launch {
             try { block() }
             catch (cancel: CancellationException) {
-                mutableState.update { it.copy(message = "Interrompu. Les traductions en cache seront réutilisées.") }
+                mutableState.update { it.copy(message = "Opération interrompue. Vous pouvez réessayer.") }
                 throw cancel
             }
             catch (failure: Exception) {

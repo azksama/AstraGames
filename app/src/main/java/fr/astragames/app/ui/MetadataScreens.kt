@@ -1,10 +1,11 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
+
 import android.annotation.SuppressLint
 import android.webkit.CookieManager
 import android.webkit.WebResourceRequest
 import android.webkit.WebView
-import android.webkit.WebViewClient
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -83,7 +84,7 @@ internal fun F95ImportSheet(
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                 Row(
-                    Modifier.fillMaxWidth().height(64.dp).padding(horizontal = 8.dp),
+                    Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 8.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
                     IconButton(onClick = { if (step > 0) step-- else onDismiss() }) { Icon(Icons.Default.Close, "Fermer l'import F95Zone") }
@@ -175,7 +176,7 @@ internal fun F95ImportSheet(
                             val normalized = tag.normalizeTagName()
                             ListItem(
                                 modifier = Modifier.clickable { selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag },
-                                headlineContent = { Text(tag) },
+                                headlineContent = { MaterialText(tag) },
                                 supportingContent = { Text(if (normalized in existingNames) "Tag existant" else "Nouveau tag · F95Zone") },
                                 leadingContent = { Checkbox(tag in selectedTags, { selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag }) }
                             )
@@ -258,14 +259,10 @@ internal fun SearchF95PickerDialog(
                 AndroidView(
                     factory = { context ->
                         WebView(context).apply {
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.loadsImagesAutomatically = true
-                            settings.userAgentString = SEARCH_WEBVIEW_USER_AGENT
-                            webViewClient = object : WebViewClient() {
+                            configureNetworkOnly()
+                            webViewClient = object : NetworkOnlyWebViewClient() {
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                    // Let the selected engine follow its own result redirects.
-                                    return false
+                                    return !isAllowedWebUrl(request.url.toString())
                                 }
                             }
                             setOnLongClickListener {
@@ -282,7 +279,7 @@ internal fun SearchF95PickerDialog(
                                 }
                                 true
                             }
-                            loadUrl(searchUrl)
+                            if (isAllowedWebUrl(searchUrl)) loadUrl(searchUrl)
                             webView = this
                         }
                     },
@@ -335,13 +332,11 @@ internal fun F95LoginDialog(
                 AndroidView(
                     factory = { context ->
                         WebView(context).apply {
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.loadsImagesAutomatically = true
-                            settings.userAgentString = SEARCH_WEBVIEW_USER_AGENT
-                            webViewClient = object : WebViewClient() {
+                            configureNetworkOnly()
+                            webViewClient = object : NetworkOnlyWebViewClient(loginOnly = true) {
                                 override fun onPageFinished(view: WebView, url: String) {
                                     super.onPageFinished(view, url)
+                                    if (!isAllowedWebUrl(url, loginOnly = true)) return
                                     view.evaluateJavascript(
                                         "(function(){var e=document.querySelector('.p-navgroup-linkText');return e?e.textContent.trim():'';})()"
                                     ) { result ->
@@ -497,19 +492,15 @@ internal fun SearchImagePickerDialog(
                 AndroidView(
                     factory = { context ->
                         WebView(context).apply {
-                            settings.javaScriptEnabled = true
-                            settings.domStorageEnabled = true
-                            settings.loadsImagesAutomatically = true
-                            settings.userAgentString = SEARCH_WEBVIEW_USER_AGENT
-                            webViewClient = object : WebViewClient() {
+                            configureNetworkOnly()
+                            webViewClient = object : NetworkOnlyWebViewClient() {
                                 override fun onPageFinished(view: WebView, url: String) {
                                     super.onPageFinished(view, url)
                                     view.evaluateJavascript(IMAGE_SELECTION_BOOTSTRAP_SCRIPT, null)
                                 }
 
                                 override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                    // Keep navigation unrestricted so the user can use the selected engine normally.
-                                    return false
+                                    return !isAllowedWebUrl(request.url.toString())
                                 }
                             }
                             setOnLongClickListener {
@@ -520,7 +511,7 @@ internal fun SearchImagePickerDialog(
                                     true
                                 } else false
                             }
-                            loadUrl(searchUrl)
+                            if (isAllowedWebUrl(searchUrl)) loadUrl(searchUrl)
                             webView = this
                         }
                     },
@@ -628,7 +619,7 @@ internal fun CoverCandidateCard(candidate: CoverCandidate, selected: Boolean = f
                 ) { Icon(Icons.Default.Check, "Image sélectionnée", Modifier.padding(5.dp).size(18.dp), tint = MaterialTheme.colorScheme.onPrimary) }
             }
             Row(Modifier.padding(horizontal = 10.dp, vertical = 7.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(
+                MaterialText(
                     coverName,
                     Modifier.weight(1f).clickable {
                         clipboard.setText(AnnotatedString(coverName))

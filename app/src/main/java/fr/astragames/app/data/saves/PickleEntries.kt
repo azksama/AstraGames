@@ -4,16 +4,21 @@ import java.nio.charset.StandardCharsets
 
 internal fun flattenPickle(root: PickleNode, limit: Int = 20000): List<SaveEntry> {
     val result = mutableListOf<SaveEntry>()
+    val references = pickleReferenceCounts(root)
     val active = java.util.Collections.newSetFromMap(java.util.IdentityHashMap<PickleNode, Boolean>())
     fun walk(node: PickleNode, path: String, depth: Int) {
         if (result.size >= limit || depth > 32) return
         if (!active.add(node)) return
         when (node) {
-            is PickleNode.PInt -> result += SaveEntry(path, SaveEntryType.INT, node.value.toString(), true)
-            is PickleNode.PFloat -> result += SaveEntry(path, SaveEntryType.FLOAT, node.value.toString(), true)
-            is PickleNode.PBool -> result += SaveEntry(path, SaveEntryType.BOOLEAN, if (node.value) "true" else "false", true)
-            is PickleNode.PString -> result += SaveEntry(path, SaveEntryType.STRING, node.text, true)
-            is PickleNode.PBytes -> result += SaveEntry(path, SaveEntryType.STRING, String(node.bytes, StandardCharsets.UTF_8), false)
+            is PickleNode.PInt -> result += SaveEntry(path, SaveEntryType.INT, node.value.toString(), references[node] == 1)
+            is PickleNode.PBigInt -> result += SaveEntry(path, SaveEntryType.UNKNOWN, "Entier Python (${node.value.bitLength()} bits)", false)
+            is PickleNode.PFloat -> result += SaveEntry(path, SaveEntryType.FLOAT, node.value.toString(), node.value.isFinite() && references[node] == 1)
+            is PickleNode.PBool -> result += SaveEntry(path, SaveEntryType.BOOLEAN, if (node.value) "true" else "false", references[node] == 1)
+            is PickleNode.PString -> result += SaveEntry(path, SaveEntryType.STRING, node.text, references[node] == 1)
+            is PickleNode.PBytes -> {
+                val text = node.legacyText
+                result += SaveEntry(path, SaveEntryType.STRING, text ?: String(node.bytes, StandardCharsets.UTF_8), text != null && references[node] == 1)
+            }
             is PickleNode.PNil -> result += SaveEntry(path, SaveEntryType.UNKNOWN, "null", false)
             is PickleNode.PList -> {
                 result += SaveEntry(path, SaveEntryType.LIST, "[" + node.items.size + "]", false)
@@ -44,7 +49,36 @@ internal fun flattenPickle(root: PickleNode, limit: Int = 20000): List<SaveEntry
         active.remove(node)
     }
     walk(root, "root", 0)
+    require(result.distinctBy { it.path }.size == result.size) { "Cles pickle ambigues : modification non securisee." }
     return result
+}
+
+/** Count direct graph edges once: aliases of containers are safe, aliased scalar opcodes are not. */
+private fun pickleReferenceCounts(root: PickleNode): java.util.IdentityHashMap<PickleNode, Int> {
+    val counts = java.util.IdentityHashMap<PickleNode, Int>()
+    val pending = java.util.ArrayDeque<PickleNode>()
+    pending.add(root)
+    while (pending.isNotEmpty()) {
+        val node = pending.removeFirst()
+        val previous = counts[node] ?: 0
+        counts[node] = previous + 1
+        if (previous > 0) continue
+        require(counts.size <= MAX_SAVE_NODES) { "Graphe pickle trop complexe." }
+        when (node) {
+            is PickleNode.PList -> pending.addAll(node.items)
+            is PickleNode.PTuple -> pending.addAll(node.items)
+            is PickleNode.PSet -> pending.addAll(node.items)
+            is PickleNode.PDict -> { pending.addAll(node.entries.keys); pending.addAll(node.entries.values) }
+            is PickleNode.PObject -> {
+                pending.addAll(node.args); pending.addAll(node.listItems)
+                pending.addAll(node.dependencies)
+                pending.addAll(node.dictEntries.keys); pending.addAll(node.dictEntries.values)
+                node.state?.let(pending::add)
+            }
+            else -> Unit
+        }
+    }
+    return counts
 }
 
 internal fun findPickleNode(root: PickleNode, path: String): PickleNode? {
@@ -95,10 +129,28 @@ internal fun findPickleNode(root: PickleNode, path: String): PickleNode? {
     return current
 }
 
-internal fun pickleKey(node: PickleNode): String = (when (node) {
-    is PickleNode.PString -> node.text
-    is PickleNode.PInt -> node.value.toString()
-    is PickleNode.PBool -> if (node.value) "true" else "false"
-    is PickleNode.PBytes -> String(node.bytes, StandardCharsets.UTF_8)
+internal fun pickleKey(node: PickleNode): String = when (node) {
+    is PickleNode.PString -> escapePickleKey(node.text)
+    is PickleNode.PInt -> "int:" + node.value
+    is PickleNode.PBigInt -> "bigint:" + node.value
+    is PickleNode.PBool -> "bool:" + node.value
+    is PickleNode.PFloat -> "float:" + node.value
+    is PickleNode.PBytes -> node.legacyText?.let { "str:" + escapePickleKey(it) }
+        ?: "bytes:" + node.bytes.joinToString("") { "%02x".format(it) }
+    is PickleNode.PTuple -> "tuple:" + node.items.joinToString(",") { pickleKey(it).let { key -> "${key.length}:$key" } }
+    PickleNode.PNil -> "none:"
     else -> "?"
-}).replace("%", "%25").replace("[", "%5B").replace("]", "%5D")
+}
+
+private fun escapePickleKey(value: String) = value.replace("%", "%25").replace(":", "%3A").replace("[", "%5B").replace("]", "%5D")
+
+/** Mutable or excessively nested keys must not recurse through data-class hashCode on input. */
+internal fun requireSafePickleKey(node: PickleNode, depth: Int = 0) {
+    require(depth <= 32) { "Cle pickle trop complexe." }
+    when (node) {
+        is PickleNode.PTuple -> node.items.forEach { requireSafePickleKey(it, depth + 1) }
+        is PickleNode.PString, is PickleNode.PBytes, is PickleNode.PInt, is PickleNode.PBigInt,
+        is PickleNode.PFloat, is PickleNode.PBool, PickleNode.PNil -> Unit
+        else -> error("Type de cle pickle non pris en charge.")
+    }
+}

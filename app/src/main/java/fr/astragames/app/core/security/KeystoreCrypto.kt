@@ -29,6 +29,18 @@ object KeystoreCrypto {
         return cipher.doFinal(data, IV_LENGTH, data.size - IV_LENGTH)
     }
 
+    /** Separate record ciphers keep backup streaming independent of the small-value API. */
+    internal fun backupEncryptionCipher(): Cipher = Cipher.getInstance(TRANSFORMATION).apply {
+        init(Cipher.ENCRYPT_MODE, key()) // The Keystore generates a fresh random IV per record.
+    }
+
+    internal fun backupDecryptionCipher(iv: ByteArray): Cipher {
+        require(iv.size == IV_LENGTH) { "IV de sauvegarde invalide." }
+        return Cipher.getInstance(TRANSFORMATION).apply {
+            init(Cipher.DECRYPT_MODE, key(), GCMParameterSpec(128, iv))
+        }
+    }
+
     @Synchronized
     private fun key(): SecretKey {
         val keyStore = KeyStore.getInstance(ANDROID_KEYSTORE).apply { load(null) }

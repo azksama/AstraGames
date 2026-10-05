@@ -13,7 +13,7 @@ internal fun decodeRpgMakerJson(raw: String): JSONObject {
     }.trim()
 
     return when {
-        text.startsWith("{") -> JSONObject(text)
+        text.startsWith("{") -> parseSaveJson(text)
         else -> error("Sauvegarde RPG Maker JSON illisible.")
     }
 }
@@ -139,6 +139,7 @@ private fun lzCompress(
 
 private fun lzDecompressFromBase64(input: String): String {
     require(input.isNotEmpty()) { "Sauvegarde RPG Maker vide." }
+    require(input.length <= MAX_SAVE_BYTES && input.all { it in KEY_STR_BASE64 }) { "Sauvegarde RPG Maker base64 invalide." }
     return lzDecompress(input.length, 32) { index ->
         if (index !in input.indices) 0 else KEY_STR_BASE64.indexOf(input[index]).coerceAtLeast(0)
     }
@@ -157,6 +158,13 @@ private fun lzDecompress(
     var dataVal = getNextValue(0)
     var dataPosition = resetValue
     var dataIndex = 1
+    var dictionaryCharacters = 0L
+
+    fun appendDictionary(value: String) {
+        dictionaryCharacters += value.length
+        require(dictionary.size < MAX_SAVE_NODES && dictionaryCharacters <= MAX_SAVE_BYTES) { "Dictionnaire RPG Maker trop volumineux." }
+        dictionary += value
+    }
 
     repeat(3) { dictionary += it.toString() }
 
@@ -192,12 +200,12 @@ private fun lzDecompress(
         val entry: String
         when (code) {
             0 -> {
-                dictionary += readBits(8).toChar().toString()
+                appendDictionary(readBits(8).toChar().toString())
                 dictSize++
                 enlargeIn--
             }
             1 -> {
-                dictionary += readBits(16).toChar().toString()
+                appendDictionary(readBits(16).toChar().toString())
                 dictSize++
                 enlargeIn--
             }
@@ -211,8 +219,9 @@ private fun lzDecompress(
 
         entry = dictionary.getOrNull(if (code == 0 || code == 1) dictSize - 1 else code)
             ?: if (code == dictSize) w + w.first() else return ""
+        require(result.length.toLong() + entry.length <= MAX_SAVE_BYTES / 2) { "Sauvegarde RPG Maker decompressee trop volumineuse." }
         result.append(entry)
-        dictionary += w + entry.first()
+        appendDictionary(w + entry.first())
         dictSize++
         enlargeIn--
         w = entry

@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.text.KeyboardActions
@@ -96,13 +97,13 @@ internal fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
                         FilterChip(
                             selected = selectedFolder != null,
                             onClick = { keyboard?.hide(); systemFolderMenu = true },
-                            label = { Text(selectedFolder?.label ?: "Tous les dossiers système", maxLines = 1) },
+                            label = { MaterialText(selectedFolder?.label ?: AppLocalizer.text("Tous les dossiers système", LocalAppLanguage.current), maxLines = 1) },
                             leadingIcon = { Icon(Icons.Default.FolderOpen, null) }
                         )
                         DropdownMenu(systemFolderMenu, { systemFolderMenu = false }, Modifier.heightIn(max = 480.dp)) {
                             DropdownMenuItem(text = { Text("Tous les dossiers système") }, onClick = { vm.filterSystemFolder(null); systemFolderMenu = false })
                             state.systemFolders.forEach { folder ->
-                                DropdownMenuItem(text = { Text(folder.label, maxLines = 2) }, onClick = { vm.filterSystemFolder(folder.id); systemFolderMenu = false })
+                                DropdownMenuItem(text = { MaterialText(folder.label, maxLines = 2) }, onClick = { vm.filterSystemFolder(folder.id); systemFolderMenu = false })
                             }
                         }
                     }

@@ -1,8 +1,9 @@
 package fr.astragames.app.data.mods
 
-import fr.astragames.app.data.saves.readBounded
+import fr.astragames.app.core.filesystem.copyBoundedTo
 import java.io.File
 import java.io.InputStream
+import java.io.OutputStream
 import java.util.Locale
 import java.util.zip.ZipInputStream
 
@@ -34,18 +35,26 @@ internal object ModArchive {
                 val target = File(destination, path)
                 require(target.canonicalFile.toPath().startsWith(destination.canonicalFile.toPath())) { "Chemin ZIP invalide." }
                 if (entry.isDirectory) {
+                    // ZIP directory entries can contain data too; do not let closeEntry
+                    // inflate an unlimited payload outside the archive budget.
+                    total += zip.copyBoundedTo(DISCARD, ZipPathGuard.MAX_UNCOMPRESSED_BYTES - total)
                     check(target.isDirectory || target.mkdirs()) { "Dossier ZIP invalide." }
                 } else {
-                    val bytes = zip.readBounded(ZipPathGuard.MAX_UNCOMPRESSED_BYTES - total)
-                    total += bytes.size
                     files++
                     check(target.parentFile!!.isDirectory || target.parentFile!!.mkdirs()) { "Dossier ZIP invalide." }
-                    target.writeBytes(bytes)
+                    target.outputStream().buffered().use { output ->
+                        total += zip.copyBoundedTo(output, ZipPathGuard.MAX_UNCOMPRESSED_BYTES - total)
+                    }
                 }
             }
         }
         require(files > 0) { "Le ZIP ne contient aucun fichier." }
         return contentRoot(destination)
+    }
+
+    private val DISCARD = object : OutputStream() {
+        override fun write(value: Int) = Unit
+        override fun write(buffer: ByteArray, offset: Int, length: Int) = Unit
     }
 
     fun contentRoot(directory: File): File {

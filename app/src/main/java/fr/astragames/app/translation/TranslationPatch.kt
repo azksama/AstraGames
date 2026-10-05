@@ -20,14 +20,13 @@ internal class TranslationPatch(private val files: TranslationFiles) {
     fun exists() = files.read(MANIFEST) != null
 
     fun preservedFragments(): Int = files.read(MANIFEST)?.let {
-        JSONObject(it.toString(Charsets.UTF_8)).optInt("preservedFragments", 0).coerceAtLeast(0)
+        (TranslationJson.parse(it, 1024 * 1024) as JSONObject).optInt("preservedFragments", 0).coerceAtLeast(0)
     } ?: 0
 
     fun isLaunchSafe(): Boolean = runCatching {
-        val bytes = files.read(MANIFEST) ?: return true
         if (files.read(PENDING) != null) return false
-        require(bytes.size <= 1024 * 1024)
-        val journal = JSONObject(bytes.toString(Charsets.UTF_8))
+        val bytes = files.read(MANIFEST) ?: return true
+        val journal = TranslationJson.parse(bytes, 1024 * 1024) as JSONObject
         require(journal.getInt("version") == 1)
         val rows = journal.getJSONArray("files")
         require(rows.length() in 1..2000)
@@ -45,6 +44,7 @@ internal class TranslationPatch(private val files: TranslationFiles) {
 
     fun apply(changes: List<Change>, source: String, target: String, preservedFragments: Int = 0) {
         check(!exists()) { "Restaurez la traduction précédente avant de la remplacer." }
+        check(files.read(PENDING) == null) { "Une écriture interrompue doit être restaurée avant de traduire." }
         require(changes.isNotEmpty() && changes.size <= 2000)
         require(changes.map { it.name }.distinct().size == changes.size)
         changes.forEach {
@@ -82,8 +82,7 @@ internal class TranslationPatch(private val files: TranslationFiles) {
 
     fun restore() {
         val bytes = files.read(MANIFEST) ?: return
-        require(bytes.size <= 1024 * 1024) { "Journal trop volumineux." }
-        val journal = JSONObject(bytes.toString(Charsets.UTF_8))
+        val journal = TranslationJson.parse(bytes, 1024 * 1024) as JSONObject
         require(journal.getInt("version") == 1) { "Version du journal inconnue." }
         val rows = journal.getJSONArray("files")
         require(rows.length() in 1..2000)
@@ -104,7 +103,11 @@ internal class TranslationPatch(private val files: TranslationFiles) {
         }
         // Repair an interrupted target before changing the pending marker for another file.
         records.sortedBy { if (it.name == pending) 0 else 1 }.forEach {
-            if (files.read(it.name)?.let(::textHash) != it.original) {
+            val current = files.read(it.name)?.let(::textHash)
+            if (current != it.original) {
+                check(current == it.translated || pending == it.name) {
+                    "Fichier modifié pendant la restauration : ${it.name}. Restauration interrompue."
+                }
                 val original = files.read("$BACKUP/original/${it.name}")!!
                 check(textHash(original) == it.original) { "Original endommagé : ${it.name}" }
                 verifiedWrite(PENDING, it.name.toByteArray())

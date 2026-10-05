@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -61,20 +62,20 @@ internal fun GameDetailScreen(
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val uriHandler = LocalUriHandler.current
-    var edit by remember { mutableStateOf(false) }
-    var pickTags by remember { mutableStateOf(false) }
-    var pickCover by remember { mutableStateOf(false) }
+    var edit by rememberSaveable(id) { mutableStateOf(false) }
+    var pickTags by rememberSaveable(id) { mutableStateOf(false) }
+    var pickCover by rememberSaveable(id) { mutableStateOf(false) }
     var importF95 by rememberSaveable(id) { mutableStateOf(false) }
-    var previewCover by remember { mutableStateOf(false) }
-    var confirmCoverRemoval by remember { mutableStateOf(false) }
-    var showDiagnostic by remember { mutableStateOf(false) }
-    var showLaunchProfile by remember { mutableStateOf(false) }
-    var showCompatibilityActions by remember { mutableStateOf(false) }
+    var previewCover by rememberSaveable(id) { mutableStateOf(false) }
+    var confirmCoverRemoval by rememberSaveable(id) { mutableStateOf(false) }
+    var showDiagnostic by rememberSaveable(id) { mutableStateOf(false) }
+    var showLaunchProfile by rememberSaveable(id) { mutableStateOf(false) }
+    var showCompatibilityActions by rememberSaveable(id) { mutableStateOf(false) }
     var descriptionExpanded by rememberSaveable(id) { mutableStateOf(true) }
     var informationExpanded by rememberSaveable(id) { mutableStateOf(false) }
-    var pickFolder by remember { mutableStateOf(false) }
-    var confirmGameRemoval by remember { mutableStateOf(false) }
-    var showTools by remember { mutableStateOf(false) }
+    var pickFolder by rememberSaveable(id) { mutableStateOf(false) }
+    var confirmGameRemoval by rememberSaveable(id) { mutableStateOf(false) }
+    var showTools by rememberSaveable(id) { mutableStateOf(false) }
     val item = game
     var confirmUpdate by rememberSaveable(id) { mutableStateOf(false) }
     val latestUpdate = latestVersions[id]
@@ -161,7 +162,7 @@ internal fun GameDetailScreen(
                         Text("Tags", style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f)); TextButton(onClick = { pickTags = true }) { Icon(Icons.Default.Add, null); Text("Choisir") }
                     }
                     if (assignedTags.isEmpty()) Text("Aucun tag associé", color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 20.dp))
-                    else LazyRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(assignedTags, key = { it.id }) { tag -> AssistChip(onClick = { onSearchTag(tag.id) }, label = { Text(tag.name) }) } }
+                    else LazyRow(Modifier.fillMaxWidth().padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { items(assignedTags, key = { it.id }) { tag -> AssistChip(onClick = { onSearchTag(tag.id) }, label = { MaterialText(tag.name) }) } }
                 }
                 item.f95Url?.let { f95Url ->
                     item {
@@ -173,7 +174,7 @@ internal fun GameDetailScreen(
                 if (!item.description.isNullOrBlank()) item {
                     Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
                         ExpandableDetailSection("Description", descriptionExpanded, { descriptionExpanded = !descriptionExpanded }) {
-                            Text(item.description, style = MaterialTheme.typography.bodyMedium)
+                            MaterialText(item.description, style = MaterialTheme.typography.bodyMedium)
                         }
                     }
                 }
@@ -182,7 +183,7 @@ internal fun GameDetailScreen(
                         ExpandableDetailSection("Informations", informationExpanded, { informationExpanded = !informationExpanded }) {
                             InfoLine("Moteur", item.engine.readableEngine())
                             InfoLine("Lancements", item.playCount.toString())
-                            InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: "Jamais lancé")
+                            InfoLine("Dernier lancement", item.lastPlayedAt?.asDateTime() ?: AppLocalizer.text("Jamais lancé", LocalAppLanguage.current))
                             InfoLine("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration())
                             InfoLine("Source", item.physicalPath ?: item.documentUri)
                         }
@@ -190,7 +191,7 @@ internal fun GameDetailScreen(
                 }
                 item { OutlinedButton(onClick = { pickFolder = true }, Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
                     Icon(Icons.Default.FolderCopy, null); Spacer(Modifier.width(8.dp))
-                    Text(state.folders.firstOrNull { it.id == item.libraryFolderId }?.name ?: "Classer dans un dossier")
+                    MaterialText(state.folders.firstOrNull { it.id == item.libraryFolderId }?.name ?: AppLocalizer.text("Classer dans un dossier", LocalAppLanguage.current))
                 } }
                 if (item.missing) item { Card(Modifier.fillMaxWidth().padding(horizontal = 20.dp), colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.errorContainer)) {
                     Text("Ce jeu est introuvable. Rescannez sa source.", Modifier.padding(14.dp), color = MaterialTheme.colorScheme.onErrorContainer)
@@ -351,7 +352,7 @@ internal fun CompatibilityDialog(
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                ScrollingColumn(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center), topBar = { CompactHeader("Diagnostic", game.title, onBack = onDismiss) {
+                ScrollingColumn(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center), topBar = { CompactHeader("Diagnostic", game.title, onBack = onDismiss, localizeSubtitle = false) {
                         IconButton(onClick = onRefresh) { Icon(Icons.Default.Refresh, "Vérifier à nouveau") }
                     } }) {
                     if (report == null) CenterMessage("Vérification de la configuration…", Modifier.fillMaxSize(), loading = true)
@@ -437,7 +438,7 @@ internal fun LaunchProfileDialog(
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
-                ScrollingColumn(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center), topBar = { CompactHeader("Profil de lancement", game.title, onBack = onDismiss) }) {
+                ScrollingColumn(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center), topBar = { CompactHeader("Profil de lancement", game.title, onBack = onDismiss, localizeSubtitle = false) }) {
                     LazyColumn(
                         Modifier.weight(1f), contentPadding = PaddingValues(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)

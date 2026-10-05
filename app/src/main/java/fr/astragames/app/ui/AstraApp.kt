@@ -9,11 +9,9 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
+import androidx.compose.foundation.border
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
@@ -262,7 +260,8 @@ internal fun Modifier.topLevelSwipe(route: String, nav: NavHostController): Modi
 @Composable
 internal fun CompactNavigationRail(route: String, nav: NavHostController) {
     Surface(
-        Modifier.width(if (LandscapeLayout) 80.dp else 104.dp).fillMaxHeight().padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
+        Modifier.width(if (LandscapeLayout && LocalDensity.current.fontScale <= 1.2f) 80.dp else 104.dp)
+            .fillMaxHeight().padding(start = 8.dp, top = 8.dp, bottom = 8.dp),
         RoundedCornerShape(24.dp), color = MaterialTheme.colorScheme.surfaceContainerHigh, tonalElevation = 4.dp
     ) {
         Column(
@@ -276,21 +275,21 @@ internal fun CompactNavigationRail(route: String, nav: NavHostController) {
 
 @Composable
 internal fun NavIcon(destination: Destination, selected: Boolean, onClick: () -> Unit, modifier: Modifier = Modifier, badge: Int = 0) {
+    val label = AppLocalizer.text(destination.description, LocalAppLanguage.current)
     val interactions = remember { MutableInteractionSource() }
-    val hovered by interactions.collectIsHoveredAsState()
     val focused by interactions.collectIsFocusedAsState()
-    val pressed by interactions.collectIsPressedAsState()
+    val shape = RoundedCornerShape(26.dp)
     Box(
-        modifier.widthIn(min = 48.dp, max = 96.dp).heightIn(min = 56.dp).clip(RoundedCornerShape(26.dp))
-            .background(if (selected || hovered || focused || pressed) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
-            .hoverable(interactions)
-            .selectable(selected = selected, interactionSource = interactions, indication = null, role = Role.Tab, onClick = onClick),
+        modifier.widthIn(min = 48.dp, max = 96.dp).heightIn(min = 56.dp).clip(shape)
+            .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
+            .then(if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
+            .selectable(selected = selected, interactionSource = interactions, indication = ripple(color = MaterialTheme.colorScheme.onSurface), role = Role.Tab, onClick = onClick),
         contentAlignment = Alignment.Center
     ) {
         Column(Modifier.padding(horizontal = 5.dp, vertical = 7.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(3.dp)) {
-            Icon(destination.icon(), AppLocalizer.text(destination.description), modifier = Modifier.size(21.dp),
+            Icon(destination.icon(), label, modifier = Modifier.size(21.dp),
                 tint = if (selected) MaterialTheme.colorScheme.onSecondaryContainer else MaterialTheme.colorScheme.onSurfaceVariant)
-            Text(destination.description, style = MaterialTheme.typography.labelSmall, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center, overflow = TextOverflow.Ellipsis,
+            androidx.compose.material3.Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 2, textAlign = androidx.compose.ui.text.style.TextAlign.Center, overflow = TextOverflow.Ellipsis,
                 color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.onSurfaceVariant)
         }
         if (badge > 0) {
@@ -358,6 +357,7 @@ internal fun AppNavHost(
 @Composable
 internal fun CompactHeader(
     title: String, subtitle: String? = null, onBack: (() -> Unit)? = null,
+    localizeTitle: Boolean = true, localizeSubtitle: Boolean = true,
     actions: @Composable RowScope.() -> Unit = {}
 ) {
     Row(
@@ -365,13 +365,13 @@ internal fun CompactHeader(
         verticalAlignment = Alignment.CenterVertically
     ) {
         if (onBack != null) IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, AppLocalizer.text("Retour")) }
-        if (title == "Astra") {
+        if (title == "Astra" && localizeTitle) {
             Image(painterResource(R.mipmap.astra_icon), null, Modifier.padding(end = 10.dp).size(36.dp).clip(RoundedCornerShape(12.dp)))
         }
         Column(Modifier.weight(1f)) {
-            Text(title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
-            if (title == "Astra" && !LandscapeLayout) androidx.compose.material3.Text("GAMES", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 3.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-            else if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            androidx.compose.material3.Text(if (localizeTitle) AppLocalizer.text(title) else title, Modifier.semantics { heading() }, style = MaterialTheme.typography.titleLarge, maxLines = 1, overflow = TextOverflow.Ellipsis)
+            if (title == "Astra" && localizeTitle && !LandscapeLayout) androidx.compose.material3.Text("GAMES", style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 3.sp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+            else if (subtitle != null) androidx.compose.material3.Text(if (localizeSubtitle) AppLocalizer.text(subtitle) else subtitle, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
         actions()
     }

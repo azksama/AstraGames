@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
@@ -15,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.*
 import fr.astragames.app.core.model.*
@@ -28,8 +30,13 @@ internal fun SectionTitle(text: String, modifier: Modifier = Modifier) = Text(te
 
 @Composable
 internal fun SettingsSectionHeader(title: String, expanded: Boolean, onToggle: () -> Unit) {
+    val language = LocalAppLanguage.current
+    val state = AppLocalizer.text(if (expanded) "Déplié" else "Replié", language)
+    val action = AppLocalizer.text(if (expanded) "Replier" else "Déplier", language)
     Surface(
-        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp).clickable(onClick = onToggle),
+        Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp)
+            .semantics { heading(); stateDescription = state }
+            .clickable(role = Role.Button, onClickLabel = action, onClick = onToggle),
         shape = RoundedCornerShape(16.dp),
         color = Color.Transparent
     ) {
@@ -109,7 +116,7 @@ internal fun CoverBlurMode.label() = when (this) {
 }
 
 @Composable
-internal fun InfoLine(label: String, value: String) { Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary); Text(value); Spacer(Modifier.height(9.dp)) }
+internal fun InfoLine(label: String, value: String) { Text(label, style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary); MaterialText(value); Spacer(Modifier.height(9.dp)) }
 
 internal fun Set<String>.toggle(id: String): Set<String> = toMutableSet().apply { if (!add(id)) remove(id) }
 internal fun String.normalizeTagName(): String = Normalizer.normalize(trim(), Normalizer.Form.NFD)

@@ -27,6 +27,7 @@ import fr.astragames.app.core.model.ScanReportItem
 import fr.astragames.app.core.model.ScanReportItemStatus
 import fr.astragames.app.core.search.parseTextTagList
 import fr.astragames.app.core.metadata.canonicalF95ThreadUrl
+import fr.astragames.app.data.saves.readBounded
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
@@ -138,14 +139,12 @@ class GameRepository(
     suspend fun setCover(id: String, uri: Uri) = withContext(Dispatchers.IO) {
         val directory = File(context.filesDir, "covers").apply { mkdirs() }
         val previous = dao.getGame(id)?.coverUri?.let(Uri::parse)
-        val destination = File(directory, "$id-${System.currentTimeMillis()}.jpg")
+        val destination = File(directory, "${UUID.randomUUID()}.jpg")
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
             destination.outputStream().use(input::copyTo)
         } ?: error("Impossible de lire l'image recadrée.")
             dao.setCover(id, Uri.fromFile(destination).toString())
-        } catch (error: CancellationException) {
-            throw error
         } catch (error: Exception) {
             runCatching { destination.delete() }
             throw error
@@ -163,11 +162,11 @@ class GameRepository(
     suspend fun setGameFolder(id: String, folderId: String?) = dao.setGameFolder(id, folderId)
 
     suspend fun setGamesFolder(ids: Set<String>, folderId: String?) {
-        if (ids.isNotEmpty()) dao.setGamesFolder(ids.toList(), folderId)
+        ids.chunked(900).forEach { dao.setGamesFolder(it, folderId) }
     }
 
     suspend fun setGamesFavorite(ids: Set<String>, favorite: Boolean) {
-        if (ids.isNotEmpty()) dao.setGamesFavorite(ids.toList(), favorite)
+        ids.chunked(900).forEach { dao.setGamesFavorite(it, favorite) }
     }
 
     suspend fun addTagsToGames(ids: Set<String>, tagIds: Set<String>) {
@@ -367,11 +366,13 @@ class GameRepository(
         return result
     }
 
-    private fun migrateSaveFiles(preview: DuplicateMergePreview, strategy: SaveConflictStrategy) {
+    private suspend fun migrateSaveFiles(preview: DuplicateMergePreview, strategy: SaveConflictStrategy) {
         val primaryRoot = fr.astragames.app.data.saves.documentDir(context, Uri.parse(preview.primary.documentUri))
             ?: error("Le dossier du jeu principal est inaccessible.")
         preview.secondarySaves.forEach { save ->
-            val source = DocumentFile.fromSingleUri(context, Uri.parse(save.documentUri)) ?: return@forEach
+            val source = fr.astragames.app.data.saves.documentFile(context, Uri.parse(save.documentUri))
+                ?: error("Sauvegarde source inaccessible : ${save.relativePath}")
+            require(fr.astragames.app.data.mods.ZipPathGuard.sanitize(save.relativePath) == save.relativePath) { "Chemin de sauvegarde invalide." }
             val parts = save.relativePath.split('/').filter(String::isNotBlank)
             if (parts.isEmpty()) return@forEach
             var targetFolder = primaryRoot
@@ -381,19 +382,51 @@ class GameRepository(
             }
             val originalName = parts.last()
             val existing = targetFolder.findFile(originalName)
+            require(existing == null || existing.isFile) { "Un dossier occupe le nom $originalName." }
             val targetName = when {
                 existing == null -> originalName
                 strategy == SaveConflictStrategy.KEEP_PRIMARY -> return@forEach
-                strategy == SaveConflictStrategy.REPLACE_WITH_SECONDARY -> originalName.also { check(existing.delete()) }
+                strategy == SaveConflictStrategy.REPLACE_WITH_SECONDARY -> originalName
                 else -> uniqueSaveName(targetFolder, originalName, preview.secondary.title)
             }
-            val target = targetFolder.createFile(source.type ?: "application/octet-stream", targetName)
+            // Read the source fully before touching the destination. Providers can fail halfway.
+            val replacement = readSaveDocument(source)
+            val replaced = existing?.takeIf { strategy == SaveConflictStrategy.REPLACE_WITH_SECONDARY }
+            val original = replaced?.let(::readSaveDocument)
+            if (replaced != null && original != null) {
+                val backupId = UUID.randomUUID().toString()
+                val backup = File(context.filesDir, "save-backups/duplicate-import/$backupId").apply { parentFile!!.mkdirs() }
+                backup.writeBytes(original)
+                check(backup.readBytes().contentEquals(original)) { "Sauvegarde de sécurité incomplète." }
+                dao.insertSaveBackup(fr.astragames.app.data.local.SaveBackupEntity(
+                    backupId, preview.primary.id, replaced.uri.toString(), originalName,
+                    Uri.fromFile(backup).toString(), System.currentTimeMillis(), original.size.toLong()
+                ))
+            }
+            val target = replaced ?: targetFolder.createFile(source.type ?: "application/octet-stream", targetName)
                 ?: error("Impossible de créer $targetName dans le dossier principal.")
-            context.contentResolver.openInputStream(source.uri)?.use { input ->
-                context.contentResolver.openOutputStream(target.uri, "w")?.use(input::copyTo)
-                    ?: error("Impossible d’écrire la sauvegarde $targetName")
-            } ?: error("Impossible de lire la sauvegarde ${save.relativePath}")
+            try {
+                if (target.name != targetName) check(target.renameTo(targetName)) { "Le fournisseur a modifié le nom de sauvegarde." }
+                writeSaveDocument(target, replacement)
+                check(readSaveDocument(target).contentEquals(replacement)) { "Copie de sauvegarde incomplète." }
+            } catch (failure: Exception) {
+                runCatching {
+                    if (original != null) {
+                        writeSaveDocument(target, original)
+                        check(readSaveDocument(target).contentEquals(original)) { "Restauration incomplète : utilisez le backup." }
+                    } else check(target.delete()) { "Suppression de la copie incomplète impossible." }
+                }.onFailure(failure::addSuppressed)
+                throw failure
+            }
         }
+    }
+
+    private fun readSaveDocument(file: DocumentFile): ByteArray = context.contentResolver.openInputStream(file.uri)
+        ?.use { it.readBounded(64L * 1024 * 1024) } ?: error("Sauvegarde illisible : ${file.name}")
+
+    private fun writeSaveDocument(file: DocumentFile, bytes: ByteArray) {
+        context.contentResolver.openOutputStream(file.uri, "wt")?.use { it.write(bytes) }
+            ?: error("Sauvegarde non modifiable : ${file.name}")
     }
 
     private fun uniqueSaveName(folder: DocumentFile, original: String, gameTitle: String): String {
@@ -447,13 +480,13 @@ class GameRepository(
         val tags = dao.getTags()
         val keepName = tags.firstOrNull { it.id == keepTagId }?.name ?: "?"
         val removedName = tags.firstOrNull { it.id == removedTagId }?.name ?: "?"
-        dao.replaceTagReferences(keepTagId, removedTagId)
-        dao.deleteTagsRaw(listOf(removedTagId))
+        dao.mergeTags(keepTagId, removedTagId)
         recordAudit("TAG_MERGE", "Fusion de tags : « $removedName » → « $keepName »")
     }
 
-    suspend fun moveTagsToCategory(tagIds: Set<String>, categoryName: String?) =
-        dao.moveTagsToCategory(tagIds.toList(), categoryName)
+    suspend fun moveTagsToCategory(tagIds: Set<String>, categoryName: String?) {
+        tagIds.chunked(900).forEach { dao.moveTagsToCategory(it, categoryName) }
+    }
 
     suspend fun createTagCategory(name: String) {
         val clean = name.trim()
@@ -478,8 +511,9 @@ class GameRepository(
     suspend fun moveTagCategory(categoryId: String, direction: Int) {
         val categories = dao.getTagCategories()
         val index = categories.indexOfFirst { it.id == categoryId }
+        if (index < 0) return
         val otherIndex = (index + direction).coerceIn(0, categories.lastIndex)
-        if (index < 0 || index == otherIndex) return
+        if (index == otherIndex) return
         val current = categories[index]
         val other = categories[otherIndex]
         dao.upsertTagCategory(current.copy(sortOrder = other.sortOrder))
@@ -567,8 +601,7 @@ class GameRepository(
 
     suspend fun importTags(uri: Uri): Int = withContext(Dispatchers.IO) {
         val text = context.contentResolver.openInputStream(uri)
-            ?.bufferedReader(Charsets.UTF_8)
-            ?.use { it.readText() }
+            ?.use { it.readBounded(4L * 1024 * 1024).toString(Charsets.UTF_8) }
             ?: error("Impossible de lire le fichier de tags.")
         val content = text.removePrefix("\uFEFF")
         if (content.isBlank()) return@withContext 0
@@ -729,13 +762,6 @@ class GameRepository(
         raw.trim().replace(Regex("[\\s_]+"), " ").split(' ').filter(String::isNotBlank)
             .joinToString(" ") { word -> word.replaceFirstChar { if (it.isLowerCase()) it.titlecase(Locale.ROOT) else it.toString() } }
 
-    /** Sépare une saisie en tags : les symboles (#, @, …) et la ponctuation deviennent des séparateurs. */
-    private fun parseTagNames(raw: String): List<String> =
-        raw.replace(Regex("[#@!?&%$^*+=|<>\\[\\]{}()~]"), ",")
-            .split(',', ';', '\n', '\r')
-            .map(::formatTagName)
-            .filter(String::isNotBlank)
-
     /** Fusionne les doublons proches : « 3D Games » et « 3D Game » sont équivalents. */
     private fun tagEquivalent(first: String, second: String): Boolean {
         if (first == second) return true
@@ -754,7 +780,7 @@ class GameRepository(
 
     companion object {
         private val SAVE_FOLDER_NAMES = setOf("save", "saves", "savedata", "savegames", "persistent")
-        private val SAVE_EXTENSIONS = setOf("rpgsave", "rvdata", "rvdata2", "rxdata", "save", "sav")
+        private val SAVE_EXTENSIONS = setOf("rpgsave", "rmmzsave", "rvdata", "rvdata2", "rxdata", "save", "sav")
     }
 }
 

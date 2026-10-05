@@ -6,6 +6,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.platform.LocalInputModeManager
+import androidx.compose.ui.input.InputMode
+import androidx.compose.ui.input.InputModeManager
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.performTouchInput
@@ -27,11 +30,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.test.SemanticsMatcher
 import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.assertIsFocused
 import androidx.compose.ui.test.assertIsNotSelected
 import androidx.compose.ui.test.assertIsOff
 import androidx.compose.ui.test.assertIsOn
@@ -43,6 +49,9 @@ import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.performClick
+import androidx.compose.ui.test.performKeyInput
+import androidx.compose.ui.test.performSemanticsAction
+import androidx.compose.ui.test.pressKey
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import fr.astragames.app.core.model.LibraryViewMode
@@ -75,6 +84,42 @@ class LibraryUiTest {
         AppLocalizer.language = previousLanguage
     }
 
+    @Test fun settingsSectionAnnouncesItsStateAndActionAfterEachToggle() {
+        content {
+            var expanded by remember { mutableStateOf(false) }
+            SettingsSectionHeader("Apparence", expanded) { expanded = !expanded }
+        }
+        val section = compose.onNodeWithText("Appearance")
+        section.assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Button))
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+            .performClick()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Expanded"))
+            .performClick()
+            .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, "Collapsed"))
+    }
+
+    @Test fun selectedNavigationRemainsFocusableAndKeyboardOperable() {
+        var clicks = 0
+        lateinit var inputMode: InputModeManager
+        content {
+            inputMode = LocalInputModeManager.current
+            Box { NavIcon(Destination.HOME, selected = true, onClick = { clicks++ }) }
+        }
+        compose.runOnIdle { inputMode.requestInputMode(InputMode.Keyboard) }
+        val home = compose.onNodeWithContentDescription("Home")
+        compose.onNodeWithText("Home").assertIsDisplayed()
+        compose.onNodeWithText("Accueil").assertDoesNotExist()
+        home.performSemanticsAction(SemanticsActions.RequestFocus)
+            .assertIsFocused().assertIsSelected()
+        val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
+        val directory = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "ui-review").apply { mkdirs() }
+        File(directory, "navigation-focused.png").outputStream().use {
+            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
+        home.performKeyInput { pressKey(Key.Enter) }
+        compose.runOnIdle { assertEquals(1, clicks) }
+    }
+
     @Test fun settingsRowExposesOneSwitchAndTogglesExactlyOncePerTap() {
         val changes = mutableListOf<Boolean>()
         content {
@@ -102,6 +147,10 @@ class LibraryUiTest {
             }
         }
 
+        compose.onNodeWithText("Games").assertIsDisplayed()
+        compose.onNodeWithText("Settings").assertIsDisplayed()
+        compose.onNodeWithText("Jeux").assertDoesNotExist()
+        compose.onNodeWithText("Paramètres").assertDoesNotExist()
         compose.onNodeWithContentDescription("Games")
             .assert(SemanticsMatcher.expectValue(SemanticsProperties.Role, Role.Tab))
             .assertIsSelected()

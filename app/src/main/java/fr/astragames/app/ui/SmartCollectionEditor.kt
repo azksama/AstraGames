@@ -131,22 +131,25 @@ private fun RuleCard(index: Int, rule: CollectionRuleDraft, state: AstraUiState,
                 IconButton(onClick = onRemove) { Icon(Icons.Default.DeleteOutline, AppLocalizer.text("Retirer"), Modifier.size(20.dp)) }
             }
             val fieldPicker: @Composable () -> Unit = {
-                DropdownSelector("Champ", ruleFields, rule.field, { it.fieldLabel() }) { field ->
+                DropdownSelector("Champ", ruleFields, rule.field, text = { it.fieldLabel() }) { field ->
                     onChange(CollectionRuleDraft(field, defaultOperator(field), defaultRuleValue(field, state)))
                 }
             }
             val operatorPicker: @Composable () -> Unit = {
-                DropdownSelector("Condition", operatorsFor(rule.field), rule.operator, { it.operatorLabelRaw() }) { onChange(rule.copy(operator = it)) }
+                DropdownSelector("Condition", operatorsFor(rule.field), rule.operator, text = { it.operatorLabelRaw() }) { onChange(rule.copy(operator = it)) }
             }
             if (LandscapeLayout && androidx.compose.ui.platform.LocalDensity.current.fontScale <= 1.2f) Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f)) { fieldPicker() }
                 Box(Modifier.weight(1f)) { operatorPicker() }
             } else { fieldPicker(); operatorPicker() }
             when (rule.field) {
-                "ENGINE" -> DropdownSelector("Moteur", GameEngine.entries.map { it.name }, rule.value, { it.readableEngine() }) { onChange(rule.copy(value = it)) }
+                "ENGINE" -> DropdownSelector("Moteur", GameEngine.entries.map { it.name }, rule.value, text = { it.readableEngine() }) { onChange(rule.copy(value = it)) }
                 "TAG" -> SearchableTagSelector(state.tags, rule.value) { onChange(rule.copy(value = it)) }
-                "FOLDER" -> DropdownSelector("Dossier", state.folders.map { it.id }, rule.value, { id -> state.folders.firstOrNull { it.id == id }?.name ?: "Dossier" }) { onChange(rule.copy(value = it)) }
-                "FAVORITE", "COVER", "AVAILABLE" -> DropdownSelector("Valeur", listOf("true", "false"), rule.value, { if (it == "true") "Oui" else "Non" }) { onChange(rule.copy(value = it)) }
+                "FOLDER" -> {
+                    val fallback = AppLocalizer.text("Dossier", LocalAppLanguage.current)
+                    DropdownSelector("Dossier", state.folders.map { it.id }, rule.value, localizeValues = false, text = { id -> state.folders.firstOrNull { it.id == id }?.name ?: fallback }) { onChange(rule.copy(value = it)) }
+                }
+                "FAVORITE", "COVER", "AVAILABLE" -> DropdownSelector("Valeur", listOf("true", "false"), rule.value, text = { if (it == "true") "Oui" else "Non" }) { onChange(rule.copy(value = it)) }
                 else -> if (rule.operator != "NEVER") OutlinedTextField(rule.value, { onChange(rule.copy(value = it.replace(',', '.'))) }, Modifier.fillMaxWidth(),
                     label = { Text(if (rule.field == "PLAY_TIME") "Durée en heures" else "Nombre de jours") }, singleLine = true,
                     isError = !rule.isValid(state), keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Decimal))

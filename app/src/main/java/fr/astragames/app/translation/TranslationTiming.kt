@@ -19,5 +19,5 @@ internal class TranslationTiming(private val startedAtMs: Long, private val tota
 internal object TranslationOutput {
     fun validated(value: String): String? = value
         .replace(Regex("[\\r\\n\\u0085\\u2028\\u2029]+"), " ").trim()
-        .takeIf { it.isNotBlank() && ProtectedText.controls(it).isEmpty() }
+        .takeIf { it.isNotBlank() && it.length <= 32_768 && it.none { c -> c < ' ' && c != '\t' } && ProtectedText.controls(it).isEmpty() }
 }

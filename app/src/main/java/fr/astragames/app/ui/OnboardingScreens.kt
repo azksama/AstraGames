@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -41,7 +43,10 @@ internal fun OnboardingScreen(
     val uriHandler = LocalUriHandler.current
     Box(
         Modifier.fillMaxSize()
-            .background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.background, MaterialTheme.colorScheme.primaryContainer.copy(.55f))))
+            .background(Brush.linearGradient(listOf(
+                MaterialTheme.colorScheme.background,
+                MaterialTheme.colorScheme.primaryContainer.copy(alpha = .22f).compositeOver(MaterialTheme.colorScheme.background)
+            )))
             .windowInsetsPadding(WindowInsets.safeDrawing)
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 24.dp, vertical = 28.dp)
@@ -54,7 +59,7 @@ internal fun OnboardingScreen(
                 Icon(Icons.Default.AutoAwesome, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.onPrimary)
             }
             Spacer(Modifier.height(18.dp))
-            Text("Toute votre bibliothèque. Un seul ciel.", style = MaterialTheme.typography.headlineMedium)
+            Text("Toute votre bibliothèque. Un seul ciel.", style = MaterialTheme.typography.headlineMedium, color = MaterialTheme.colorScheme.onBackground)
             Spacer(Modifier.height(8.dp))
             Text("Astra détecte, classe et lance vos jeux JoiPlay sans modifier leurs fichiers.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(18.dp))
@@ -85,7 +90,7 @@ internal fun OnboardingScreen(
                             if (hasSource) {
                                 state.sources.take(2).forEach { source ->
                                     ListItem(
-                                        headlineContent = { Text(source.displayName) },
+                                        headlineContent = { MaterialText(source.displayName) },
                                         supportingContent = { Text("Dossier sélectionné") },
                                         leadingContent = { Icon(Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary) },
                                         colors = ListItemDefaults.colors(containerColor = Color.Transparent)
@@ -117,7 +122,7 @@ internal fun OnboardingScreen(
                                     )
                                     Spacer(Modifier.width(10.dp))
                                     Column(Modifier.weight(1f)) {
-                                        Text(runtime.name)
+                                        MaterialText(runtime.name)
                                         Text(
                                             when {
                                                 runtime.installed -> "Installé${runtime.versionName?.let { " • $it" }.orEmpty()}"

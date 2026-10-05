@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Arrangement
@@ -89,18 +90,18 @@ internal fun HistoryScreen(state: AstraUiState, vm: AstraViewModel, onBack: (() 
         } else {
             LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(bottom = PageBottomPadding)) {
                 grouped.forEach { (day, daySessions) ->
-                    item(key = "day:$day") { Text(day, Modifier.padding(start = 16.dp, top = 16.dp, bottom = 6.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface) }
+                    item(key = "day:$day") { MaterialText(day, Modifier.padding(start = 16.dp, top = 16.dp, bottom = 6.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface) }
                     items(daySessions, key = { it.id }) { session ->
                         val game = games[session.gameId]
                         ListItem(
                             modifier = Modifier.clickable(enabled = game != null) { game?.let { onGame(it.id) } },
-                            headlineContent = { Text(game?.title ?: "Jeu inconnu") },
-                            supportingContent = { Text(sessionLabel(session)) },
+                            headlineContent = { MaterialText(game?.title ?: AppLocalizer.text("Jeu inconnu", language)) },
+                            supportingContent = { Text(sessionLabel(session, locale)) },
                             leadingContent = {
                                 if (game != null) GameCover(game, Modifier.width(40.dp).aspectRatio(.72f))
                                 else Box(Modifier.width(40.dp).height(56.dp), contentAlignment = Alignment.Center) { Icon(Icons.Default.History, null) }
                             },
-                            trailingContent = { IconButton(onClick = { vm.deletePlaySession(session.id) }) { Icon(Icons.Default.Delete, "Supprimer") } }
+                            trailingContent = { IconButton(onClick = { vm.deletePlaySession(session.id) }) { Icon(Icons.Default.Delete, AppLocalizer.text("Supprimer", language)) } }
                         )
                     }
                 }
@@ -110,8 +111,8 @@ internal fun HistoryScreen(state: AstraUiState, vm: AstraViewModel, onBack: (() 
     if (confirmClear) AlertDialog(onDismissRequest = { confirmClear = false }, title = { Text("Effacer l historique ?") }, text = { Text("Toutes les sessions terminees seront supprimees.") }, confirmButton = { TextButton(onClick = { vm.clearPlayHistory(); confirmClear = false }) { Text("Effacer") } }, dismissButton = { TextButton(onClick = { confirmClear = false }) { Text("Annuler") } })
 }
 
-private fun sessionLabel(session: PlaySessionEntity): String {
-    val start = DateFormat.getTimeInstance(DateFormat.SHORT).format(Date(session.startedAt))
+private fun sessionLabel(session: PlaySessionEntity, locale: Locale): String {
+    val start = DateFormat.getTimeInstance(DateFormat.SHORT, locale).format(Date(session.startedAt))
     val duration = session.durationMs?.let { ms ->
         val minutes = (ms / 60000L).toInt(); val seconds = ((ms % 60000L) / 1000L).toInt()
         if (minutes > 0) minutes.toString() + " min " + seconds.toString() + " s" else seconds.toString() + " s"

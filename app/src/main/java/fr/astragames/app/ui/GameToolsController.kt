@@ -46,7 +46,9 @@ class GameToolsController(
     val toolsBusy: StateFlow<Boolean> = mutableToolsBusy
     private val mutableToolsError = MutableStateFlow<String?>(null)
     val toolsError: StateFlow<String?> = mutableToolsError
-    private var loadedSaveHash: Pair<String, String>? = null
+    private val mutableSaveRevision = MutableStateFlow<Pair<String, String>?>(null)
+    val saveRevision: StateFlow<Pair<String, String>?> = mutableSaveRevision.asStateFlow()
+    private var activeSavesGameId: String? = null
     private var activeModsGameId: String? = null
     private var saveLoadJob: Job? = null
     private var savesListJob: Job? = null
@@ -63,7 +65,7 @@ class GameToolsController(
     fun detectSaveLocations(gameId: String) = scope.launch {
         val game = repository.getGame(gameId) ?: return@launch
         runCatchingCancellable { withContext(Dispatchers.IO) { saveManager.detectLocations(game) } }
-            .onSuccess { loadSaves(gameId); events.emit(UiEvent.Message(it.size.toString() + " emplacement(s) de sauvegarde")) }
+            .onSuccess { refreshSavesIfActive(gameId); events.emit(UiEvent.Message(it.size.toString() + " emplacement(s) de sauvegarde")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Detection impossible")) }
     }
 
@@ -77,13 +79,14 @@ class GameToolsController(
         val gameId = pendingSaveFolderGameId.value ?: return@launch
         val game = repository.getGame(gameId) ?: return@launch
         runCatchingCancellable { withContext(Dispatchers.IO) { saveManager.addLocation(game, uri, uri.lastPathSegment.orEmpty()) } }
-            .onSuccess { pendingSaveFolderGameId.value = null; loadSaves(gameId); events.emit(UiEvent.Message("Dossier de sauvegarde ajoute")) }
+            .onSuccess { pendingSaveFolderGameId.value = null; refreshSavesIfActive(gameId); events.emit(UiEvent.Message("Dossier de sauvegarde ajoute")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Ajout impossible")) }
     }
 
     fun removeSaveLocation(id: String) = scope.launch { saveManager.removeLocation(id) }
 
     fun loadSaves(gameId: String) {
+        activeSavesGameId = gameId
         val generation = ++savesGeneration
         savesListJob?.cancel()
         mutableSaves.value = emptyList()
@@ -103,54 +106,78 @@ class GameToolsController(
         }
     }
 
-    fun loadSaveEntries(save: GameSave) {
+    private fun refreshSavesIfActive(gameId: String) {
+        if (activeSavesGameId == gameId) loadSaves(gameId)
+    }
+
+    fun loadSaveEntries(save: GameSave, expectedHash: String? = null) {
+        if (mutableToolsBusy.value && saveLoadJob?.isActive != true) return
         val generation = ++saveLoadGeneration
         saveLoadJob?.cancel()
         mutableSaveEntries.value = emptyList()
-        loadedSaveHash = null
+        mutableSaveRevision.value = null
+        mutableToolsBusy.value = true
+        mutableToolsError.value = null
         saveLoadJob = scope.launch {
-            mutableToolsBusy.value = true
-            mutableToolsError.value = null
             try {
                 val result = withContext(Dispatchers.IO) {
                     val bytes = readBytes(app, save.uri)
-                    SaveCodec.entries(SaveCodec.read(save.engine, bytes)) to
-                        sha256Hex(bytes)
+                    val hash = sha256Hex(bytes)
+                    check(expectedHash == null || expectedHash == hash) {
+                        "La sauvegarde a change depuis son ouverture. Fermez puis rouvrez l editeur."
+                    }
+                    SaveCodec.entries(SaveCodec.read(save.engine, bytes)) to hash
                 }
-                mutableSaveEntries.value = result.first
-                loadedSaveHash = save.uri to result.second
+                if (generation == saveLoadGeneration) {
+                    mutableSaveEntries.value = result.first
+                    mutableSaveRevision.value = save.uri to result.second
+                }
             } catch (error: CancellationException) { throw error }
-            catch (error: Exception) { mutableToolsError.value = error.message ?: "Lecture impossible" }
+            catch (error: Exception) { if (generation == saveLoadGeneration) mutableToolsError.value = error.message ?: "Lecture impossible" }
             finally { if (generation == saveLoadGeneration) mutableToolsBusy.value = false }
         }
     }
 
     fun applySaveEdits(gameId: String, save: GameSave, edits: List<SaveEdit>, onSaved: () -> Unit = {}) = scope.launch {
         if (mutableToolsBusy.value) return@launch
-        val game = repository.getGame(gameId) ?: return@launch
-        val expected = loadedSaveHash?.takeIf { it.first == save.uri }?.second ?: return@launch
         mutableToolsBusy.value = true
         mutableToolsError.value = null
         try {
+            val expected = mutableSaveRevision.value?.takeIf { it.first == save.uri }?.second
+                ?: error("Sauvegarde non chargee. Fermez puis rouvrez l editeur.")
+            val game = repository.getGame(gameId) ?: error("Jeu introuvable.")
             withContext(Dispatchers.IO) { saveManager.writeSave(game, save, edits, expected) }
+            mutableSaveRevision.value = null
             events.emit(UiEvent.Message("Sauvegarde enregistree avec backup"))
             onSaved()
-            loadSaves(gameId)
+            refreshSavesIfActive(gameId)
         } catch (error: CancellationException) { throw error }
         catch (error: Exception) { mutableToolsError.value = error.message ?: "Ecriture impossible" }
         finally { mutableToolsBusy.value = false }
     }
 
     fun restoreSaveBackup(backup: SaveBackupEntity) = scope.launch {
-        runCatchingCancellable { withContext(Dispatchers.IO) { saveManager.restoreBackup(backup) } }
-            .onSuccess { events.emit(UiEvent.Message("Backup restaure")) }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Restauration impossible")) }
+        if (mutableToolsBusy.value) return@launch
+        mutableToolsBusy.value = true
+        try {
+            runCatchingCancellable { withContext(Dispatchers.IO) { saveManager.restoreBackup(backup) } }
+                .onSuccess {
+                    mutableSaveRevision.value = null
+                    refreshSavesIfActive(backup.gameId)
+                    events.emit(UiEvent.Message("Backup restaure, version precedente conservee"))
+                }
+                .onFailure { events.emit(UiEvent.Message(it.message ?: "Restauration impossible")) }
+        } finally { mutableToolsBusy.value = false }
     }
 
     fun deleteSaveBackup(backup: SaveBackupEntity) = scope.launch {
-        runCatchingCancellable { withContext(Dispatchers.IO) { saveManager.deleteBackup(backup) } }
-            .onSuccess { events.emit(UiEvent.Message("Backup supprime")) }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Suppression impossible")) }
+        if (mutableToolsBusy.value) return@launch
+        mutableToolsBusy.value = true
+        try {
+            runCatchingCancellable { withContext(Dispatchers.IO) { saveManager.deleteBackup(backup) } }
+                .onSuccess { events.emit(UiEvent.Message("Backup supprime")) }
+                .onFailure { events.emit(UiEvent.Message(it.message ?: "Suppression impossible")) }
+        } finally { mutableToolsBusy.value = false }
     }
 
     fun setSaveEditorFavorites(value: String) = scope.launch { settingsRepository.setSaveEditorFavorites(value) }
@@ -210,14 +237,14 @@ class GameToolsController(
     }
 
     fun importModZip(uri: Uri, engine: String?, replaceExisting: Boolean) = scope.launch {
-        val root = settingsRepository.settings.first().modsRootUri
-        if (root == null) {
-            events.emit(UiEvent.Message("Choisissez d abord le dossier Astra/Mods"))
-            return@launch
-        }
         if (mutableToolsBusy.value) return@launch
         mutableToolsBusy.value = true
         try {
+            val root = settingsRepository.settings.first().modsRootUri
+            if (root == null) {
+                events.emit(UiEvent.Message("Choisissez d abord le dossier Astra/Mods"))
+                return@launch
+            }
             runCatchingCancellable { modsManager.importZip(uri, root, engine ?: activeModsGameId?.let { repository.getGame(it)?.engine }, replaceExisting) }
                 .onSuccess { activeModsGameId?.let(::loadMods); events.emit(UiEvent.Message("Mod importe : " + it.name)) }
                 .onFailure { events.emit(UiEvent.Message(it.message ?: "Import impossible")) }
@@ -225,31 +252,31 @@ class GameToolsController(
     }
 
     fun installMod(gameId: String, modId: String) = scope.launch {
-        val game = repository.getGame(gameId) ?: return@launch
-        val mod = dao.getMods().firstOrNull { it.id == modId } ?: return@launch
         if (mutableToolsBusy.value) return@launch
         mutableToolsBusy.value = true
         try {
+            val game = repository.getGame(gameId) ?: return@launch
+            val mod = dao.getMods().firstOrNull { it.id == modId } ?: return@launch
             runCatchingCancellable { modsManager.install(game, mod) }
                 .onSuccess {
                     events.emit(UiEvent.Message("Mod installe"))
-                    loadMods(gameId)
+                    if (activeModsGameId == gameId) loadMods(gameId)
                 }
                 .onFailure { events.emit(UiEvent.Message(it.message ?: "Installation impossible")) }
         } finally { mutableToolsBusy.value = false }
     }
 
     fun uninstallMod(gameId: String, installationId: String, force: Boolean = false) = scope.launch {
-        val installation = dao.observeInstallationsForGame(gameId).first().firstOrNull { it.id == installationId } ?: return@launch
         if (mutableToolsBusy.value) return@launch
         mutableToolsBusy.value = true
         try {
+            val installation = dao.observeInstallationsForGame(gameId).first().firstOrNull { it.id == installationId } ?: return@launch
             runCatchingCancellable { modsManager.uninstall(installation, force) }
                 .onSuccess { warnings ->
                     if (warnings.isNotEmpty()) events.emit(UiEvent.Message("Des fichiers ont change depuis l installation"))
                     else {
                         events.emit(UiEvent.Message("Mod desinstalle"))
-                        loadMods(gameId)
+                        if (activeModsGameId == gameId) loadMods(gameId)
                     }
                 }
                 .onFailure { events.emit(UiEvent.Message(it.message ?: "Desinstallation impossible")) }

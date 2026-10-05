@@ -11,12 +11,12 @@ internal object RpgMakerSaveCodec {
     fun decode(bytes: ByteArray): Decoded {
         require(bytes.size <= MAX_SAVE_BYTES) { "Sauvegarde trop volumineuse." }
         val text = bytes.toString(Charsets.UTF_8).trim().removePrefix("\uFEFF")
-        if (text.startsWith("{")) return Decoded(JSONObject(text), Format.JSON)
+        if (text.startsWith("{")) return Decoded(parseSaveJson(text), Format.JSON)
         val binary = runCatching { Base64.getDecoder().decode(text) }.getOrNull()
         if (binary != null && binary.size >= 2 &&
             (binary[0].toInt() and 15) == 8 &&
             (((binary[0].toInt() and 255) shl 8) + (binary[1].toInt() and 255)) % 31 == 0
-        ) return Decoded(JSONObject(inflateSave(binary).toString(Charsets.UTF_8)), Format.MZ_ZLIB)
+        ) return Decoded(parseSaveJson(inflateSave(binary).toString(Charsets.UTF_8)), Format.MZ_ZLIB)
         return Decoded(decodeRpgMakerJson(text), Format.MV_LZSTRING)
     }
 
@@ -25,4 +25,28 @@ internal object RpgMakerSaveCodec {
         Format.MV_LZSTRING -> encodeRpgMakerJson(save.json)
         Format.MZ_ZLIB -> Base64.getEncoder().encodeToString(deflateSave(save.json.toString().toByteArray(Charsets.UTF_8)))
     }.toByteArray(Charsets.UTF_8)
+}
+
+/** Android's recursive JSON parser needs a depth guard before it sees untrusted save data. */
+internal fun parseSaveJson(text: String): JSONObject {
+    require(text.length <= MAX_SAVE_BYTES) { "Sauvegarde JSON trop volumineuse." }
+    var depth = 0
+    var nodes = 0
+    var quoted = false
+    var escaped = false
+    text.forEach { character ->
+        if (quoted) {
+            if (escaped) escaped = false
+            else if (character == '\\') escaped = true
+            else if (character == '"') quoted = false
+        } else when (character) {
+            '"' -> quoted = true
+            '{', '[' -> { depth++; nodes++ }
+            '}', ']' -> depth--
+            ',', ':' -> nodes++
+        }
+        require(depth in 0..MAX_SAVE_DEPTH && nodes <= MAX_SAVE_NODES) { "Structure JSON trop complexe." }
+    }
+    require(depth == 0 && !quoted) { "Sauvegarde JSON tronquee." }
+    return JSONObject(text)
 }

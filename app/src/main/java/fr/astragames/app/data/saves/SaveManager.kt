@@ -2,7 +2,6 @@ package fr.astragames.app.data.saves
 
 import android.content.Context
 import android.net.Uri
-import androidx.documentfile.provider.DocumentFile
 import fr.astragames.app.data.local.AstraDao
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.GameSaveLocationEntity
@@ -13,6 +12,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.sync.withLock
+import java.io.File
 
 class SaveManager(
     private val context: Context,
@@ -66,6 +66,8 @@ class SaveManager(
     private val writes = kotlinx.coroutines.sync.Mutex()
 
     suspend fun writeSave(game: GameEntity, save: GameSave, edits: List<SaveEdit>, expectedHash: String? = null): SaveBackupEntity = writes.withLock {
+        requireSource(game, save.uri)
+        require(save.engine == game.engine) { "Moteur de sauvegarde incoherent." }
         val original = readBytes(context, save.uri)
         check(expectedHash == null || sha256Hex(original) == expectedHash) {
             "La sauvegarde a change depuis son ouverture. Fermez puis rouvrez l editeur."
@@ -73,10 +75,14 @@ class SaveManager(
         val patched = SaveCodec.patch(game.engine, original, edits)
         val backup = backup(game, save, original)
         replaceVerified(save.uri, original, patched)
+        // Retention cleanup must never turn a completed, verified write into an apparent failure.
+        runCatching { rotateBackups(save.uri) }
         backup
     }
 
     private fun replaceVerified(uri: String, original: ByteArray, replacement: ByteArray) {
+        // Patching and backup creation may take time while the game is still writing its slot.
+        check(readBytes(context, uri).contentEquals(original)) { "La sauvegarde a change pendant la preparation. Rouvrez l editeur." }
         try {
             writeBytes(context, uri, replacement)
             check(readBytes(context, uri).contentEquals(replacement)) { "Verification de l ecriture echouee." }
@@ -91,11 +97,12 @@ class SaveManager(
 
     suspend fun backup(game: GameEntity, save: GameSave, original: ByteArray = readBytes(context, save.uri)): SaveBackupEntity {
         val stamp = SimpleDateFormat("yyyyMMdd-HHmmss", Locale.US).format(Date())
-        val backupName = save.name + ".astra-backup-" + stamp + "-" + UUID.randomUUID()
-        val dir = java.io.File(context.filesDir, "save-backups/" + game.id)
+        // IDs and display names can originate in an imported catalog; never use them as paths.
+        val backupName = "save-" + stamp + "-" + UUID.randomUUID() + ".backup"
+        val dir = File(context.filesDir, "save-backups/" + sha256Hex(game.id.toByteArray(Charsets.UTF_8)))
         check(dir.isDirectory || dir.mkdirs()) { "Dossier de backup inaccessible." }
-        val file = java.io.File(dir, backupName)
-        file.writeBytes(original)
+        val file = File(dir, backupName)
+        java.io.FileOutputStream(file).use { output -> output.write(original); output.fd.sync() }
         check(file.readBytes().contentEquals(original)) { "Verification du backup echouee." }
         val backupUri = Uri.fromFile(file).toString()
         val entity = SaveBackupEntity(
@@ -107,34 +114,56 @@ class SaveManager(
             createdAt = System.currentTimeMillis(),
             sizeBytes = original.size.toLong()
         )
-        dao.insertSaveBackup(entity)
-        rotateBackups(save.uri)
+        try { dao.insertSaveBackup(entity) } catch (error: Exception) { file.delete(); throw error }
         return entity
     }
 
     suspend fun restoreBackup(backup: SaveBackupEntity) = writes.withLock {
+        val game = dao.getGame(backup.gameId) ?: error("Jeu introuvable.")
+        requireSource(game, backup.sourceUri)
         val bytes = readBackupBytes(backup.backupUri)
         val original = readBytes(context, backup.sourceUri)
-        val game = dao.getGame(backup.gameId) ?: error("Jeu introuvable.")
         backup(game, GameSave(backup.sourceUri, backup.sourceName, null, game.engine, original.size.toLong(), 0), original)
         replaceVerified(backup.sourceUri, original, bytes)
+        runCatching { rotateBackups(backup.sourceUri) }
     }
 
-    suspend fun deleteBackup(backup: SaveBackupEntity) {
-        val uri = Uri.parse(backup.backupUri)
-        if (uri.scheme == "file") uri.path?.let { java.io.File(it).delete() }
-        else DocumentFile.fromSingleUri(context, uri)?.delete()
+    suspend fun deleteBackup(backup: SaveBackupEntity) = writes.withLock {
+        deleteBackupFile(backup.backupUri)
         dao.deleteSaveBackup(backup.id)
     }
 
-    private fun readBackupBytes(uriValue: String): ByteArray = readBytes(context, uriValue)
+    private fun backupFile(uriValue: String): File {
+        val uri = Uri.parse(uriValue)
+        require(uri.scheme == "file" && uri.path != null) { "Emplacement de backup invalide." }
+        val root = File(context.filesDir, "save-backups").canonicalFile
+        val file = File(requireNotNull(uri.path)).canonicalFile
+        require(file.path.startsWith(root.path + File.separator)) { "Backup hors du dossier autorise." }
+        return file
+    }
+
+    private fun readBackupBytes(uriValue: String): ByteArray = backupFile(uriValue).inputStream().use { it.readBounded(MAX_SAVE_BYTES.toLong()) }
+
+    private fun deleteBackupFile(uriValue: String) {
+        val file = backupFile(uriValue)
+        check(!file.exists() || file.delete()) { "Suppression du backup impossible." }
+    }
+
+    private suspend fun requireSource(game: GameEntity, uri: String) {
+        val parsed = Uri.parse(uri)
+        require(parsed.scheme == "content" || parsed.scheme == "file") { "Source de sauvegarde invalide." }
+        if (parsed.scheme == "file") {
+            val source = File(requireNotNull(parsed.path)).canonicalFile
+            val privateRoot = File(context.applicationInfo.dataDir).canonicalFile
+            require(!source.path.startsWith(privateRoot.path + File.separator)) { "Un fichier interne Astra ne peut pas etre une sauvegarde de jeu." }
+        }
+        require(finder.saves(game, dao.getSaveLocations(game.id)).any { it.uri == uri }) { "Sauvegarde absente des dossiers autorises du jeu. Actualisez la liste." }
+    }
 
     private suspend fun rotateBackups(sourceUri: String) {
         val existing = dao.getSaveBackupsForSource(sourceUri)
         existing.drop(5).forEach { stale ->
-            val uri = Uri.parse(stale.backupUri)
-            if (uri.scheme == "file") uri.path?.let { java.io.File(it).delete() }
-            else DocumentFile.fromSingleUri(context, uri)?.delete()
+            deleteBackupFile(stale.backupUri)
             dao.deleteSaveBackup(stale.id)
         }
     }

@@ -10,7 +10,7 @@ import fr.astragames.app.data.local.GameTagCrossRef
 import fr.astragames.app.data.local.LibraryFolderEntity
 import java.util.Locale
 
-/** Derived catalog data, rebuilt only when its database inputs change. */
+/** Derived catalog data, rebuilt when database inputs or time-based membership changes. */
 internal class LibraryIndex(
     private val games: List<GameEntity>,
     refs: List<GameTagCrossRef>,

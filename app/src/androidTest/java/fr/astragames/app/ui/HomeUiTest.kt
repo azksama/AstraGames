@@ -52,6 +52,7 @@ class HomeUiTest {
 
     @Test fun homeShowsRecentOrderResumeActionAndFourFloatingDestinations() {
         AppLocalizer.language = AppLanguage.ENGLISH
+        var landscapeLayout = false
         val resumed = mutableListOf<String>()
         val opened = mutableListOf<String>()
         val games = listOf(
@@ -63,6 +64,7 @@ class HomeUiTest {
         compose.setContent {
             CompositionLocalProvider(LocalAppLanguage provides AppLanguage.ENGLISH, LocalPageBottomPadding provides 108.dp) {
                 AstraTheme {
+                    landscapeLayout = LandscapeLayout
                     val nav = rememberNavController()
                     val entry by nav.currentBackStackEntryAsState()
                     Surface(Modifier.fillMaxSize()) {
@@ -79,24 +81,35 @@ class HomeUiTest {
                 }
             }
         }
-        compose.onNodeWithText("Astra").assertIsDisplayed()
-        compose.onNodeWithText("GAMES").assertIsDisplayed()
+        val landscape = compose.runOnIdle { landscapeLayout }
+        compose.onNodeWithText(if (landscape) "Library" else "Astra").assertIsDisplayed()
+        if (landscape) compose.onNodeWithText("GAMES").assertDoesNotExist()
+        else compose.onNodeWithText("GAMES").assertIsDisplayed()
         compose.onAllNodesWithText("The Clockwork Garden").onFirst().assertIsDisplayed()
         compose.onNodeWithContentDescription("Home").assertIsSelected()
         compose.onNodeWithContentDescription("Games").assertIsNotSelected()
         compose.onNodeWithContentDescription("Updates").assertDoesNotExist()
         compose.onNodeWithContentDescription("History").assertDoesNotExist()
-        compose.onNodeWithText("Resume game").performScrollTo().performClick()
+        compose.onNodeWithText("Resume game").performScrollTo().assertIsDisplayed().performClick()
         assertEquals(listOf("first"), resumed)
-        compose.onNodeWithTag("home-page").performScrollToNode(hasText("Your games"))
-        compose.onNodeWithTag("home-page").performTouchInput { swipeUp() }
-        compose.onNodeWithText("Northern Lights").performClick()
+        // The grid belongs to the page in portrait and scrolls in a separate pane in landscape.
+        if (!landscape) compose.onNodeWithTag("home-recent-games").performScrollTo()
+        val recentGrid = compose.onNodeWithTag("home-recent-games")
+        recentGrid.performScrollToNode(hasText("Northern Lights"))
+        val latest = compose.onNode(hasText("The Clockwork Garden") and hasAnyAncestor(hasTestTag("home-recent-games")))
+        val second = compose.onNodeWithText("Northern Lights")
+        latest.assertIsDisplayed()
+        second.assertIsDisplayed()
+        assertTrue(latest.fetchSemanticsNode().boundsInRoot.left < second.fetchSemanticsNode().boundsInRoot.left)
+        second.performClick()
         assertEquals(listOf("second"), opened)
-        compose.onAllNodesWithText("The Clockwork Garden").onFirst().performScrollTo()
+        recentGrid.performScrollToNode(hasText("The Clockwork Garden"))
         val bitmap = compose.onRoot().captureToImage().asAndroidBitmap()
-        val output = File(context.cacheDir, "ui-review").apply { mkdirs() }.resolve("home-phone.png")
+        val output = File(context.cacheDir, "ui-review").apply { mkdirs() }.resolve(if (landscape) "home-landscape.png" else "home-phone.png")
         output.outputStream().use { assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it)) }
-        compose.onNodeWithText("View all").performScrollTo().performClick()
+        // The heading is fixed above the right pane in landscape; it has no scrollable parent.
+        if (!landscape) compose.onNodeWithText("View all").performScrollTo()
+        compose.onNodeWithText("View all").assertIsDisplayed().performClick()
         compose.onNodeWithText("All games opened").assertIsDisplayed()
         compose.onNodeWithContentDescription("Games").assertIsSelected()
     }
@@ -108,7 +121,7 @@ class HomeUiTest {
             HomeScreen(AstraUiState(), {}, {}, {}, { additions++ })
         } } }
         compose.onNodeWithText("Resume game").assertDoesNotExist()
-        compose.onNodeWithText("Add a game folder").performClick()
+        compose.onNodeWithText("Add a game folder").performScrollTo().assertIsDisplayed().performClick()
         assertEquals(1, additions)
     }
 }

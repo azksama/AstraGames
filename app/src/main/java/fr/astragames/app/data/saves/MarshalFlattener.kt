@@ -12,9 +12,9 @@ object MarshalFlattener {
             if (result.size >= limit || depth > 32 || !active.add(value)) return
             when (value) {
                 is MarshalValue.IntValue -> result += SaveEntry(path, SaveEntryType.INT, value.value.toString(), editable = true)
-                is MarshalValue.FloatValue -> result += SaveEntry(path, SaveEntryType.FLOAT, value.value.toString(), editable = true)
+                is MarshalValue.FloatValue -> result += SaveEntry(path, SaveEntryType.FLOAT, value.value.toString(), editable = value.value.isFinite())
                 is MarshalValue.Bool -> result += SaveEntry(path, SaveEntryType.BOOLEAN, if (value.value) "true" else "false", editable = true)
-                is MarshalValue.StringValue -> result += SaveEntry(path, SaveEntryType.STRING, value.text, editable = true)
+                is MarshalValue.StringValue -> result += SaveEntry(path, SaveEntryType.STRING, value.text, editable = value.editableText)
                 MarshalValue.NilValue -> result += SaveEntry(path, SaveEntryType.UNKNOWN, "null", editable = false)
                 is MarshalValue.SymbolValue -> result += SaveEntry(path, SaveEntryType.STRING, value.name, editable = false)
                 is MarshalValue.ArrayValue -> {
@@ -40,12 +40,17 @@ object MarshalFlattener {
                     }
                 }
                 is MarshalValue.UserDefined -> result += SaveEntry(path, SaveEntryType.UNKNOWN, value.className.name + " (binaire)", editable = false)
+                is MarshalValue.UserMarshal -> walk(value.value, "$path.marshal", depth + 1)
+                is MarshalValue.BigIntValue -> result += SaveEntry(path, SaveEntryType.UNKNOWN, "Entier Ruby (${value.magnitude.size} octets)", false)
+                is MarshalValue.RegexpValue -> result += SaveEntry(path, SaveEntryType.UNKNOWN, "Expression reguliere", false)
+                is MarshalValue.ClassReference -> result += SaveEntry(path, SaveEntryType.OBJECT, value.name, false)
                 is MarshalValue.ExtendedValue -> walk(value.value, path, depth)
-                is MarshalValue.ModuleValue -> walk(value.value, path, depth)
+                is MarshalValue.UserClass -> walk(value.value, path, depth)
             }
             active.remove(value)
         }
         walk(root, "root", 0)
+        require(result.distinctBy { it.path }.size == result.size) { "Cles Marshal ambigues : modification non securisee." }
         return result
     }
 
@@ -63,7 +68,7 @@ object MarshalFlattener {
     /** Applique une edition de feuille sur le graphe. Retourne true si la valeur a ete trouvee et modifiee. */
     fun applyEdit(root: MarshalValue, path: String, newValue: String, type: SaveEntryType): Boolean {
         val tokens = parsePath(path) ?: return false
-        val parent = resolve(root, tokens.dropLast(1)) ?: return false
+        val parent = unwrap(resolve(root, tokens.dropLast(1)) ?: return false)
         val last = tokens.last()
         val coerced = when (type) {
             SaveEntryType.INT -> newValue.trim().toLongOrNull()?.let { MarshalValue.IntValue(it) } ?: return false
@@ -99,13 +104,24 @@ object MarshalFlattener {
                 if (leafType(target) != type) return false
                 parent.members[symbol] = preserveStringAttributes(target, coerced)
             }
+            is MarshalValue.UserMarshal -> {
+                if ((last as? PathToken.Field)?.name != "marshal" || leafType(parent.value) != type) return false
+                parent.value = preserveStringAttributes(parent.value, coerced)
+            }
             else -> return false
         }
         return true
     }
 
-    private fun preserveStringAttributes(original: MarshalValue, value: MarshalValue): MarshalValue =
-        if (original is MarshalValue.StringValue && value is MarshalValue.StringValue) value.copy(ivars = LinkedHashMap(original.ivars)) else value
+    private fun preserveStringAttributes(original: MarshalValue, value: MarshalValue): MarshalValue {
+        val replacement = if (original is MarshalValue.StringValue && value is MarshalValue.StringValue) {
+            val charset = original.charset ?: error("Encodage Ruby non pris en charge.")
+            require(original.editableText && charset.newEncoder().canEncode(value.text)) { "Texte incompatible avec l encodage ${charset.name()}." }
+            value.copy(bytes = value.text.toByteArray(charset), ivars = LinkedHashMap(original.ivars))
+        } else value
+        replacement.attributes.putAll(original.attributes)
+        return replacement
+    }
 
     private sealed interface PathToken {
         data class Index(val index: Int) : PathToken
@@ -141,11 +157,13 @@ object MarshalFlattener {
     private fun resolve(value: MarshalValue, tokens: List<PathToken>): MarshalValue? {
         var current = value
         for (token in tokens) {
+            current = unwrap(current)
             current = when (token) {
                 is PathToken.Index -> (current as? MarshalValue.ArrayValue)?.items?.getOrNull(token.index) ?: return null
                 is PathToken.Field -> when (current) {
                     is MarshalValue.ObjectValue -> current.ivars.entries.firstOrNull { escapeKey(it.key.name.removePrefix("@")) == token.name }?.value
                     is MarshalValue.StructValue -> current.members.entries.firstOrNull { escapeKey(it.key.name) == token.name }?.value
+                    is MarshalValue.UserMarshal -> if (token.name == "marshal") current.value else null
                     else -> null
                 } ?: return null
                 is PathToken.Key -> (current as? MarshalValue.HashValue)?.entries?.entries
@@ -153,6 +171,12 @@ object MarshalFlattener {
             }
         }
         return current
+    }
+
+    private fun unwrap(value: MarshalValue): MarshalValue = when (value) {
+        is MarshalValue.ExtendedValue -> unwrap(value.value)
+        is MarshalValue.UserClass -> unwrap(value.value)
+        else -> value
     }
 
     private fun leafType(value: MarshalValue) = when (value) {

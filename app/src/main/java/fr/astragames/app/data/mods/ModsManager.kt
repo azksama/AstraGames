@@ -11,6 +11,7 @@ import fr.astragames.app.data.local.ModInstallationEntity
 import fr.astragames.app.data.local.ModInstalledFileEntity
 import fr.astragames.app.data.saves.documentDir
 import fr.astragames.app.data.saves.documentFile
+import fr.astragames.app.data.saves.readBounded
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.NonCancellable
@@ -74,7 +75,9 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
             try {
                 val payload = context.contentResolver.openInputStream(zipUri)?.let { ModArchive.extract(it, staging) }
                     ?: error("Lecture ZIP impossible.")
-                val manifest = File(payload, "astra-mod.json").takeIf { it.isFile }?.readText()?.let(AstraModManifestParser::parse)
+                val manifest = File(payload, "astra-mod.json").takeIf { it.isFile }
+                    ?.inputStream()?.use { it.readBounded(MAX_MANIFEST_BYTES).toString(Charsets.UTF_8) }
+                    ?.let(AstraModManifestParser::parse)
                 val engine = normalizeEngine(engineOverride ?: manifest?.engines?.firstOrNull() ?: "OTHER")
                 require(engine in ENGINES) { "Moteur de mod non pris en charge." }
                 require(manifest == null || manifest.engines.isEmpty() || engine in manifest.engines || "OTHER" in manifest.engines) { "Moteur du manifeste incompatible." }
@@ -188,6 +191,7 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
         withContext(Dispatchers.IO) { lock.withLock { uninstallFiles(installation, force) } }
 
     private suspend fun uninstallFiles(installation: ModInstallationEntity, force: Boolean): List<UninstallWarning> {
+        val backupDirectory = backupDirectory(installation.id)
         val files = dao.getInstalledFiles(installation.id)
         val warnings = files.mapNotNull { record ->
             val dest = documentFile(context, Uri.parse(record.relativePath))
@@ -197,7 +201,7 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
         }
         if (warnings.isNotEmpty()) return warnings
         files.filter { it.action == "REPLACED" }.forEach { record ->
-            val backup = record.backupUri?.let(::File)?.takeIf { it.isFile } ?: error("Backup original introuvable.")
+            val backup = managedBackup(record.backupUri)
             check(hashOf(DocumentFile.fromFile(backup)) == record.originalHash) { "Backup original endommage." }
         }
         files.forEach { record ->
@@ -205,7 +209,7 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
             if (record.action == "ADDED") {
                 check(!dest.exists() || dest.delete()) { "Suppression impossible : ${record.relativePath}" }
             } else {
-                val backup = record.backupUri?.let(::File)?.takeIf { it.isFile } ?: error("Backup original introuvable.")
+                val backup = managedBackup(record.backupUri)
                 check(hashOf(DocumentFile.fromFile(backup)) == record.originalHash) { "Backup original endommage." }
                 copyDocument(DocumentFile.fromFile(backup), dest)
                 check(hashOf(dest) == record.originalHash) { "Restauration incomplete." }
@@ -213,16 +217,28 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
         }
         dao.deleteInstalledFiles(installation.id)
         dao.deleteInstallation(installation.id)
-        File(context.filesDir, "mod-backups/${installation.id}").deleteRecursively()
+        backupDirectory.deleteRecursively()
         return emptyList()
     }
 
     private fun backupOriginal(id: String, source: DocumentFile): File {
-        val dir = File(context.filesDir, "mod-backups/$id").apply { mkdirs() }
+        val dir = backupDirectory(id).apply { mkdirs() }
         val backup = File(dir, UUID.randomUUID().toString())
         copyDocument(source, DocumentFile.fromFile(backup))
         check(hashOf(source) == hashOf(DocumentFile.fromFile(backup))) { "Backup original incomplet." }
         return backup
+    }
+
+    private fun backupDirectory(id: String): File {
+        require(id.matches(Regex("[A-Za-z0-9_-]{1,128}"))) { "Identifiant d’installation invalide." }
+        return File(context.filesDir, "mod-backups/$id")
+    }
+
+    private fun managedBackup(path: String?): File {
+        val root = File(context.filesDir, "mod-backups").canonicalFile.toPath()
+        val file = path?.let(::File)?.canonicalFile ?: error("Backup original introuvable.")
+        require(file.toPath().startsWith(root) && file.toPath() != root && file.isFile) { "Backup original inaccessible." }
+        return file
     }
 
     private fun createFile(parent: DocumentFile, name: String): DocumentFile {
@@ -261,7 +277,7 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
 
     private fun readMod(engine: String, folder: DocumentFile): ModEntity {
         val manifest = folder.findFile("astra-mod.json")?.let { file ->
-            val text = context.contentResolver.openInputStream(file.uri)?.bufferedReader()?.use { it.readText() }
+            val text = context.contentResolver.openInputStream(file.uri)?.use { it.readBounded(MAX_MANIFEST_BYTES).toString(Charsets.UTF_8) }
                 ?: error("Manifeste illisible.")
             AstraModManifestParser.parse(text)
         }
@@ -298,6 +314,7 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
     }
 
     private companion object {
+        const val MAX_MANIFEST_BYTES = 1024L * 1024
         val ENGINES = listOf("RENPY", "RPG_MAKER_MV", "RPG_MAKER_MZ", "RPG_MAKER_XP", "RPG_MAKER_VX", "RPG_MAKER_VX_ACE", "WOLF_RPG", "OTHER")
     }
 }

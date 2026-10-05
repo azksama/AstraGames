@@ -3,9 +3,7 @@ package fr.astragames.app.data.backup
 import android.content.Context
 import android.net.Uri
 import android.provider.OpenableColumns
-import androidx.documentfile.provider.DocumentFile
 import androidx.room.withTransaction
-import fr.astragames.app.data.saves.readBounded
 import fr.astragames.app.data.saves.documentDir
 import fr.astragames.app.core.security.KeystoreCrypto
 import fr.astragames.app.data.local.AstraDatabase
@@ -14,21 +12,21 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
+import java.io.IOException
+import java.security.DigestInputStream
+import java.security.MessageDigest
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
-import java.util.zip.ZipEntry
-import java.util.zip.ZipInputStream
-import java.util.zip.ZipOutputStream
+import java.util.UUID
 
 /** Archive chiffrée du catalogue et des fichiers internes, liée à la clé de cette installation. */
-private val BACKUP_MAGIC = byteArrayOf('A'.code.toByte(), 'S'.code.toByte(), 'T'.code.toByte(), '1'.code.toByte())
-
 class BackupManager(
     private val context: Context,
     private val database: AstraDatabase
 ) {
     private val lock = Mutex()
+    private val envelope = BackupEnvelope(KeystoreCrypto::backupEncryptionCipher, KeystoreCrypto::backupDecryptionCipher)
 
     suspend fun create(treeUri: Uri): String = withContext(Dispatchers.IO) {
         lock.withLock {
@@ -36,12 +34,17 @@ class BackupManager(
                 ?.takeIf { it.exists() && it.canWrite() }
                 ?: error("Le dossier de sauvegarde n’est plus accessible.")
             val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT).format(Date())
-            val displayName = "astra-games_$stamp.astra"
+            val displayName = "astra-games_${stamp}_${UUID.randomUUID().toString().take(8)}.astra"
+            require(tree.findFile(displayName) == null) { "Un fichier de sauvegarde porte déjà ce nom. Réessayez." }
             val target = tree.createFile("application/octet-stream", displayName)
                 ?: error("Impossible de créer la sauvegarde.")
-            val work = File(context.cacheDir, "backup-${System.currentTimeMillis()}.zip")
+            val workDirectory = File(context.cacheDir, "backup-${UUID.randomUUID()}")
+            val work = File(workDirectory, "archive.zip")
+            var ownsWorkDirectory = false
             try {
-                val snapshot = File(context.cacheDir, "snapshot-${java.util.UUID.randomUUID()}.db")
+                ownsWorkDirectory = workDirectory.mkdir()
+                check(ownsWorkDirectory) { "Dossier de sauvegarde temporaire inaccessible." }
+                val snapshot = File(workDirectory, "snapshot.db")
                 try {
                     database.withTransaction {
                         context.getDatabasePath(database.openHelper.databaseName ?: error("Base en memoire non exportable.")).copyTo(snapshot, overwrite = true)
@@ -51,31 +54,37 @@ class BackupManager(
                     android.database.sqlite.SQLiteDatabase.openDatabase(snapshot.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE).use { copy ->
                         copy.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
                     }
-                    work.outputStream().buffered().use { output ->
-                        ZipOutputStream(output).use { zip ->
-                            addFile(zip, snapshot, DATABASE_ENTRY)
-                            INTERNAL_DIRECTORIES.forEach { name ->
-                                val directory = File(context.filesDir, name)
-                                directory.walkTopDown().filter(File::isFile).forEach { file ->
-                                    addFile(zip, file, "$name/${file.relativeTo(directory).invariantSeparatorsPath}")
-                                }
+                    val files = sequence {
+                        yield(DATABASE_ENTRY to snapshot)
+                        INTERNAL_DIRECTORIES.forEach { name ->
+                            val directory = File(context.filesDir, name)
+                            directory.walkTopDown().filter(File::isFile).forEach { file ->
+                                yield("$name/${file.relativeTo(directory).invariantSeparatorsPath}" to file)
                             }
                         }
                     }
+                    work.outputStream().use { BackupArchive.write(it, files) }
                 } finally {
                     snapshot.delete()
                     File(snapshot.path + "-wal").delete()
                     File(snapshot.path + "-shm").delete()
                 }
                 require(work.length() <= MAX_ARCHIVE_BYTES) { "Sauvegarde trop volumineuse." }
-                val encrypted = BACKUP_MAGIC + KeystoreCrypto.encrypt(work.readBytes())
-                context.contentResolver.openOutputStream(target.uri, "wt")?.use { it.write(encrypted) }
+                val expectedLength = work.length()
+                val digest = MessageDigest.getInstance("SHA-256")
+                context.contentResolver.openOutputStream(target.uri, "wt")?.buffered()?.use { output ->
+                    DigestInputStream(work.inputStream().buffered(), digest).use { envelope.write(it, expectedLength, output) }
+                }
                     ?: error("Impossible d’écrire dans le dossier choisi.")
+                val expectedSha256 = digest.digest()
+                context.contentResolver.openInputStream(target.uri)?.buffered()?.use {
+                    envelope.verify(it, expectedLength, expectedSha256)
+                } ?: error("Impossible de vérifier la sauvegarde exportée.")
             } catch (error: Exception) {
                 target.delete()
                 throw error
             } finally {
-                work.delete()
+                if (ownsWorkDirectory) workDirectory.deleteRecursively()
             }
             target.name ?: displayName
         }
@@ -83,20 +92,23 @@ class BackupManager(
 
     suspend fun restore(archiveUri: Uri) = withContext(Dispatchers.IO) {
         lock.withLock {
-            val work = File(context.cacheDir, "restore-${System.currentTimeMillis()}").apply { mkdirs() }
+            // Failed rollback originals must survive Android cache eviction.
+            val work = File(context.noBackupFilesDir, "restore-${UUID.randomUUID()}").apply {
+                check(mkdir()) { "Dossier de restauration temporaire inaccessible." }
+            }
+            var preserveRecovery = false
             try {
-                val raw = context.contentResolver.openInputStream(archiveUri)?.use { it.readBounded(MAX_ARCHIVE_BYTES + 1024) }
-                    ?: error("Impossible de lire la sauvegarde sélectionnée.")
                 val archiveFile = File(work, "archive.zip")
-                if (raw.size > BACKUP_MAGIC.size && raw.copyOfRange(0, BACKUP_MAGIC.size).contentEquals(BACKUP_MAGIC)) {
-                    archiveFile.writeBytes(KeystoreCrypto.decrypt(raw.copyOfRange(BACKUP_MAGIC.size, raw.size)))
-                } else {
-                    archiveFile.writeBytes(raw)
-                }
-                extractArchive(Uri.fromFile(archiveFile), work)
+                context.contentResolver.openInputStream(archiveUri)?.buffered()?.use { input ->
+                    archiveFile.outputStream().buffered().use { envelope.read(input, it) }
+                } ?: error("Impossible de lire la sauvegarde sélectionnée.")
+                // No extraction, file replacement or database writes before all records authenticate.
+                archiveFile.inputStream().use { BackupArchive.extract(it, work) }
                 val importedDatabase = File(work, DATABASE_ENTRY)
                 require(importedDatabase.isFile) { "Cette archive ne contient pas de catalogue Astra." }
                 android.database.sqlite.SQLiteDatabase.openDatabase(importedDatabase.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { checkDb ->
+                    require(checkDb.version in SUPPORTED_DATABASE_VERSIONS) { "Version de catalogue incompatible : ${checkDb.version}" }
+                    validateFileReferences(checkDb)
                     checkDb.rawQuery("PRAGMA integrity_check", null).use { cursor ->
                         require(cursor.moveToFirst() && cursor.getString(0) == "ok") { "Catalogue endommage." }
                     }
@@ -104,6 +116,8 @@ class BackupManager(
                 val rollback = File(work, "rollback").apply { mkdirs() }
                 val changedFiles = mutableListOf<Pair<File, File?>>()
                 try {
+                    // Also preserve originals if a fatal Throwable bypasses the Exception handler.
+                    preserveRecovery = true
                     INTERNAL_DIRECTORIES.forEach { name ->
                         val source = File(work, name)
                         source.walkTopDown().filter(File::isFile).forEach { file ->
@@ -124,12 +138,22 @@ class BackupManager(
                             RESTORED_TABLES.forEach { table -> db.execSQL("DELETE FROM `$table`") }
                             RESTORED_TABLES.reversed().forEach { table -> copyTableByColumnName(db, imported, table) }
                             // Absolute private paths change after restoring under another Android user.
-                            listOf("save_backups" to "backupUri", "mod_installed_files" to "backupUri").forEach { (table, column) ->
+                            listOf("save_backups" to "backupUri", "mod_installed_files" to "backupUri", "games" to "coverUri", "games" to "bannerUri", "games" to "iconUri").forEach { (table, column) ->
                                 db.query("SELECT id, `$column` FROM `$table` WHERE `$column` IS NOT NULL").use { cursor ->
                                     while (cursor.moveToNext()) {
                                         val old = cursor.getString(1)
-                                        val directory = INTERNAL_DIRECTORIES.firstOrNull { old.contains("/$it/") } ?: continue
-                                        val relative = old.substringAfter("/$directory/")
+                                        val oldPath = if (old.startsWith("file:")) Uri.parse(old).path.orEmpty() else old
+                                        val expectedDirectory = when (table) {
+                                            "save_backups" -> "save-backups"
+                                            "mod_installed_files" -> "mod-backups"
+                                            else -> "covers"
+                                        }
+                                        if (table == "games" && !old.startsWith("file:")) continue
+                                        if (table == "games" && !oldPath.contains("/$expectedDirectory/")) continue
+                                        require(oldPath.contains("/$expectedDirectory/")) { "Chemin de backup invalide." }
+                                        val directory = expectedDirectory
+                                        val relative = oldPath.substringAfter("/$directory/")
+                                        require(fr.astragames.app.data.mods.ZipPathGuard.sanitize(relative) == relative) { "Chemin de backup invalide." }
                                         val file = File(context.filesDir, "$directory/$relative")
                                         require(file.canonicalFile.toPath().startsWith(File(context.filesDir, directory).canonicalFile.toPath())) { "Chemin de backup invalide." }
                                         db.execSQL("UPDATE `$table` SET `$column` = ? WHERE id = ?", arrayOf(if (old.startsWith("file:")) Uri.fromFile(file).toString() else file.path, cursor.getString(0)))
@@ -138,14 +162,22 @@ class BackupManager(
                             }
                         }
                     }
+                    preserveRecovery = false
                 } catch (error: Exception) {
-                    changedFiles.asReversed().forEach { (file, old) ->
-                        if (old == null) file.delete() else old.copyTo(file, overwrite = true)
+                    val failures = BackupRollback.restore(changedFiles)
+                    if (failures.isNotEmpty()) {
+                        val incomplete = IOException(
+                            "La restauration a échoué et le retour arrière est incomplet. Les copies originales sont conservées pour récupération. Ne désinstallez pas Astra. Dossier : ${work.absolutePath}",
+                            error
+                        )
+                        failures.forEach(incomplete::addSuppressed)
+                        throw incomplete
                     }
+                    preserveRecovery = false
                     throw error
                 }
             } finally {
-                work.deleteRecursively()
+                if (!preserveRecovery) work.deleteRecursively()
             }
         }
     }
@@ -154,35 +186,39 @@ class BackupManager(
         uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null
     )?.use { cursor -> if (cursor.moveToFirst()) cursor.getString(0) else null } ?: "sauvegarde"
 
-    private fun addFile(zip: ZipOutputStream, file: File, entryName: String) {
-        require(file.isFile) { "Le catalogue local est introuvable." }
-        zip.putNextEntry(ZipEntry(entryName))
-        file.inputStream().buffered().use { it.copyTo(zip) }
-        zip.closeEntry()
-    }
-
-    private fun extractArchive(uri: Uri, destination: File) {
-        context.contentResolver.openInputStream(uri)?.use { input ->
-            ZipInputStream(input.buffered()).use { zip ->
-                var entry = zip.nextEntry
-                val seen = mutableSetOf<String>()
-                var total = 0L
-                while (entry != null) {
-                    require(seen.size < 10000 && seen.add(entry.name)) { "Archive dupliquee ou trop volumineuse." }
-                    val bytes = zip.readBounded(MAX_ARCHIVE_BYTES - total)
-                    total += bytes.size
-                    if (!entry.isDirectory && (entry.name == DATABASE_ENTRY || INTERNAL_DIRECTORIES.any { entry!!.name.startsWith("$it/") })) {
-                        val output = File(destination, entry.name)
-                        val safeRoot = destination.canonicalFile
-                        require(output.canonicalFile.toPath().startsWith(safeRoot.toPath())) { "Archive non sûre." }
-                        output.parentFile?.mkdirs()
-                        output.writeBytes(bytes)
+    /** A legacy ZIP is untrusted input: it must not turn a game/mod action into a write
+     * to preferences, the live catalog, credentials, or Astra's own managed backups. */
+    private fun validateFileReferences(imported: android.database.sqlite.SQLiteDatabase) {
+        val privateRoots = listOfNotNull(
+            context.filesDir, context.noBackupFilesDir, context.getDatabasePath("astra_games.db").parentFile,
+            File(context.applicationInfo.dataDir, "shared_prefs")
+        ).map { it.canonicalFile.toPath() }
+        val references = mapOf(
+            "games" to listOf("documentUri", "physicalPath"),
+            "game_sources" to listOf("treeUri"),
+            "game_save_locations" to listOf("uri"),
+            "save_backups" to listOf("sourceUri"),
+            "mods" to listOf("folderUri"),
+            "mod_installed_files" to listOf("relativePath"),
+            "launch_profiles" to listOf("physicalPath")
+        )
+        references.forEach { (table, wanted) ->
+            val columns = imported.rawQuery("PRAGMA table_info('$table')", null).use { cursor ->
+                buildSet { while (cursor.moveToNext()) add(cursor.getString(1)) }
+            }
+            wanted.filter { it in columns }.forEach { column ->
+                imported.rawQuery("SELECT `$column` FROM `$table` WHERE `$column` IS NOT NULL", null).use { cursor ->
+                    while (cursor.moveToNext()) {
+                        val value = cursor.getString(0)
+                        val path = if (value.startsWith("file:")) Uri.parse(value).path else value.takeIf { it.startsWith('/') }
+                        if (path != null) {
+                            val resolved = File(path).canonicalFile.toPath()
+                            require(privateRoots.none { resolved.startsWith(it) || it.startsWith(resolved) }) { "La sauvegarde référence des fichiers privés d’Astra." }
+                        }
                     }
-                    zip.closeEntry()
-                    entry = zip.nextEntry
                 }
             }
-        } ?: error("Impossible de lire la sauvegarde sélectionnée.")
+        }
     }
 
     private fun copyTableByColumnName(db: androidx.sqlite.db.SupportSQLiteDatabase, imported: android.database.sqlite.SQLiteDatabase, table: String) {
@@ -213,11 +249,11 @@ class BackupManager(
     }
 
     companion object {
-        private const val DATABASE_ENTRY = "database/astra_games.db"
+        private const val DATABASE_ENTRY = BackupArchive.DATABASE_ENTRY
         private const val DATABASE_VERSION = 8
         private val SUPPORTED_DATABASE_VERSIONS = (5..DATABASE_VERSION).toSet()
-        private const val MAX_ARCHIVE_BYTES = 256L * 1024 * 1024
-        private val INTERNAL_DIRECTORIES = listOf("covers", "save-backups", "mod-backups")
+        private const val MAX_ARCHIVE_BYTES = BackupArchive.MAX_BYTES
+        private val INTERNAL_DIRECTORIES = BackupArchive.DIRECTORIES
         private val OPTIONAL_TABLES = listOf("audit_events", "game_save_locations", "save_backups", "mods", "mod_installations", "mod_installed_files")
         private val RESTORED_TABLES = OPTIONAL_TABLES + listOf(
             "game_tags", "play_sessions", "metadata", "cover_candidates", "collection_rules",

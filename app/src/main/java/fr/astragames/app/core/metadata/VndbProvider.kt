@@ -1,6 +1,7 @@
 package fr.astragames.app.core.metadata
 
 import fr.astragames.app.core.search.levenshtein
+import fr.astragames.app.data.saves.readBounded
 import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -48,7 +49,9 @@ class VndbProvider {
                 connection.outputStream.use { it.write(request.toString().toByteArray(Charsets.UTF_8)) }
                 val status = connection.responseCode
                 when {
-                    status in 200..299 -> body = connection.inputStream.bufferedReader().use { it.readText() }
+                    status in 200..299 -> body = connection.inputStream.use {
+                        it.readBounded(4L * 1024 * 1024).toString(Charsets.UTF_8)
+                    }
                     status == 429 -> if (attempts < 2) delay(2_000) else Log.w("AstraMetadata", "VNDB limite de requêtes atteinte pour « $gameTitle »")
                     else -> Log.w("AstraMetadata", "VNDB HTTP $status pour « $gameTitle »")
                 }

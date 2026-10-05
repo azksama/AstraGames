@@ -52,6 +52,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.mapLatest
 import kotlinx.coroutines.flow.shareIn
@@ -87,7 +88,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val compatibility: StateFlow<Map<String, GameCompatibilityReport>> = mutableCompatibility
     private val compatibilityDiagnostic = CompatibilityDiagnostic(app.container.launcher)
     val events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 8)
-    internal val translation = GameTranslationController(app, viewModelScope)
+    internal val translation = GameTranslationController(app, viewModelScope, beforeExternalPicker = { ignoreNextRelock = true })
     val tools = GameToolsController(app, viewModelScope, events) { ignoreNextRelock = true }
     private val mutableCoverSearch = MutableStateFlow(
         CoverSearchState(configured = app.container.covers.configured)
@@ -101,7 +102,8 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val openFolderRequests = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
     val notificationPermissionRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val biometricUnlockRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
-    private val locked = MutableStateFlow(false)
+    // Fail closed until persisted lock preferences have been read.
+    private val locked = MutableStateFlow(true)
     val isLocked: StateFlow<Boolean> = locked
     private val playHistory = dao.observePlayHistory(200)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
@@ -118,6 +120,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     private var coverSearchJob: Job? = null
     private var coverDownloadJob: Job? = null
     private var f95ImportJob: Job? = null
+    private var duplicatePreviewJob: Job? = null
     private val mutableUpdatesChecking = MutableStateFlow(false)
     val updatesChecking: StateFlow<Boolean> = mutableUpdatesChecking
     val latestGameVersions: StateFlow<Map<String, String>> = settingsRepository.settings
@@ -210,7 +213,20 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     private data class PreparedLibrary(val state: AstraUiState, val index: LibraryIndex)
 
-    private val preparedLibrary = coreData.distinctUntilChanged().mapLatest { data ->
+    // Collected only while the UI is subscribed. A library without time-based rules
+    // keeps its existing index; date-based membership is refreshed at most once a minute.
+    private val collectionClock = flow {
+        while (true) {
+            emit(System.currentTimeMillis() / 60_000L)
+            delay(60_000L)
+        }
+    }
+    private val preparedLibrary = combine(coreData.distinctUntilChanged(), collectionClock) { data, minute ->
+        val timed = data.collectionRules.any {
+            it.field in setOf("DATE_ADDED", "LAST_PLAYED") && it.operator in setOf("WITHIN_DAYS", "OLDER_THAN_DAYS")
+        }
+        data to if (timed) minute else 0L
+    }.distinctUntilChanged().mapLatest { (data, _) ->
         withContext(Dispatchers.Default) {
             val index = LibraryIndex(
                 data.games, data.refs, data.folders, data.collections, data.collectionRules, data.playStats
@@ -273,8 +289,9 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     init {
         viewModelScope.launch {
-            repository.recoverInterruptedScans()
             val settings = settingsRepository.settings.first()
+            locked.value = settings.lockBiometricEnabled || settings.lockPinEnabled
+            repository.recoverInterruptedScans()
             GameUpdatesWorker.schedule(app, settings.updateCheckInterval)
             settings.f95SessionXfUser?.let { xfUser ->
                 settings.f95SessionXfSession?.let { xfSession ->
@@ -282,7 +299,6 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                 }
             }
             if (settings.scanOnLaunch) scanAll(silent = true)
-            if (settings.lockBiometricEnabled || settings.lockPinEnabled) locked.value = true
         }
     }
 
@@ -466,12 +482,16 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         repository.ignoreDuplicateGroup(key)
         events.emit(UiEvent.Message("Ce groupe de doublons sera désormais ignoré"))
     }
-    fun previewDuplicateMerge(primaryId: String, secondaryId: String) = viewModelScope.launch {
-        runCatchingCancellable { repository.previewDuplicateMerge(primaryId, secondaryId) }
-            .onSuccess { mutableDuplicatePreview.value = it }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Comparaison impossible")) }
+    fun previewDuplicateMerge(primaryId: String, secondaryId: String) {
+        duplicatePreviewJob?.cancel()
+        mutableDuplicatePreview.value = null
+        duplicatePreviewJob = viewModelScope.launch {
+            runCatchingCancellable { repository.previewDuplicateMerge(primaryId, secondaryId) }
+                .onSuccess { ensureActive(); mutableDuplicatePreview.value = it }
+                .onFailure { events.emit(UiEvent.Message(it.message ?: "Comparaison impossible")) }
+        }
     }
-    fun clearDuplicatePreview() { mutableDuplicatePreview.value = null }
+    fun clearDuplicatePreview() { duplicatePreviewJob?.cancel(); mutableDuplicatePreview.value = null }
     fun mergeDuplicate(
         primaryId: String, secondaryId: String, migrateSaves: Boolean,
         strategy: SaveConflictStrategy, deleteSecondaryFiles: Boolean, onDone: () -> Unit
@@ -1065,6 +1085,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun testLaunchProfile(profile: LaunchProfileEntity) = viewModelScope.launch {
         repository.saveLaunchProfile(profile)
         val game = repository.getGame(profile.gameId) ?: return@launch
+        if (!translationReadyToLaunch(game)) return@launch
         val diagnostic = withContext(Dispatchers.IO) { compatibilityDiagnostic.inspect(getApplication(), game, profile) }
         mutableCompatibility.value = mutableCompatibility.value + (game.id to diagnostic)
         if (!diagnostic.canLaunch) {
@@ -1089,15 +1110,20 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         )
     }
 
-    fun launchGame(id: String) = viewModelScope.launch {
-        val game = repository.getGame(id) ?: return@launch
+    private suspend fun translationReadyToLaunch(game: GameEntity): Boolean {
         val translationReady = runCatchingCancellable {
             fr.astragames.app.translation.GameTranslationManager(app).isLaunchSafe(game)
         }.getOrDefault(false)
-        if ((translation.state.value.busy && translation.state.value.gameId == id) || !translationReady) {
+        if ((translation.state.value.busy && translation.state.value.gameId == game.id) || !translationReady) {
             events.emit(UiEvent.Message("Terminez la traduction ou restaurez les originaux avant de lancer le jeu."))
-            return@launch
+            return false
         }
+        return true
+    }
+
+    fun launchGame(id: String) = viewModelScope.launch {
+        val game = repository.getGame(id) ?: return@launch
+        if (!translationReadyToLaunch(game)) return@launch
         val profile = repository.getLaunchProfile(id)
         val diagnostic = withContext(Dispatchers.IO) { compatibilityDiagnostic.inspect(getApplication(), game, profile) }
         mutableCompatibility.value = mutableCompatibility.value + (id to diagnostic)

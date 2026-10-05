@@ -67,21 +67,21 @@ class GameTranslationUiTest {
             }
         }
         compose.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.analysis != null }
-        compose.onNodeWithText("The Clockwork Garden").assertIsDisplayed()
-        compose.onNodeWithText("Traduire avec Google").assertIsEnabled()
+        compose.onNodeWithText("The Clockwork Garden").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Traduire avec Google").assertIsDisplayed().assertIsEnabled()
         val bitmap = compose.onNode(isDialog()).captureToImage().asAndroidBitmap()
         File(app.cacheDir, "ui-review").apply { mkdirs() }.resolve("translation-light.png").outputStream().use {
             assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
         }
-        compose.onNodeWithText("Traduire avec Google").performClick()
+        compose.onNodeWithText("Traduire avec Google").assertIsDisplayed().performClick()
         compose.onNodeWithText("Traduire le jeu ?").assertIsDisplayed()
         compose.onNodeWithText("Supprimer").assertDoesNotExist()
-        compose.onAllNodesWithText("Traduire avec Google").onLast().performClick()
+        compose.onAllNodesWithText("Traduire avec Google").onLast().assertIsDisplayed().assertIsEnabled().performClick()
         compose.waitUntil(10_000) { controller.state.value.analysis?.installed == true && !controller.state.value.busy }
         compose.onNodeWithText("Restaurer les originaux").assertIsDisplayed().performClick()
         compose.waitUntil(10_000) { controller.state.value.message == "Originaux restaurés" && !controller.state.value.busy }
         assertArrayEquals(original, file.readBytes())
-        compose.onNodeWithText("Traduire avec Google").assertIsEnabled()
+        compose.onNodeWithText("Traduire avec Google").assertIsDisplayed().assertIsEnabled()
     }
 
     @Test fun remainingTimeAndPartialTranslationReportAreShown() {
@@ -120,5 +120,56 @@ class GameTranslationUiTest {
         compose.onNodeWithText("Restaurer les originaux").performClick()
         compose.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.message == "Originaux restaurés" }
         assertArrayEquals(original, file.readBytes())
+    }
+
+    @Test fun userCanReviewManualExchangeControlsAndReturnToLocalMode() {
+        val data = File(directory, "manual/data").apply { mkdirs() }
+        val original = """{"displayName":"Village","events":[null,{"pages":[{"list":[{"code":401,"parameters":["Hello \\N[1]!"]},{"code":111,"parameters":[4,1,1,"Hero"]}]}]}]}""".toByteArray()
+        val map = File(data, "Map001.json").apply { writeBytes(original) }
+        val actorsOriginal = """[null,{"name":"Hero"}]""".toByteArray()
+        val actors = File(data, "Actors.json").apply { writeBytes(actorsOriginal) }
+        val game = GameEntity(
+            id = "translation-manual-ui", title = "The Clockwork Garden", documentUri = Uri.fromFile(data.parentFile).toString(),
+            physicalPath = null, executableName = "Game.exe", engine = "RPG_MAKER_MZ", launcher = "JOIPLAY",
+            sourceId = "test", dateAdded = 1, lastModified = 1, fingerprint = "manual-test"
+        )
+        val context = object : ContextWrapper(app) {
+            override fun getNoBackupFilesDir() = File(directory, "private").apply { mkdirs() }
+        }
+        val controller = GameTranslationController(app, scope, GameTranslationManager(context))
+        AppLocalizer.language = AppLanguage.FRENCH
+        compose.setContent {
+            CompositionLocalProvider(LocalAppLanguage provides AppLanguage.FRENCH) {
+                AstraTheme { GameTranslationScreen(game, controller) {} }
+            }
+        }
+        compose.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.analysis != null }
+        assertNull(controller.state.value.error)
+        assertEquals(2, controller.state.value.analysis!!.files)
+        // The content column scrolls independently of the fixed action row, especially in landscape.
+        compose.onNodeWithText("Sur cet appareil").performScrollTo().assertIsDisplayed().assertIsSelected()
+        compose.onNodeWithText("Traduire avec Google").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Fichier pour IA").performScrollTo().assertIsDisplayed().assertIsEnabled().performClick().assertIsSelected()
+        compose.onNodeWithText("Exporter les textes").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Importer la traduction").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Traduire avec Google").assertDoesNotExist()
+        val markerHelp = "Modifiez uniquement les champs translation. Conservez les identifiants, les textes sources et les marqueurs ASTRA. Les instructions sont incluses dans le fichier."
+        compose.onNodeWithText(markerHelp).performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("Les noms utilisés par les conditions du jeu sont conservés pour rester compatibles avec vos sauvegardes.")
+            .performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("The Clockwork Garden").performScrollTo().assertIsDisplayed()
+        val bitmap = compose.onNode(isDialog()).captureToImage().asAndroidBitmap()
+        File(app.cacheDir, "ui-review").apply { mkdirs() }.resolve("translation-manual.png").outputStream().use {
+            assertTrue(bitmap.compress(Bitmap.CompressFormat.PNG, 100, it))
+        }
+        // No picker is opened here: those platform flows are outside this screen-state test.
+        compose.onNodeWithText("Sur cet appareil").performScrollTo().assertIsDisplayed().assertIsEnabled().performClick().assertIsSelected()
+        compose.onNodeWithText("Traduire avec Google").assertIsDisplayed().assertIsEnabled()
+        compose.onNodeWithText("Exporter les textes").assertDoesNotExist()
+        compose.onNodeWithText("Importer la traduction").assertDoesNotExist()
+        compose.onNodeWithText(markerHelp).assertDoesNotExist()
+        assertArrayEquals(original, map.readBytes())
+        assertArrayEquals(actorsOriginal, actors.readBytes())
+        assertFalse(controller.state.value.analysis!!.installed)
     }
 }

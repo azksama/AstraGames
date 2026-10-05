@@ -1,5 +1,7 @@
 package fr.astragames.app.launcher
 
+import fr.astragames.app.data.saves.readBounded
+
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -27,7 +29,8 @@ class JoiPlayCatalogProvider {
         }
         try {
         check(connection.responseCode in 200..299) { "Catalogue JoiPlay inaccessible (${connection.responseCode})." }
-        connection.inputStream.bufferedReader().use { it.readText() }.also { require(parse(it).isNotEmpty()) { "Catalogue JoiPlay vide ou invalide." } }
+        connection.inputStream.use { it.readBounded(2L * 1024 * 1024).toString(Charsets.UTF_8) }
+            .also { require(parse(it).isNotEmpty()) { "Catalogue JoiPlay vide ou invalide." } }
         } finally { connection.disconnect() }
     }
 

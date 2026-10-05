@@ -1,7 +1,10 @@
 package fr.astragames.app.ui
 
 import androidx.compose.foundation.background
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.items
@@ -10,9 +13,14 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
+import androidx.compose.material3.Text as MaterialText
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -26,7 +34,7 @@ import fr.astragames.app.data.local.TagEntity
 internal fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () -> Unit, onBack: () -> Unit) {
     var categoriesMode by remember { mutableStateOf(false) }
     var mergesMode by remember { mutableStateOf(false) }
-    var tagQuery by remember { mutableStateOf("") }
+    var tagQuery by rememberSaveable { mutableStateOf("") }
     var selected by remember { mutableStateOf(emptySet<String>()) }
     var editingTag by remember { mutableStateOf<TagEntity?>(null) }
     var tagDialog by remember { mutableStateOf(false) }
@@ -34,6 +42,9 @@ internal fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () 
     var categoryDialog by remember { mutableStateOf(false) }
     var moveDialog by remember { mutableStateOf(false) }
     var deleteCategory by remember { mutableStateOf<TagCategoryEntity?>(null) }
+    var confirmDeleteTags by remember { mutableStateOf(false) }
+    BackHandler(selected.isNotEmpty()) { selected = emptySet() }
+    LaunchedEffect(state.tags) { selected = selected.intersect(state.tags.mapTo(hashSetOf()) { it.id }) }
 
     ScrollingScaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -46,20 +57,20 @@ internal fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () 
         }
     ) { padding ->
         Column(Modifier.padding(padding).fillMaxSize()) {
-            Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(!categoriesMode && !mergesMode, { categoriesMode = false; mergesMode = false }, { Text("Tags") })
-                FilterChip(categoriesMode && !mergesMode, { categoriesMode = true; mergesMode = false; selected = emptySet() }, { Text("Catégories") })
-                FilterChip(mergesMode, { mergesMode = true; categoriesMode = false; selected = emptySet() }, { Text("Fusions") })
+            androidx.compose.foundation.lazy.LazyRow(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                item { FilterChip(!categoriesMode && !mergesMode, { categoriesMode = false; mergesMode = false }, { Text("Tags") }) }
+                item { FilterChip(categoriesMode && !mergesMode, { categoriesMode = true; mergesMode = false; selected = emptySet() }, { Text("Catégories") }) }
+                item { FilterChip(mergesMode, { mergesMode = true; categoriesMode = false; selected = emptySet() }, { Text("Fusions") }) }
             }
             if (!categoriesMode && !mergesMode) FilledTonalButton(
                 onClick = onPickTags,
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
             ) { Icon(Icons.Default.FileOpen, null); Spacer(Modifier.width(8.dp)); Text("Importer des tags") }
             if (selected.isNotEmpty() && !categoriesMode && !mergesMode) Surface(color = MaterialTheme.colorScheme.secondaryContainer) {
-                Row(Modifier.fillMaxWidth().height(52.dp).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
+                Row(Modifier.fillMaxWidth().heightIn(min = 52.dp).padding(start = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text("${selected.size} sélectionné(s)", Modifier.weight(1f), fontWeight = FontWeight.SemiBold)
                     TextButton(onClick = { moveDialog = true }) { Text("Classer") }
-                    IconButton(onClick = { vm.deleteTags(selected); selected = emptySet() }) { Icon(Icons.Default.DeleteOutline, "Supprimer") }
+                    IconButton(onClick = { confirmDeleteTags = true }) { Icon(Icons.Default.DeleteOutline, AppLocalizer.text("Supprimer")) }
                 }
             }
             if (mergesMode) TagMergesManager(state, vm)
@@ -85,6 +96,9 @@ internal fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () 
         if (editingCategory == null) vm.createTagCategory(it) else vm.renameTagCategory(editingCategory!!, it); categoryDialog = false
     }, { categoryDialog = false })
     if (moveDialog) CategoryChoiceDialog(state.tagCategories, { vm.moveTagsToCategory(selected, it); selected = emptySet(); moveDialog = false }, { moveDialog = false })
+    if (confirmDeleteTags) ConfirmDialog("Supprimer les tags sélectionnés ?", "Les tags seront retirés de tous les jeux associés.", {
+        vm.deleteTags(selected); selected = emptySet(); confirmDeleteTags = false
+    }, { confirmDeleteTags = false })
     deleteCategory?.let { category ->
         ConfirmDialog("Supprimer « ${category.name} » ?", "Les tags seront conservés sans catégorie.", {
             vm.deleteTagCategory(category); deleteCategory = null
@@ -125,14 +139,14 @@ internal fun MergeSuggestionCard(suggestion: TagMergeSuggestion, onMerge: (TagEn
             listOf(suggestion.first to true, suggestion.second to false).forEach { (tag, isFirst) ->
                 Row(
                     Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp))
-                        .clickable { keepFirst = isFirst }
+                        .selectable(keepFirst == isFirst, role = Role.RadioButton) { keepFirst = isFirst }
                         .background(if (keepFirst == isFirst) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow)
                         .padding(horizontal = 8.dp, vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    RadioButton(keepFirst == isFirst, { keepFirst = isFirst })
+                    RadioButton(keepFirst == isFirst, null)
                     Spacer(Modifier.width(6.dp))
-                    Text(tag.name, Modifier.weight(1f), fontWeight = if (keepFirst == isFirst) FontWeight.SemiBold else FontWeight.Normal)
+                    MaterialText(tag.name, Modifier.weight(1f), fontWeight = if (keepFirst == isFirst) FontWeight.SemiBold else FontWeight.Normal)
                 }
             }
         }
@@ -143,16 +157,17 @@ internal fun TagManager(state: AstraUiState, selected: Set<String>, query: Strin
     val filteredTags = state.tags.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
     val ordered = state.tagCategories.map { it.name }
     val other = filteredTags.mapNotNull { it.groupName }.filterNot(ordered.toSet()::contains).distinct().sorted()
-    val groups = (ordered + other).map { it to filteredTags.filter { tag -> tag.groupName == it } } +
-        ("Sans catégorie" to filteredTags.filter { it.groupName == null })
+    val groups: List<Pair<String?, List<TagEntity>>> = (ordered + other).map { it to filteredTags.filter { tag -> tag.groupName == it } } +
+        (null to filteredTags.filter { it.groupName == null })
     if (state.tags.isEmpty()) CenterMessage("Aucun tag. Utilisez + pour en créer un directement.", Modifier.fillMaxSize())
+    else if (filteredTags.isEmpty()) CenterMessage("Aucun résultat pour cette recherche.", Modifier.fillMaxSize())
     else LazyColumn(contentPadding = PaddingValues(bottom = PageBottomPadding)) {
         groups.filter { it.second.isNotEmpty() }.forEach { (category, tags) ->
-            item(key = "h-$category") { SectionTitle(category) }
+            item(key = "h:" + (category?.let { "named:$it" } ?: "uncategorized")) { MaterialText(category ?: AppLocalizer.text("Sans catégorie"), Modifier.padding(start = 16.dp, top = 14.dp, bottom = 5.dp).semantics { heading() }, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface) }
             items(tags, key = { it.id }) { tag ->
                 RoundedListItem(
-                    modifier = Modifier.clickable { onToggle(tag.id) }, headlineContent = { Text(tag.name) },
-                    leadingContent = { Checkbox(tag.id in selected, { onToggle(tag.id) }) },
+                    modifier = Modifier.toggleable(tag.id in selected, role = Role.Checkbox) { onToggle(tag.id) }, headlineContent = { MaterialText(tag.name) },
+                    leadingContent = { Checkbox(tag.id in selected, null) },
                     trailingContent = { IconButton(onClick = { onEdit(tag) }) { Icon(Icons.Default.Edit, "Modifier") } }
                 )
             }
@@ -166,7 +181,7 @@ internal fun CategoryManager(state: AstraUiState, vm: AstraViewModel, onEdit: (T
     else LazyColumn(contentPadding = PaddingValues(bottom = PageBottomPadding)) {
         items(state.tagCategories, key = { it.id }) { category ->
             RoundedListItem(
-                headlineContent = { Text(category.name) }, supportingContent = { Text("${state.tags.count { it.groupName == category.name }} tag(s)") },
+                headlineContent = { MaterialText(category.name) }, supportingContent = { Text("${state.tags.count { it.groupName == category.name }} tag(s)") },
                 leadingContent = { Icon(Icons.Default.Folder, null) }, trailingContent = {
                     Row {
                         IconButton(onClick = { vm.moveTagCategory(category.id, -1) }) { Icon(Icons.Default.ArrowUpward, "Monter") }

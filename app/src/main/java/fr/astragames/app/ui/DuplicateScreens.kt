@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -71,8 +72,8 @@ internal fun DuplicatesDialog(state: AstraUiState, vm: AstraViewModel, onDismiss
                     itemsIndexed(state.duplicateGroups, key = { _, group -> group.key }) { index, group ->
                         RoundedListItem(
                             modifier = Modifier.clickable { selectedKey = group.key; primaryId = group.games.first().id },
-                            headlineContent = { Text("${group.games.first().title} • ${group.games.size} exemplaires") },
-                            supportingContent = { Text(group.games.joinToString("\n") { it.physicalPath ?: it.documentUri }, maxLines = 4, overflow = TextOverflow.Ellipsis) },
+                            headlineContent = { MaterialText("${group.games.first().title} • ${AppLocalizer.text("${group.games.size} exemplaires", LocalAppLanguage.current)}") },
+                            supportingContent = { MaterialText(group.games.joinToString("\n") { it.physicalPath ?: it.documentUri }, maxLines = 4, overflow = TextOverflow.Ellipsis) },
                             leadingContent = { Icon(Icons.Default.ContentCopy, null) },
                             trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Comparer") }
                         )
@@ -161,9 +162,9 @@ internal fun DuplicateGameCard(game: GameEntity, state: AstraUiState, selected: 
     ) { Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) { RadioButton(selected, { onSelect() }); Text(if (selected) "Exemplaire principal" else "Choisir comme principal", fontWeight = FontWeight.SemiBold) }
         GameCover(game, Modifier.fillMaxWidth().height(150.dp))
-        Text(game.title, style = MaterialTheme.typography.titleMedium)
+        MaterialText(game.title, style = MaterialTheme.typography.titleMedium)
         Text(game.engine.readableEngine())
-        Text(game.physicalPath ?: game.documentUri, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+        MaterialText(game.physicalPath ?: game.documentUri, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
         Text("${game.playCount} lancements • ${state.playStats[game.id]?.totalDurationMs.asDuration()}", style = MaterialTheme.typography.bodySmall)
         if (game.favorite) Text("Favori", color = Color.Red)
     } }
@@ -183,7 +184,7 @@ internal fun DeletedGamesDialog(games: List<DeletedGameEntity>, onRestore: (Stri
                 if (games.isEmpty()) CenterMessage("Aucun jeu supprimé", Modifier.fillMaxSize())
                 else LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
                     items(games, key = { it.id }) { game -> RoundedListItem(
-                        headlineContent = { Text(game.title) },
+                        headlineContent = { MaterialText(game.title) },
                         supportingContent = { Text("Supprimé le ${game.deletedAt.asDateTime()}\n${game.physicalPath ?: game.documentUri}", maxLines = 3) },
                         leadingContent = { Icon(Icons.Default.DeleteOutline, null) },
                         trailingContent = { TextButton(onClick = { onRestore(game.id) }) { Text("Réautoriser") } }
@@ -202,7 +203,7 @@ internal fun RuntimeManagerDialog(runtimes: List<JoiPlayRuntimeInfo>, onDismiss:
             ScrollingColumn(topBar = { CompactHeader("Runtimes JoiPlay", "Détection locale des composants", onBack = onDismiss) }) {
                 LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
                     items(runtimes, key = { it.key }) { runtime -> RoundedListItem(
-                        headlineContent = { Text(runtime.name) },
+                        headlineContent = { MaterialText(runtime.name) },
                         supportingContent = {
                             Text(when {
                                 runtime.updateAvailable -> "Installé${runtime.versionName?.let { " • version $it" }.orEmpty()} • mise à jour ${runtime.latestVersion} disponible"

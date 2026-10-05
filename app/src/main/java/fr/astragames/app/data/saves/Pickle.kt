@@ -2,6 +2,7 @@ package fr.astragames.app.data.saves
 
 import java.io.ByteArrayOutputStream
 import java.nio.charset.StandardCharsets
+import java.math.BigInteger
 
 /** Arbre pickle Ren'Py avec positions absolues, permettant une chirurgie par octets. */
 sealed class PickleNode {
@@ -13,11 +14,16 @@ sealed class PickleNode {
     }
     data class PBool(val value: Boolean, override val start: Int, override val end: Int) : PickleNode()
     data class PInt(val value: Long, override val start: Int, override val end: Int) : PickleNode()
+    data class PBigInt(val value: BigInteger, override val start: Int, override val end: Int) : PickleNode()
     data class PFloat(val value: Double, override val start: Int, override val end: Int) : PickleNode()
     data class PString(val text: String, override val start: Int, override val end: Int) : PickleNode()
-    data class PBytes(val bytes: ByteArray, override val start: Int, override val end: Int) : PickleNode() {
-        override fun equals(other: Any?) = other is PBytes && bytes.contentEquals(other.bytes)
-        override fun hashCode() = bytes.contentHashCode()
+    data class PBytes(val bytes: ByteArray, override val start: Int, override val end: Int, val legacyString: Boolean = false) : PickleNode() {
+        // Ren'Py loads Python 2 str with UTF-8 + surrogateescape. Only losslessly decoded text is editable.
+        val legacyText: String? get() = if (legacyString) runCatching {
+            StandardCharsets.UTF_8.newDecoder().decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+        }.getOrNull() else null
+        override fun equals(other: Any?) = other is PBytes && legacyString == other.legacyString && bytes.contentEquals(other.bytes)
+        override fun hashCode() = 31 * bytes.contentHashCode() + legacyString.hashCode()
     }
     data class PList(val items: MutableList<PickleNode>, override val start: Int, override val end: Int) : PickleNode()
     data class PTuple(val items: List<PickleNode>, override val start: Int, override val end: Int) : PickleNode()
@@ -26,11 +32,12 @@ sealed class PickleNode {
     /** Objet custom (REDUCE/OBJ/NEWOBJ...) : structure connue mais reecrit telle quelle. */
     data class PObject(val className: String, val args: List<PickleNode>, var state: PickleNode?, override val start: Int, override val end: Int,
         val listItems: MutableList<PickleNode> = mutableListOf(),
-        val dictEntries: LinkedHashMap<PickleNode, PickleNode> = linkedMapOf()
+        val dictEntries: LinkedHashMap<PickleNode, PickleNode> = linkedMapOf(),
+        val dependencies: List<PickleNode> = emptyList()
     ) : PickleNode()
 }
 
-/** Lecture d'un flux pickle (protocoles 0-4 suffisants pour les sauvegardes Ren'Py). */
+/** Structural parser only: never resolves globals or executes pickle callables. */
 class PickleParser(private val data: ByteArray) {
     private var pos = 0
     private val stack = mutableListOf<PickleNode>()
@@ -38,16 +45,25 @@ class PickleParser(private val data: ByteArray) {
     private val memo = mutableMapOf<Int, PickleNode>()
     private val meta = java.util.IdentityHashMap<PickleNode, Pair<Int, Int>>()
     val frames = mutableListOf<Pair<Int, Int>>()
+    private var frameEnd: Int? = null
+    private var operations = 0
 
     fun parse(): PickleNode {
+        require(data.size <= MAX_SAVE_BYTES) { "Sauvegarde pickle trop volumineuse." }
         while (pos < data.size) {
+            if (pos == frameEnd) frameEnd = null
+            require(++operations <= MAX_SAVE_NODES && stack.size <= MAX_SAVE_NODES && memo.size <= MAX_SAVE_NODES && marks.size <= MAX_SAVE_DEPTH) {
+                "Structure pickle trop complexe."
+            }
             val op = data[pos].toInt() and 0xFF
             pos++
             if (op == OP_STOP) {
                 require(stack.size == 1 && marks.isEmpty()) { "Pile pickle invalide." }
+                require(pos == data.size && (frameEnd == null || pos == frameEnd)) { "Donnees pickle apres STOP ou frame incomplete." }
                 return stack.single()
             }
             execute(op)
+            require(frameEnd == null || pos <= frameEnd!!) { "Opcode a cheval sur deux frames pickle." }
         }
         error("Sauvegarde pickle tronquee (STOP absent).")
     }
@@ -65,9 +81,11 @@ class PickleParser(private val data: ByteArray) {
         when (op) {
             OP_PROTO -> require(u8() <= 5) { "Protocole pickle non pris en charge." }
             OP_FRAME -> {
+                require(frameEnd == null) { "Frames pickle imbriquees." }
                 val size = java.nio.ByteBuffer.wrap(bytes(8)).order(java.nio.ByteOrder.LITTLE_ENDIAN).long
                 require(size in 0..(data.size - pos).toLong()) { "Frame pickle tronquee." }
                 frames += start to (pos + size.toInt())
+                frameEnd = pos + size.toInt()
             }
             OP_NONE -> push(PickleNode.PNil, start)
             OP_NEWTRUE -> push(PickleNode.PBool(true, start, pos), start)
@@ -77,45 +95,35 @@ class PickleParser(private val data: ByteArray) {
                 if (raw == "00" || raw == "01") push(PickleNode.PBool(raw == "01", start, pos), start)
                 else push(PickleNode.PInt(raw.toLong(), start, pos), start)
             }
-            OP_LONG -> push(PickleNode.PInt(readLine().trim().removeSuffix("L").toLong(), start, pos), start)
+            OP_LONG -> {
+                val raw = readLine().trim().removeSuffix("L")
+                require(raw.length <= 8192) { "Entier pickle trop volumineux." }
+                pushInteger(BigInteger(raw), start)
+            }
             OP_BININT -> push(PickleNode.PInt(int32().toLong(), start, pos), start)
             OP_BININT1 -> push(PickleNode.PInt(u8().toLong(), start, pos), start)
             OP_BININT2 -> push(PickleNode.PInt(u16().toLong(), start, pos), start)
             OP_LONG1 -> {
-                val size = u8()
-                require(size in 0..8 && pos + size <= data.size) { "Entier pickle hors limites." }
-                var value = 0L
-                repeat(size) { value = value or ((data[pos + it].toLong() and 0xFF) shl (8 * it)) }
-                if (size > 0 && size < 8 && data[pos + size - 1].toInt() and 0x80 != 0) {
-                    value = value or (-1L shl (8 * size))
-                }
-                pos += size
-                push(PickleNode.PInt(value, start, pos), start)
+                pushLittleEndianInteger(u8(), start)
             }
             OP_LONG4 -> {
-                val size = int32()
-                require(size in 0..8) { "LONG4 hors limites" }
-                var value = 0L
-                repeat(size) { value = value or ((data[pos + it].toLong() and 0xFF) shl (8 * it)) }
-                if (size > 0 && size < 8 && data[pos + size - 1].toInt() and 0x80 != 0) {
-                    value = value or (-1L shl (8 * size))
-                }
-                pos += size
-                push(PickleNode.PInt(value, start, pos), start)
+                pushLittleEndianInteger(int32(), start)
             }
             OP_FLOAT -> push(PickleNode.PFloat(readLine().trim().toDouble(), start, pos), start)
             OP_BINFLOAT -> {
-                val bits = java.nio.ByteBuffer.wrap(data, pos, 8).long
-                pos += 8
+                val bits = java.nio.ByteBuffer.wrap(bytes(8)).long
                 push(PickleNode.PFloat(java.lang.Double.longBitsToDouble(bits), start, pos), start)
             }
             OP_SHORT_BINUNICODE -> push(PickleNode.PString(utf8(u8()), start, pos), start)
             OP_BINUNICODE -> push(PickleNode.PString(utf8(int32()), start, pos), start)
-            OP_SHORT_BINSTRING -> push(PickleNode.PBytes(bytes(u8()), start, pos), start)
-            OP_BINSTRING -> push(PickleNode.PBytes(bytes(int32()), start, pos), start)
-            OP_STRING -> push(PickleNode.PBytes(decodePythonLiteral(readLine()), start, pos), start)
+            OP_BINUNICODE8 -> push(PickleNode.PString(utf8(length64()), start, pos), start)
+            OP_UNICODE -> push(PickleNode.PString(decodePythonEscapes(readLine(), unicode = true), start, pos), start)
+            OP_SHORT_BINSTRING -> push(PickleNode.PBytes(bytes(u8()), start, pos, legacyString = true), start)
+            OP_BINSTRING -> push(PickleNode.PBytes(bytes(int32()), start, pos, legacyString = true), start)
+            OP_STRING -> push(PickleNode.PBytes(decodePythonLiteral(readLine()), start, pos, legacyString = true), start)
             OP_BINBYTES -> push(PickleNode.PBytes(bytes(int32()), start, pos), start)
             OP_SHORT_BINBYTES -> push(PickleNode.PBytes(bytes(u8()), start, pos), start)
+            OP_BINBYTES8, OP_BYTEARRAY8 -> push(PickleNode.PBytes(bytes(length64()), start, pos), start)
             OP_EMPTY_LIST -> push(PickleNode.PList(mutableListOf(), start, pos), start)
             OP_EMPTY_TUPLE -> push(PickleNode.PTuple(emptyList(), start, pos), start)
             OP_EMPTY_DICT -> push(PickleNode.PDict(LinkedHashMap(), start, pos), start)
@@ -152,7 +160,8 @@ class PickleParser(private val data: ByteArray) {
                 val mark = marks.removeAt(marks.lastIndex)
                 val dict = LinkedHashMap<PickleNode, PickleNode>()
                 val items = stack.subList(mark, stack.size).toList()
-                for (index in items.indices step 2) dict[items[index]] = items[index + 1]
+                require(items.size % 2 == 0) { "Dictionnaire pickle invalide." }
+                for (index in items.indices step 2) { requireSafePickleKey(items[index]); dict[items[index]] = items[index + 1] }
                 repeat(stack.size - mark) { stack.removeAt(stack.lastIndex) }
                 push(PickleNode.PDict(dict, startOf(items), pos), start)
             }
@@ -178,12 +187,13 @@ class PickleParser(private val data: ByteArray) {
                 val mark = marks.removeAt(marks.lastIndex)
                 val items = stack.subList(mark, stack.size).toList()
                 repeat(stack.size - mark) { stack.removeAt(stack.lastIndex) }
-                (stack.last() as? PickleNode.PSet)?.items?.addAll(items)
+                ((stack.last() as? PickleNode.PSet) ?: error("Ensemble pickle attendu.")).items.addAll(items)
                 extend(stack.last(), start)
             }
             OP_SETITEM -> {
                 val value = stack.removeAt(stack.lastIndex)
                 val key = stack.removeAt(stack.lastIndex)
+                requireSafePickleKey(key)
                 dictEntries(stack.last())[key] = value
                 extend(stack.last(), start)
             }
@@ -192,7 +202,8 @@ class PickleParser(private val data: ByteArray) {
                 val items = stack.subList(mark, stack.size).toList()
                 repeat(stack.size - mark) { stack.removeAt(stack.lastIndex) }
                 val dict = dictEntries(stack.last())
-                for (index in items.indices step 2) dict[items[index]] = items[index + 1]
+                require(items.size % 2 == 0) { "Dictionnaire pickle invalide." }
+                for (index in items.indices step 2) { requireSafePickleKey(items[index]); dict[items[index]] = items[index + 1] }
                 extend(stack.last(), start)
             }
             OP_GLOBAL -> {
@@ -200,9 +211,9 @@ class PickleParser(private val data: ByteArray) {
                 push(PickleNode.PObject(module + "." + name, emptyList(), null, start, pos), start)
             }
             OP_STACK_GLOBAL -> {
-                val name = stack.removeAt(stack.lastIndex).text()
-                val module = stack.removeAt(stack.lastIndex).text()
-                push(PickleNode.PObject(module + "." + name, emptyList(), null, start, pos), start)
+                val name = stack.removeAt(stack.lastIndex)
+                val module = stack.removeAt(stack.lastIndex)
+                push(PickleNode.PObject(module.text() + "." + name.text(), emptyList(), null, start, pos, dependencies = listOf(module, name)), start)
             }
             OP_REDUCE -> {
                 val args = stack.removeAt(stack.lastIndex)
@@ -210,20 +221,34 @@ class PickleParser(private val data: ByteArray) {
                 val className = callable.text()
                 val argList = (args as? PickleNode.PTuple)?.items ?: listOf(args)
                 val begin = meta[callable]?.first ?: start
-                push(PickleNode.PObject(className, argList, null, begin, pos), start)
+                push(PickleNode.PObject(className, argList, null, begin, pos, dependencies = listOf(callable)), start)
             }
             OP_OBJ -> {
                 val mark = marks.removeAt(marks.lastIndex)
                 val items = stack.subList(mark, stack.size).toList()
                 repeat(stack.size - mark) { stack.removeAt(stack.lastIndex) }
                 val className = items.firstOrNull()?.text() ?: "?"
-                push(PickleNode.PObject(className, items.drop(1), null, startOf(items), pos), start)
+                push(PickleNode.PObject(className, items.drop(1), null, startOf(items), pos, dependencies = items.take(1)), start)
             }
             OP_NEWOBJ -> {
                 val args = stack.removeAt(stack.lastIndex)
-                val className = stack.removeAt(stack.lastIndex).text()
+                val classNode = stack.removeAt(stack.lastIndex)
+                val className = classNode.text()
                 val argList = (args as? PickleNode.PTuple)?.items ?: listOf(args)
-                push(PickleNode.PObject(className, argList, null, start, pos), start)
+                push(PickleNode.PObject(className, argList, null, start, pos, dependencies = listOf(classNode)), start)
+            }
+            OP_NEWOBJ_EX -> {
+                val kwargs = stack.removeAt(stack.lastIndex)
+                val args = stack.removeAt(stack.lastIndex) as? PickleNode.PTuple ?: error("Arguments pickle invalides.")
+                val classNode = stack.removeAt(stack.lastIndex)
+                push(PickleNode.PObject(classNode.text(), args.items + kwargs, null, start, pos, dependencies = listOf(classNode)), start)
+            }
+            OP_INST -> {
+                val module = readLine(); val name = readLine()
+                val mark = marks.removeAt(marks.lastIndex)
+                val args = stack.subList(mark, stack.size).toList()
+                repeat(stack.size - mark) { stack.removeAt(stack.lastIndex) }
+                push(PickleNode.PObject("$module.$name", args, null, start, pos), start)
             }
             OP_BUILD -> {
                 val state = stack.removeAt(stack.lastIndex)
@@ -280,15 +305,32 @@ class PickleParser(private val data: ByteArray) {
         meta[node] = minOf(current.first, start) to pos
     }
 
-    private fun u8(): Int = data[pos++].toInt() and 0xFF
+    private fun pushInteger(value: BigInteger, start: Int) {
+        push(if (value.bitLength() <= 63) PickleNode.PInt(value.toLong(), start, pos) else PickleNode.PBigInt(value, start, pos), start)
+    }
 
-    private fun u16(): Int { val value = (data[pos].toInt() and 0xFF) or ((data[pos + 1].toInt() and 0xFF) shl 8); pos += 2; return value }
+    private fun pushLittleEndianInteger(size: Int, start: Int) {
+        // Large random-state integers are legal but remain read-only in the editor.
+        require(size in 0..4096) { "Entier pickle trop volumineux." }
+        val raw = bytes(size)
+        pushInteger(if (raw.isEmpty()) BigInteger.ZERO else BigInteger(raw.reversedArray()), start)
+    }
+
+    private fun length64(): Int {
+        val value = java.nio.ByteBuffer.wrap(bytes(8)).order(java.nio.ByteOrder.LITTLE_ENDIAN).long
+        require(value in 0..MAX_SAVE_BYTES.toLong()) { "Bloc pickle trop volumineux." }
+        return value.toInt()
+    }
+
+    private fun u8(): Int {
+        require(pos < data.size) { "Donnees pickle tronquees." }
+        return data[pos++].toInt() and 0xFF
+    }
+
+    private fun u16(): Int = u8() or (u8() shl 8)
 
     private fun int32(): Int {
-        val value = (data[pos].toInt() and 0xFF) or ((data[pos + 1].toInt() and 0xFF) shl 8) or
-            ((data[pos + 2].toInt() and 0xFF) shl 16) or ((data[pos + 3].toInt() shl 24))
-        pos += 4
-        return value
+        return u8() or (u8() shl 8) or (u8() shl 16) or (u8() shl 24)
     }
 
     private fun utf8(size: Int): String {
@@ -306,14 +348,17 @@ class PickleParser(private val data: ByteArray) {
     }
 
     private fun readLine(): String {
-        val end = run { var i = pos; while (i < data.size && data[i] != '\n'.code.toByte()) i++; if (i < data.size) i else -1 }.let { if (it < 0) data.size else it }
+        val end = run { var i = pos; while (i < data.size && data[i] != '\n'.code.toByte()) i++; i }
+        require(end < data.size) { "Ligne pickle tronquee." }
         val value = String(data, pos, end - pos, StandardCharsets.ISO_8859_1)
         pos = end + 1
         return value
     }
 
-    private fun decodePythonLiteral(raw: String): ByteArray =
-        raw.trim().removeSurrounding("'").toByteArray(StandardCharsets.ISO_8859_1)
+    private fun decodePythonLiteral(raw: String): ByteArray {
+        require(raw.length >= 2 && raw.first() in "\"'" && raw.last() == raw.first()) { "Chaine pickle invalide." }
+        return decodePythonEscapes(raw.substring(1, raw.lastIndex), unicode = false).toByteArray(StandardCharsets.ISO_8859_1)
+    }
 
     companion object {
         const val OP_MARK = 40; const val OP_STOP = 46; const val OP_POP = 48; const val OP_POP_MARK = 49
@@ -332,6 +377,8 @@ class PickleParser(private val data: ByteArray) {
         const val OP_SHORT_BINUNICODE = 140; const val OP_BINUNICODE = 88; const val OP_PROTO = 128
         const val OP_FRAME = 149; const val OP_EMPTY_TUPLE = 41; const val OP_SETITEMS = 117; const val OP_OBJ = 111
         const val OP_NEWOBJ = 129; const val OP_STACK_GLOBAL = 147
+        const val OP_UNICODE = 86; const val OP_INST = 105; const val OP_NEWOBJ_EX = 146
+        const val OP_BINUNICODE8 = 141; const val OP_BINBYTES8 = 142; const val OP_BYTEARRAY8 = 150
     }
 }
 
@@ -367,10 +414,10 @@ object PickleSplicer {
     fun spliceBool(data: ByteArray, range: IntRange, value: Boolean): ByteArray =
         replace(data, range, byteArrayOf(if (value) OP_NEWTRUE.toByte() else OP_NEWFALSE.toByte()))
 
-    fun spliceString(data: ByteArray, range: IntRange, value: String): ByteArray {
+    fun spliceString(data: ByteArray, range: IntRange, value: String, legacyString: Boolean = false): ByteArray {
         val encoded = value.toByteArray(StandardCharsets.UTF_8)
         val buffer = ByteArrayOutputStream()
-        buffer.write(OP_BINUNICODE)
+        buffer.write(if (legacyString) PickleParser.OP_BINSTRING else OP_BINUNICODE)
         buffer.write(java.nio.ByteBuffer.allocate(4).order(java.nio.ByteOrder.LITTLE_ENDIAN).putInt(encoded.size).array())
         buffer.write(encoded)
         return replace(data, range, buffer.toByteArray())

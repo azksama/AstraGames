@@ -2,6 +2,7 @@ package fr.astragames.app.launcher
 
 import android.content.ActivityNotFoundException
 import android.content.Context
+import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
 import fr.astragames.app.core.model.GameEngine
@@ -31,6 +32,14 @@ object JoiPlayPayloadBuilder {
     fun actionsFor(engine: String): List<String> = if (engine == GameEngine.RENPY.name) {
         listOf("cyou.joiplay.runtime.renpy8.run", "cyou.joiplay.runtime.renpy.run")
     } else listOfNotNull(actionFor(engine))
+
+    internal fun trustedPackagesFor(engine: String): Set<String> = when (typeFor(engine)) {
+        "renpy" -> setOf("cyou.joiplay.runtime.renpy", "cyou.joiplay.runtime.renpy8")
+        "rpgmmv", "rpgmmz", "rpgmvxace", "rpgmvx", "rpgmxp" ->
+            setOf("cyou.joiplay.runtime.rpgmaker", JoiPlayLauncher.PACKAGE)
+        "html", "tyrano", "construct", "twine", "electron" -> setOf(JoiPlayLauncher.PACKAGE)
+        else -> emptySet()
+    }
 
     fun build(game: GameEntity, profile: LaunchProfileEntity? = null): String? {
         val type = typeFor(LaunchProfileResolver.engine(game, profile)) ?: return null
@@ -86,16 +95,12 @@ class JoiPlayLauncher : GameLauncher {
     fun resolveJoiPlayIntent(context: Context, engine: String): Intent? =
         JoiPlayPayloadBuilder.actionsFor(engine).firstNotNullOfOrNull { action ->
             val base = Intent(action).addCategory(Intent.CATEGORY_DEFAULT)
-            val targetPackage = if (engine == GameEngine.RENPY.name) {
-                context.packageManager.queryIntentActivities(base, PackageManager.MATCH_DEFAULT_ONLY)
-                    .filter { it.activityInfo.packageName.startsWith("cyou.joiplay.runtime.renpy") }
-                    .maxByOrNull { it.activityInfo.packageName }
-                    ?.activityInfo?.packageName
-            } else {
-                context.packageManager.queryIntentActivities(base, PackageManager.MATCH_DEFAULT_ONLY)
-                    .firstOrNull()?.activityInfo?.packageName
-            }
-            targetPackage?.let { base.setPackage(it) }
+            val trusted = JoiPlayPayloadBuilder.trustedPackagesFor(engine)
+            val target = context.packageManager.queryIntentActivities(base, PackageManager.MATCH_DEFAULT_ONLY)
+                .map { it.activityInfo }
+                .filter { it.exported && it.enabled && it.packageName in trusted }
+                .maxByOrNull { it.packageName }
+            target?.let { base.setComponent(ComponentName(it.packageName, it.name)) }
         }
 
     private fun launchExternal(context: Context, game: GameEntity, profile: LaunchProfileEntity?): LaunchResult {

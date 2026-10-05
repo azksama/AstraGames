@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
 import fr.astragames.app.BuildConfig
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -40,8 +41,8 @@ internal fun AuditDialog(vm: AstraViewModel, onDismiss: () -> Unit) {
                 else LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(start = 12.dp, top = 8.dp, end = 12.dp, bottom = PageBottomPadding), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     items(events, key = { it.id }) { event ->
                         RoundedListItem(
-                            headlineContent = { Text(event.detail) },
-                            supportingContent = { Text(event.timestamp.asDateTime()) },
+                            headlineContent = { MaterialText(event.detail) },
+                            supportingContent = { MaterialText(event.timestamp.asDateTime()) },
                             leadingContent = { Icon(Icons.Default.History, null) }
                         )
                     }
@@ -240,8 +241,8 @@ internal fun SettingsScreen(
             ) }
             }
             item {
-                Text(
-                    "Version ${BuildConfig.VERSION_NAME}",
+                androidx.compose.material3.Text(
+                    AppLocalizer.text("Version ${BuildConfig.VERSION_NAME}"),
                     modifier = Modifier.fillMaxWidth().padding(top = 24.dp, bottom = 10.dp),
                     textAlign = TextAlign.Center,
                     style = MaterialTheme.typography.labelMedium,
@@ -294,7 +295,7 @@ private fun SourceSettingsCard(
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 Icon(Icons.Default.Source, null, tint = MaterialTheme.colorScheme.primary)
-                Text(source.displayName, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
+                MaterialText(source.displayName, Modifier.weight(1f), style = MaterialTheme.typography.titleMedium)
                 Switch(
                     checked = source.enabled,
                     enabled = !running,

@@ -1,6 +1,8 @@
 package fr.astragames.app.translation
 
 import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import fr.astragames.app.data.local.GameEntity
@@ -20,16 +22,17 @@ internal class GameTranslationManager(
     private val context: Context,
     private val createTranslator: (String, String) -> TextTranslator = ::LocalTranslator
 ) {
-    private fun dataDir(game: GameEntity): DocumentFile {
+    private fun dataDir(game: GameEntity, requireWrite: Boolean = true): DocumentFile {
         require(game.engine in setOf("RPG_MAKER_MV", "RPG_MAKER_MZ")) { "Seuls RPG Maker MV et MZ sont pris en charge." }
         val root = documentDir(context, game.documentUri.toUri()) ?: error("Dossier du jeu inaccessible.")
         val data = root.findFile("www")?.findFile("data") ?: root.findFile("data")
-        return data?.takeIf { it.isDirectory && it.canRead() && it.canWrite() } ?: error("Dossier data accessible en écriture introuvable.")
+        return data?.takeIf { it.isDirectory && it.canRead() && (!requireWrite || it.canWrite()) }
+            ?: error(if (requireWrite) "Dossier data accessible en écriture introuvable." else "Dossier data accessible en lecture introuvable.")
     }
 
     suspend fun hasBackup(game: GameEntity): Boolean = withContext(Dispatchers.IO) {
         if (game.engine !in setOf("RPG_MAKER_MV", "RPG_MAKER_MZ")) false
-        else TranslationPatch(SafTranslationFiles(context, dataDir(game))).exists()
+        else TranslationPatch(SafTranslationFiles(context, dataDir(game, requireWrite = false))).exists()
     }
 
     suspend fun isLaunchSafe(game: GameEntity): Boolean = withContext(Dispatchers.IO) {
@@ -40,7 +43,7 @@ internal class GameTranslationManager(
     }
 
     suspend fun analyze(game: GameEntity): TranslationAnalysis = withContext(Dispatchers.IO) {
-        val dir = dataDir(game)
+        val dir = dataDir(game, requireWrite = false)
         val files = SafTranslationFiles(context, dir)
         val installed = TranslationPatch(files).exists()
         if (installed) return@withContext TranslationAnalysis(0, 0, 0, true, TranslationPatch(files).preservedFragments())
@@ -62,9 +65,11 @@ internal class GameTranslationManager(
         progress(TranslationProgress("Analyse des textes"))
         val documents = load(dir, files)
         val originalTexts = documents.flatMap { it.texts }.distinct()
-        val fragments = originalTexts.flatMap(ProtectedText::fragments).distinct()
+        val protectedGroups = protectedActorNameGroups(documents)
+        val translatableTexts = documents.flatMap { it.entries }.filterNot { it.identityGroup in protectedGroups }.map { it.text }.distinct()
+        val fragments = translatableTexts.flatMap(ProtectedText::fragments).distinct()
         require(fragments.isNotEmpty()) { "Aucun texte à traduire." }
-        val cache = TranslationCache(File(context.noBackupFilesDir, "translation-cache/v1/$source-$target"))
+        val cache = TranslationCache(File(context.noBackupFilesDir, "translation-cache/v2/$source-$target"))
         val translated = mutableMapOf<String, String>()
         val pending = mutableListOf<String>()
         var preserved = 0
@@ -76,7 +81,7 @@ internal class GameTranslationManager(
             progress(TranslationProgress("Traduction locale", translated.size, fragments.size))
             pending.forEach { text ->
                 currentCoroutineContext().ensureActive()
-                val value = if (text.length <= 4000) TranslationOutput.validated(translator.translate(text)) else null
+                val value = TranslationOutput.validated(translator.translate(text))
                 if (value == null) {
                     // Keep this fragment verbatim; never cache a failed translation as a success.
                     preserved++
@@ -90,17 +95,9 @@ internal class GameTranslationManager(
             }
         }
         currentCoroutineContext().ensureActive()
-        val dictionary = originalTexts.associateWith { ProtectedText.render(it, translated) }
-        val changes = documents.mapNotNull { snapshot ->
-            currentCoroutineContext().ensureActive()
-            if (snapshot.texts.none { dictionary[it] != it }) null
-            else {
-                val original = files.read(snapshot.name) ?: error("Fichier inaccessible : ${snapshot.name}")
-                check(textHash(original) == snapshot.hash) { "Le jeu a changé : ${snapshot.name}" }
-                val doc = RpgTextDocument(snapshot.name, original)
-                TranslationPatch.Change(snapshot.name, original, doc.translated(dictionary))
-            }
-        }
+        val dictionary = translatableTexts.associateWith { ProtectedText.render(it, translated) }
+        val replacements = localTranslationReplacements(documents, dictionary)
+        val changes = changes(documents, files, replacements)
         if (changes.isNotEmpty()) {
             progress(TranslationProgress("Sauvegarde et application", fragments.size, fragments.size))
             // No suspension during the journaled write sequence; failures roll back synchronously.
@@ -113,11 +110,104 @@ internal class GameTranslationManager(
         TranslationPatch(SafTranslationFiles(context, dataDir(game))).restore()
     }
 
-    private data class DocumentSnapshot(val name: String, val hash: String, val texts: List<String>)
+    suspend fun exportManual(
+        game: GameEntity, source: String, target: String, destination: Uri,
+        progress: (TranslationProgress) -> Unit = {}
+    ): TranslationAnalysis = withContext(Dispatchers.IO) {
+        progress(TranslationProgress("Extraction des textes"))
+        val dir = dataDir(game, requireWrite = false)
+        val files = SafTranslationFiles(context, dir)
+        check(!TranslationPatch(files).exists()) { "Restaurez les originaux avant d’exporter leurs textes." }
+        val documents = load(dir, files)
+        val bytes = ManualTranslationBundle.export(game.id, game.title, game.engine, source, target, documents)
+        currentCoroutineContext().ensureActive()
+        verifyExportDestination(dir, destination)
+        val destinationIsEmpty = context.contentResolver.openInputStream(destination)?.use { it.read() == -1 }
+            ?: error("Impossible de vérifier le fichier d’export.")
+        require(destinationIsEmpty) { "Choisissez un nouveau fichier vide pour l’export. Aucun fichier existant ne sera remplacé." }
+        context.contentResolver.openOutputStream(destination, "wt")?.use { it.write(bytes) } ?: error("Impossible d’écrire le fichier d’export.")
+        val verified = context.contentResolver.openInputStream(destination)?.use { readTranslationBytes(it, ManualTranslationBundle.MAX_BYTES) }
+        check(verified?.contentEquals(bytes) == true) { "Export incomplet : recommencez avec un autre emplacement." }
+        analysis(documents, installed = false)
+    }
 
-    private suspend fun load(dir: DocumentFile, files: TranslationFiles): List<DocumentSnapshot> {
+    suspend fun importManual(
+        game: GameEntity, source: Uri,
+        progress: (TranslationProgress) -> Unit = {}
+    ): TranslationAnalysis = withContext(Dispatchers.IO) {
+        progress(TranslationProgress("Vérification du fichier traduit"))
+        val dir = dataDir(game)
+        val files = SafTranslationFiles(context, dir)
+        val patch = TranslationPatch(files)
+        check(!patch.exists()) { "Restaurez les originaux avant de charger une nouvelle traduction." }
+        val bytes = context.contentResolver.openInputStream(source)?.use { readTranslationBytes(it, ManualTranslationBundle.MAX_BYTES) }
+            ?: error("Impossible de lire le fichier traduit.")
+        currentCoroutineContext().ensureActive()
+        val documents = load(dir, files)
+        val imported = ManualTranslationBundle.import(bytes, game.id, game.engine, documents)
+        val changes = changes(documents, files, imported.replacements)
+        currentCoroutineContext().ensureActive()
+        if (changes.isNotEmpty()) {
+            progress(TranslationProgress("Sauvegarde et application"))
+            patch.apply(changes, imported.source, imported.target, imported.preserved)
+        }
+        analysis(documents, installed = changes.isNotEmpty(), preserved = imported.preserved)
+    }
+
+    private fun analysis(documents: List<TranslationSnapshot>, installed: Boolean, preserved: Int = 0): TranslationAnalysis {
+        val texts = documents.flatMap { it.texts }.distinct()
+        return TranslationAnalysis(documents.size, texts.size, texts.sumOf { it.length }, installed, preserved)
+    }
+
+    private fun verifyExportDestination(dir: DocumentFile, destination: Uri) {
+        val message = "Exportez vers un nouveau fichier, hors du dossier data et des sauvegardes du jeu."
+        if (dir.uri.scheme == "file" && destination.scheme == "file") {
+            val root = File(requireNotNull(dir.uri.path)).canonicalFile.toPath()
+            require(!File(requireNotNull(destination.path)).canonicalFile.toPath().startsWith(root)) { message }
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 29 && dir.uri.authority == destination.authority && DocumentsContract.isDocumentUri(context, dir.uri) &&
+            DocumentsContract.isDocumentUri(context, destination)) {
+            val child = runCatching { DocumentsContract.isChildDocument(context.contentResolver, dir.uri, destination) }.getOrDefault(false)
+            require(!child) { message }
+        }
+        // Providers may omit isChildDocument support, or expose both tree and single-document URIs.
+        val children = dir.listFiles()
+        require(children.none { sameDocument(it.uri, destination) }) { message }
+        children.firstOrNull { it.name == TranslationPatch.BACKUP && it.isDirectory }?.let { backup ->
+            backup.listFiles().forEach { child ->
+                require(!sameDocument(child.uri, destination)) { message }
+                if (child.isDirectory && child.name in setOf("original", "translated")) {
+                    require(child.listFiles().none { sameDocument(it.uri, destination) }) { message }
+                }
+            }
+        }
+    }
+
+    private fun sameDocument(first: Uri, second: Uri): Boolean {
+        if (first.normalizeScheme() == second.normalizeScheme()) return true
+        if (first.scheme == "file" && second.scheme == "file") {
+            return File(requireNotNull(first.path)).canonicalFile == File(requireNotNull(second.path)).canonicalFile
+        }
+        if (first.authority != second.authority) return false
+        return runCatching { DocumentsContract.getDocumentId(first) == DocumentsContract.getDocumentId(second) }.getOrDefault(false)
+    }
+
+    private suspend fun changes(
+        documents: List<TranslationSnapshot>, files: TranslationFiles, replacements: Map<String, Map<String, String>>
+    ): List<TranslationPatch.Change> = documents.mapNotNull { snapshot ->
+        currentCoroutineContext().ensureActive()
+        // Check even unchanged sources: the exchange is bound to the complete exported game revision.
+        val original = files.read(snapshot.name) ?: error("Fichier inaccessible : ${snapshot.name}")
+        check(textHash(original) == snapshot.hash) { "Le jeu a changé : ${snapshot.name}" }
+        val dictionary = replacements[snapshot.name].orEmpty()
+        if (snapshot.entries.none { dictionary[it.path]?.let { replacement -> replacement != it.text } == true }) null
+        else TranslationPatch.Change(snapshot.name, original, RpgTextDocument(snapshot.name, original).translatedEntries(dictionary))
+    }
+
+    private suspend fun load(dir: DocumentFile, files: TranslationFiles): List<TranslationSnapshot> {
         val names = dir.listFiles().filter { it.isFile && RpgTextDocument.accepts(it.name.orEmpty()) }.map { it.name!! }.sorted()
         require(names.size in 1..2000) { "Aucun fichier RPG Maker lisible, ou trop de fichiers." }
+        require(names.distinct().size == names.size) { "Le dossier contient des fichiers de données portant le même nom." }
         var total = 0L
         return names.map { name ->
             currentCoroutineContext().ensureActive()
@@ -125,7 +215,7 @@ internal class GameTranslationManager(
             total += bytes.size
             require(total <= 64L * 1024 * 1024) { "Les textes du jeu dépassent la limite de 64 Mo." }
             // Release map tile arrays and other non-text JSON data between files.
-            DocumentSnapshot(name, textHash(bytes), RpgTextDocument(name, bytes).texts)
+            TranslationSnapshot(name, textHash(bytes), RpgTextDocument(name, bytes).entries)
         }
     }
 }
@@ -156,15 +246,7 @@ internal class SafTranslationFiles(private val context: Context, private val roo
     override fun read(path: String): ByteArray? {
         val file = locate(path) ?: return null
         return context.contentResolver.openInputStream(file.uri)?.use { input ->
-            val output = java.io.ByteArrayOutputStream()
-            val buffer = ByteArray(8192)
-            while (true) {
-                val count = input.read(buffer)
-                if (count < 0) break
-                require(output.size() + count <= RpgTextDocument.MAX_FILE_BYTES) { "Fichier trop volumineux : $path" }
-                output.write(buffer, 0, count)
-            }
-            output.toByteArray()
+            readTranslationBytes(input, RpgTextDocument.MAX_FILE_BYTES)
         } ?: error("Lecture impossible : $path")
     }
     override fun write(path: String, bytes: ByteArray) {
@@ -177,8 +259,9 @@ internal class SafTranslationFiles(private val context: Context, private val roo
 
 internal class TranslationCache(private val directory: File) {
     fun read(text: String): String? = runCatching {
-        val value = JSONObject(AtomicFile(File(directory, textHash(text.toByteArray()))).readFully().toString(Charsets.UTF_8))
-        value.getString("translation").takeIf { value.getString("source") == text && it.isNotBlank() && ProtectedText.controls(it).isEmpty() }
+        val bytes = AtomicFile(File(directory, textHash(text.toByteArray()))).openRead().use { readTranslationBytes(it, 128 * 1024) }
+        val value = TranslationJson.parse(bytes, 128 * 1024) as JSONObject
+        value.getString("translation").takeIf { value.getString("source") == text && TranslationOutput.validated(it) == it }
     }.getOrNull()
     fun write(text: String, translation: String) {
         check(directory.isDirectory || directory.mkdirs())

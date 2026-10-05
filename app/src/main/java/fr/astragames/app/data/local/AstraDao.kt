@@ -215,12 +215,14 @@ interface AstraDao {
     suspend fun deleteSourceAndGames(sourceId: String) {
         val gameIds = getGameIdsForSource(sourceId)
         if (gameIds.isNotEmpty()) {
-            deleteGameTagRefsForGames(gameIds)
-            deleteSearchForGames(gameIds)
-            deletePlaySessionsForGames(gameIds)
-            deleteMetadataForGames(gameIds)
-            deleteCoverCandidatesForGames(gameIds)
-            deleteLaunchProfilesForGames(gameIds)
+            gameIds.chunked(900).forEach { chunk ->
+                deleteGameTagRefsForGames(chunk)
+                deleteSearchForGames(chunk)
+                deletePlaySessionsForGames(chunk)
+                deleteMetadataForGames(chunk)
+                deleteCoverCandidatesForGames(chunk)
+                deleteLaunchProfilesForGames(chunk)
+            }
             deleteGamesForSource(sourceId)
             gameIds.forEach { gameId ->
                 deleteSaveLocationsForGame(gameId)
@@ -257,14 +259,25 @@ interface AstraDao {
     @Query("DELETE FROM tags WHERE id IN (:tagIds)")
     suspend fun deleteTagsRaw(tagIds: List<String>)
 
-    @Query("UPDATE game_tags SET tagId = :keepId WHERE tagId = :removedId")
-    suspend fun replaceTagReferences(keepId: String, removedId: String)
+    @Query("INSERT OR IGNORE INTO game_tags (gameId, tagId) SELECT gameId, :keepId FROM game_tags WHERE tagId = :removedId")
+    suspend fun copyTagReferences(keepId: String, removedId: String)
+
+    @Transaction
+    suspend fun mergeTags(keepId: String, removedId: String) {
+        if (keepId == removedId) return
+        require(getTags().any { it.id == keepId }) { "Le tag à conserver est introuvable." }
+        copyTagReferences(keepId, removedId)
+        deleteGameTagRefs(listOf(removedId))
+        deleteTagsRaw(listOf(removedId))
+    }
 
     @Transaction
     suspend fun deleteTags(tagIds: List<String>) {
         if (tagIds.isEmpty()) return
-        deleteGameTagRefs(tagIds)
-        deleteTagsRaw(tagIds)
+        tagIds.chunked(900).forEach {
+            deleteGameTagRefs(it)
+            deleteTagsRaw(it)
+        }
     }
 
     @Query("UPDATE tags SET groupName = :categoryName WHERE id IN (:tagIds)")

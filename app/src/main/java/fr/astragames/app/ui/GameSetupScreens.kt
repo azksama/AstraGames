@@ -1,5 +1,7 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
+
 import androidx.compose.foundation.background
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.foundation.clickable
@@ -46,13 +48,13 @@ internal fun ScanReportDialog(reports: List<ScanReport>, onDismiss: () -> Unit) 
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 Column(Modifier.fillMaxHeight().widthIn(max = 1040.dp).align(Alignment.Center)) {
-                    CompactHeader("Rapport de scan", report.sourceName, onBack = onDismiss)
+                    CompactHeader("Rapport de scan", report.sourceName, onBack = onDismiss, localizeSubtitle = false)
                     if (reports.size > 1) LazyRow(
                         Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp),
                         horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         itemsIndexed(reports) { index, item ->
-                            FilterChip(selectedIndex == index, { selectedIndex = index; filter = null }, { Text(item.sourceName) })
+                            FilterChip(selectedIndex == index, { selectedIndex = index; filter = null }, { MaterialText(item.sourceName) })
                         }
                     }
                     LazyColumn(
@@ -86,10 +88,10 @@ internal fun ScanReportDialog(reports: List<ScanReport>, onDismiss: () -> Unit) 
                         if (visibleItems.isEmpty()) item { CenterMessage("Aucun détail disponible pour ce rapport.", Modifier.fillMaxWidth().height(180.dp)) }
                         else items(visibleItems) { item ->
                             ListItem(
-                                headlineContent = { Text(item.title ?: item.path, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                                headlineContent = { MaterialText(item.title ?: item.path, maxLines = 1, overflow = TextOverflow.Ellipsis) },
                                 supportingContent = {
                                     Column {
-                                        if (item.title != null) Text(item.path, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                        if (item.title != null) MaterialText(item.path, maxLines = 2, overflow = TextOverflow.Ellipsis)
                                         Text(item.reason)
                                     }
                                 },
@@ -147,7 +149,7 @@ internal fun ScanReportItemStatus.tint() = when (this) {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickCover: (String) -> Unit) {
-    var accepted by remember { mutableStateOf(false) }
+    var accepted by rememberSaveable { mutableStateOf(false) }
     if (!accepted) {
         AlertDialog(
             onDismissRequest = vm::dismissGameSetup,
@@ -164,11 +166,11 @@ internal fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPick
     val coverState by vm.coverSearch.collectAsStateWithLifecycle()
     val f95State by vm.f95Import.collectAsStateWithLifecycle()
     val latestVersions by vm.latestGameVersions.collectAsStateWithLifecycle()
-    var title by remember(game.id) { mutableStateOf(game.title) }
-    var description by remember(game.id) { mutableStateOf(game.description.orEmpty()) }
-    var developer by remember(game.id) { mutableStateOf(game.developer.orEmpty()) }
-    var version by remember(game.id) { mutableStateOf(game.version.orEmpty()) }
-    var textTags by remember(game.id) { mutableStateOf("") }
+    var title by rememberSaveable(game.id) { mutableStateOf(game.title) }
+    var description by rememberSaveable(game.id) { mutableStateOf(game.description.orEmpty()) }
+    var developer by rememberSaveable(game.id) { mutableStateOf(game.developer.orEmpty()) }
+    var version by rememberSaveable(game.id) { mutableStateOf(game.version.orEmpty()) }
+    var textTags by rememberSaveable(game.id) { mutableStateOf("") }
     var selectedTags by remember(game.id, assigned) { mutableStateOf(assigned.map { it.id }.toSet()) }
     var showTags by remember { mutableStateOf(false) }
     var showCover by remember { mutableStateOf(false) }
@@ -245,11 +247,11 @@ internal fun EditGameDialog(
     onDeleteGame: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var title by remember(game) { mutableStateOf(game.title) }; var original by remember(game) { mutableStateOf(game.originalTitle.orEmpty()) }
-    var developer by remember(game) { mutableStateOf(game.developer.orEmpty()) }; var version by remember(game) { mutableStateOf(game.version.orEmpty()) }
-    var description by remember(game) { mutableStateOf(game.description.orEmpty()) }
-    var f95Url by remember(game) { mutableStateOf(game.f95Url.orEmpty()) }
-    var textTags by remember(game) { mutableStateOf("") }
+    var title by rememberSaveable(game.id) { mutableStateOf(game.title) }; var original by rememberSaveable(game.id) { mutableStateOf(game.originalTitle.orEmpty()) }
+    var developer by rememberSaveable(game.id) { mutableStateOf(game.developer.orEmpty()) }; var version by rememberSaveable(game.id) { mutableStateOf(game.version.orEmpty()) }
+    var description by rememberSaveable(game.id) { mutableStateOf(game.description.orEmpty()) }
+    var f95Url by rememberSaveable(game.id) { mutableStateOf(game.f95Url.orEmpty()) }
+    var textTags by rememberSaveable(game.id) { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("Modifier le jeu") },
         text = { LazyColumn(Modifier.heightIn(max = 520.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(9.dp)) {
@@ -348,15 +350,15 @@ internal fun GameTagPickerSheet(
             )
             LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 item { FilterChip(category == "__all__", { category = "__all__" }, { Text("Tous") }) }
-                items(categories, key = { it.id }) { item -> FilterChip(category == item.name, { category = item.name }, { Text(item.name) }) }
+                items(categories, key = { it.id }) { item -> FilterChip(category == item.name, { category = item.name }, { MaterialText(item.name) }) }
                 item { FilterChip(category == "__none__", { category = "__none__" }, { Text("Sans catégorie") }) }
             }
             if (visible.isEmpty()) CenterMessage("Aucun tag dans cette catégorie", modifier = Modifier.height(180.dp))
             else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 430.dp)) {
                 items(visible, key = { it.id }) { tag ->
                     ListItem(
-                        modifier = Modifier.clickable { cycle(tag.id) }, headlineContent = { Text(tag.name) },
-                        supportingContent = { tag.groupName?.let { Text(it) } },
+                        modifier = Modifier.clickable { cycle(tag.id) }, headlineContent = { MaterialText(tag.name) },
+                        supportingContent = { tag.groupName?.let { MaterialText(it) } },
                         leadingContent = {
                             if (onSaveExcluded != null) {
                                 TriStateCheckbox(

@@ -211,7 +211,7 @@ internal fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDis
                         item { FilterSwitch("Favoris uniquement", state.filters.favoritesOnly, vm::toggleFavoriteFilter) }
                         item { FilterSwitch("Jeux introuvables", state.filters.missingOnly, vm::toggleMissingFilter) }
                         item { FilterDropdown("Moteur", listOf(null to "Tous") + GameEngine.entries.map { it to it.name.readableEngine() }, state.filters.engine, vm::filterEngine) }
-                        item { FilterDropdown("Source", listOf(null to "Toutes") + state.sources.map { it.id to it.displayName }, state.filters.sourceId, vm::filterSource) }
+                        item { FilterDropdown("Source", listOf(null to "Toutes") + state.sources.map { it.id to it.displayName }, state.filters.sourceId, vm::filterSource, localizeChoices = { it == null }) }
                         item {
                             val choices = listOf(null to "Toutes") +
                                 state.folders.map { it.id to it.name } +
@@ -220,7 +220,8 @@ internal fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDis
                                 "Collections",
                                 choices,
                                 state.filters.collectionId ?: state.filters.folderId,
-                                { id -> if (id == null) vm.filterFolder(null) else if (state.folders.any { it.id == id }) vm.filterFolder(id) else vm.filterCollection(id) }
+                                { id -> if (id == null) vm.filterFolder(null) else if (state.folders.any { it.id == id }) vm.filterFolder(id) else vm.filterCollection(id) },
+                                localizeChoices = { it == null }
                             )
                         }
                         item { FilterDropdown("Tri", LibrarySort.entries.map { it to it.label() }, state.filters.sort, vm::setSort) }
@@ -269,15 +270,23 @@ internal fun FilterSwitch(label: String, checked: Boolean, onToggle: () -> Unit)
 )
 
 @Composable
-internal fun <T> FilterDropdown(title: String, choices: List<Pair<T, String>>, selected: T, onSelect: (T) -> Unit) {
+internal fun <T> FilterDropdown(
+    title: String,
+    choices: List<Pair<T, String>>,
+    selected: T,
+    onSelect: (T) -> Unit,
+    localizeChoices: (T) -> Boolean = { true }
+) {
     var expanded by remember { mutableStateOf(false) }
+    val language = LocalAppLanguage.current
+    fun choiceLabel(value: T, label: String) = if (localizeChoices(value)) AppLocalizer.text(label, language) else label
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(title, style = MaterialTheme.typography.titleMedium)
         Box {
             ListItem(
                 headlineContent = {
-                    Text(
-                        choices.firstOrNull { it.first == selected }?.second ?: "",
+                    androidx.compose.material3.Text(
+                        choiceLabel(selected, choices.firstOrNull { it.first == selected }?.second ?: ""),
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis
                     )
@@ -289,7 +298,7 @@ internal fun <T> FilterDropdown(title: String, choices: List<Pair<T, String>>, s
             DropdownMenu(expanded, { expanded = false }, Modifier.width(320.dp).heightIn(max = 480.dp)) {
                 choices.forEach { choice ->
                     DropdownMenuItem(
-                        text = { Text(choice.second, Modifier.fillMaxWidth(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                        text = { androidx.compose.material3.Text(choiceLabel(choice.first, choice.second), Modifier.fillMaxWidth(), maxLines = 1, overflow = TextOverflow.Ellipsis) },
                         leadingIcon = { if (choice.first == selected) Icon(Icons.Default.Check, null) },
                         onClick = { onSelect(choice.first); expanded = false }
                     )

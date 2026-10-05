@@ -5,6 +5,8 @@ import java.util.zip.Deflater
 import java.util.zip.Inflater
 
 internal const val MAX_SAVE_BYTES = 64 * 1024 * 1024
+internal const val MAX_SAVE_NODES = 500_000
+internal const val MAX_SAVE_DEPTH = 128
 
 internal fun inflateSave(data: ByteArray): ByteArray {
     val inflater = Inflater()

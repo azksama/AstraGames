@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.compose.material3.Text as MaterialText
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -72,6 +73,7 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
             CompactHeader(
                 selectedSmart?.name ?: selectedCustom?.name ?: current?.name ?: if (LandscapeLayout) "Collections" else "Astra",
                 subtitle = if (current != null) "${visibleFolders.size} sous-dossier(s)" else null,
+                localizeTitle = selectedSmart != null || (selectedCustom == null && current == null),
                 onBack = when {
                     selectedSmart != null -> ({ smartKey = null })
                     selectedCustom != null -> ({ customCollectionId = null })
@@ -163,7 +165,7 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
             items(visibleFolders, key = { it.id }) { folder ->
                 RoundedListItem(
                     modifier = Modifier.clickable { currentId = folder.id },
-                    headlineContent = { Text(folder.name) },
+                    headlineContent = { MaterialText(folder.name) },
                     supportingContent = { Text("${state.folders.count { it.parentId == folder.id }} sous-dossier(s)") },
                     leadingContent = { Icon(Icons.Default.Folder, null) },
                     trailingContent = {
@@ -179,7 +181,7 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
                 item { SectionTitle("Jeux dans ce dossier") }
                 items(displayedGames, key = { "game-${it.id}" }) { game -> RoundedListItem(
                     modifier = Modifier.clickable { onGame(game.id) },
-                    headlineContent = { Text(game.title) },
+                    headlineContent = { MaterialText(game.title) },
                     supportingContent = { Text(game.engine.readableEngine()) },
                     leadingContent = { GameCover(game, Modifier.width(46.dp).aspectRatio(.72f)) },
                     trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }

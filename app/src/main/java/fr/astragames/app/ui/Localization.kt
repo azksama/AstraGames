@@ -15,7 +15,8 @@ val LocalAppLanguage = compositionLocalOf { AppLanguage.ENGLISH }
 
 /**
  * Small in-app catalogue so the language can change immediately without restarting the activity.
- * French remains the source language; unknown user data is always kept untouched.
+ * French remains the source language. Use MaterialText directly for user-authored content,
+ * even when it happens to match a catalogue entry or a dynamic message pattern.
  */
 object AppLocalizer {
     @Volatile
@@ -52,6 +53,66 @@ object AppLocalizer {
     ) = Translation(source, english, spanish, russian, german, chinese, japanese)
 
     private val catalog = listOf(
+        t("La restauration a échoué et le retour arrière est incomplet. Les copies originales sont conservées pour récupération. Ne désinstallez pas Astra. Dossier :", "Restore failed and rollback is incomplete. Original copies are retained for recovery. Do not uninstall Astra. Folder:", "La restauración falló y la reversión está incompleta. Se conservan las copias originales para recuperarlas. No desinstales Astra. Carpeta:", "Восстановление не удалось, откат выполнен не полностью. Исходные копии сохранены для восстановления. Не удаляйте Astra. Папка:", "Die Wiederherstellung ist fehlgeschlagen und das Zurücksetzen ist unvollständig. Die Originalkopien bleiben zur Wiederherstellung erhalten. Deinstalliere Astra nicht. Ordner:", "恢复失败，回滚未完成。原始副本已保留以便恢复。请勿卸载 Astra。文件夹：", "復元に失敗し、元に戻す処理も完了していません。復旧用に元のコピーを保持しています。Astra をアンインストールしないでください。フォルダー:"),
+        t("Les noms utilisés par les conditions du jeu sont conservés pour rester compatibles avec vos sauvegardes.", "Names used by game conditions stay unchanged to remain compatible with your saves.", "Los nombres usados en las condiciones del juego se conservan para mantener la compatibilidad con tus partidas guardadas.", "Имена, используемые в условиях игры, сохраняются без изменений для совместимости с вашими сохранениями.", "Namen in Spielbedingungen bleiben unverändert, damit deine Spielstände kompatibel bleiben.", "游戏条件使用的名称会保持不变，以兼容你的存档。", "ゲームの条件判定に使われる名前は、セーブとの互換性を保つため変更しません。"),
+        t("Impossible de déchiffrer cette sauvegarde. Elle est endommagée ou provient d’une autre installation d’Astra.", "This backup cannot be decrypted. It is damaged or comes from another installation of Astra.", "No se puede descifrar esta copia. Está dañada o procede de otra instalación de Astra.", "Не удалось расшифровать резервную копию. Она повреждена или создана в другой установке Astra.", "Dieses Backup kann nicht entschlüsselt werden. Es ist beschädigt oder stammt aus einer anderen Astra-Installation.", "无法解密此备份。它已损坏或来自另一次 Astra 安装。", "このバックアップを復号できません。破損しているか、別の Astra 環境で作成されています。"),
+        t("Liste des textes incomplète ou issue d’une ancienne extraction. Exportez à nouveau et conservez toutes les entrées.", "The text list is incomplete or comes from an older extraction. Export again and keep every entry.", "La lista de textos está incompleta o procede de una extracción anterior. Exporta de nuevo y conserva todas las entradas.", "Список текстов неполон или создан старой версией извлечения. Выполните экспорт заново и сохраните все записи.", "Die Textliste ist unvollständig oder stammt aus einem älteren Export. Exportiere erneut und behalte alle Einträge.", "文本列表不完整或来自旧版提取。请重新导出并保留所有条目。", "テキスト一覧が不完全か、古い抽出結果です。再度エクスポートし、すべての項目を残してください。"),
+        t("Balise protégée absente.", "A protected marker is missing.", "Falta un marcador protegido.", "Отсутствует защищённый маркер.", "Ein geschützter Marker fehlt.", "缺少受保护标记。", "保護されたマーカーがありません。"),
+        t("Fermez le jeu avant d’éditer une sauvegarde.", "Close the game before editing a save.", "Cierra el juego antes de editar una partida guardada.", "Закройте игру перед редактированием сохранения.", "Schließe das Spiel, bevor du einen Spielstand bearbeitest.", "编辑存档前请关闭游戏。", "セーブを編集する前にゲームを終了してください。"),
+        t("Aucun résultat pour cette recherche.", "No results for this search.", "No hay resultados para esta búsqueda.", "По этому запросу ничего не найдено.", "Keine Ergebnisse für diese Suche.", "没有符合此搜索的结果。", "検索結果がありません。"),
+        t("Aucun champ ne correspond aux filtres.", "No fields match these filters.", "Ningún campo coincide con estos filtros.", "Нет полей, соответствующих фильтрам.", "Keine Felder entsprechen diesen Filtern.", "没有符合筛选条件的字段。", "フィルターに一致する項目がありません。"),
+        t("Choisissez un nouveau fichier vide pour l’export. Aucun fichier existant ne sera remplacé.", "Choose a new empty file for export. Existing files will not be replaced.", "Elige un archivo nuevo y vacío para exportar. No se reemplazará ningún archivo existente.", "Выберите новый пустой файл для экспорта. Существующие файлы не будут заменены.", "Wähle eine neue leere Datei für den Export. Vorhandene Dateien werden nicht ersetzt.", "请选择新的空文件用于导出。不会替换任何现有文件。", "エクスポートには新しい空のファイルを選んでください。既存のファイルは置き換えません。"),
+        t("Impossible de vérifier le fichier d’export.", "Unable to verify the export file.", "No se puede verificar el archivo de exportación.", "Не удалось проверить файл экспорта.", "Die Exportdatei konnte nicht geprüft werden.", "无法检查导出文件。", "エクスポートファイルを確認できません。"),
+        t("Sur cet appareil", "On this device", "En este dispositivo", "На этом устройстве", "Auf diesem Gerät", "在此设备上", "この端末で"),
+        t("Fichier pour IA", "File for AI", "Archivo para IA", "Файл для ИИ", "Datei für KI", "交给 AI 的文件", "AI 用ファイル"),
+        t("Exportez les textes, faites traduire le fichier JSON par l’IA de votre choix, puis rechargez-le dans Astra.", "Export the text, ask your preferred AI to translate the JSON file, then import it into Astra.", "Exporta los textos, pide a la IA que elijas que traduzca el archivo JSON y vuelve a importarlo en Astra.", "Экспортируйте тексты, переведите JSON-файл с помощью выбранного ИИ и импортируйте его в Astra.", "Exportiere die Texte, lasse die JSON-Datei von einer KI deiner Wahl übersetzen und importiere sie wieder in Astra.", "导出文本，让你选择的 AI 翻译 JSON 文件，然后重新导入 Astra。", "テキストをエクスポートし、お好みの AI で JSON ファイルを翻訳してから Astra に読み込みます。"),
+        t("Modifiez uniquement les champs translation. Conservez les identifiants, les textes sources et les marqueurs ASTRA. Les instructions sont incluses dans le fichier.", "Edit only the translation fields. Keep IDs, source text and ASTRA markers unchanged. Instructions are included in the file.", "Modifica solo los campos translation. Conserva los identificadores, textos originales y marcadores ASTRA. El archivo incluye las instrucciones.", "Меняйте только поля translation. Сохраните идентификаторы, исходные тексты и маркеры ASTRA. Инструкции включены в файл.", "Ändere nur die Felder translation. Behalte IDs, Ausgangstexte und ASTRA-Marker bei. Die Anleitung steht in der Datei.", "只修改 translation 字段。保留标识符、原文和 ASTRA 标记。文件中包含操作说明。", "translation フィールドのみ編集してください。ID、原文、ASTRA マーカーは変更しないでください。手順はファイルに含まれています。"),
+        t("Aucun texte compatible trouvé. Vérifiez que le dossier data du jeu MV/MZ est accessible.", "No compatible text found. Check that the MV/MZ game's data folder is accessible.", "No se encontraron textos compatibles. Comprueba que la carpeta data del juego MV/MZ sea accesible.", "Совместимые тексты не найдены. Проверьте доступ к папке data игры MV/MZ.", "Keine kompatiblen Texte gefunden. Prüfe, ob der data-Ordner des MV/MZ-Spiels zugänglich ist.", "未找到兼容文本。请检查 MV/MZ 游戏的 data 文件夹是否可访问。", "対応するテキストが見つかりません。MV/MZ ゲームの data フォルダにアクセスできるか確認してください。"),
+        t("Actualiser", "Refresh", "Actualizar", "Обновить", "Aktualisieren", "刷新", "更新"),
+        t("Déplié", "Expanded", "Expandido", "Развёрнуто", "Ausgeklappt", "已展开", "展開済み"),
+        t("Replié", "Collapsed", "Contraído", "Свёрнуто", "Eingeklappt", "已折叠", "折りたたみ済み"),
+        t("Déplier", "Expand", "Expandir", "Развернуть", "Ausklappen", "展开", "展開"),
+        t("Replier", "Collapse", "Contraer", "Свернуть", "Einklappen", "折叠", "折りたたむ"),
+        t("Importer la traduction", "Import translation", "Importar traducción", "Импортировать перевод", "Übersetzung importieren", "导入翻译", "翻訳を読み込む"),
+        t("Exporter les textes", "Export text", "Exportar textos", "Экспортировать тексты", "Texte exportieren", "导出文本", "テキストをエクスポート"),
+        t("Appliquer le fichier traduit ?", "Apply the translated file?", "¿Aplicar el archivo traducido?", "Применить переведённый файл?", "Übersetzte Datei anwenden?", "应用翻译文件？", "翻訳したファイルを適用しますか？"),
+        t("Fermez le jeu. Astra vérifiera les textes et les commandes avant d’appliquer la traduction. Les originaux seront sauvegardés ; les champs translation vides resteront inchangés.", "Close the game. Astra will check text and commands before applying the translation. Originals will be backed up; empty translation fields will keep their original text.", "Cierra el juego. Astra verificará los textos y comandos antes de aplicar la traducción. Se guardarán los originales; los campos translation vacíos conservarán el texto original.", "Закройте игру. Astra проверит тексты и команды перед применением перевода. Оригиналы будут сохранены; пустые поля translation оставят исходный текст.", "Schließe das Spiel. Astra prüft Texte und Befehle vor dem Anwenden. Originale werden gesichert; leere translation-Felder behalten den Ausgangstext.", "请关闭游戏。Astra 会先检查文本和指令，再应用翻译。原文件将被备份；translation 字段为空的条目会保留原文。", "ゲームを終了してください。Astra は翻訳の適用前にテキストとコマンドを確認します。原本はバックアップされ、translation が空の項目は原文のまま残ります。"),
+        t("Vérifier et appliquer", "Check and apply", "Verificar y aplicar", "Проверить и применить", "Prüfen und anwenden", "检查并应用", "確認して適用"),
+        t("Export des textes", "Exporting text", "Exportando textos", "Экспорт текстов", "Texte werden exportiert", "正在导出文本", "テキストをエクスポート中"),
+        t("Fichier exporté. Faites traduire les champs translation, puis importez le JSON ici.", "File exported. Translate the translation fields, then import the JSON here.", "Archivo exportado. Traduce los campos translation e importa el JSON aquí.", "Файл экспортирован. Переведите поля translation и импортируйте JSON сюда.", "Datei exportiert. Übersetze die Felder translation und importiere die JSON-Datei hier.", "文件已导出。翻译 translation 字段后，在此导入 JSON。", "ファイルをエクスポートしました。translation フィールドを翻訳し、ここで JSON を読み込んでください。"),
+        t("Validation du fichier traduit", "Checking translated file", "Verificando el archivo traducido", "Проверка переведённого файла", "Übersetzte Datei wird geprüft", "正在检查翻译文件", "翻訳ファイルを確認中"),
+        t("Opération interrompue. Vous pouvez réessayer.", "Operation stopped. You can try again.", "Operación interrumpida. Puedes volver a intentarlo.", "Операция прервана. Можно повторить попытку.", "Vorgang unterbrochen. Du kannst es erneut versuchen.", "操作已中断。你可以重试。", "操作を中断しました。もう一度お試しいただけます。"),
+        t("Choisir un dossier", "Choose folder", "Elegir carpeta", "Выбрать папку", "Ordner auswählen", "选择文件夹", "フォルダを選択"),
+        t("Aucune sauvegarde détectée.", "No saves found.", "No se encontraron partidas guardadas.", "Сохранения не найдены.", "Keine Spielstände gefunden.", "未找到存档。", "セーブデータが見つかりません。"),
+        t("Éditer", "Edit", "Editar", "Изменить", "Bearbeiten", "编辑", "編集"),
+        t("Sauvegardes de sécurité", "Save backups", "Copias de seguridad", "Резервные копии сохранений", "Spielstand-Sicherungen", "存档备份", "セーブのバックアップ"),
+        t("Aucune sauvegarde de sécurité.", "No save backups yet.", "Aún no hay copias de seguridad.", "Резервных копий пока нет.", "Noch keine Spielstand-Sicherungen.", "暂无存档备份。", "セーブのバックアップはまだありません。"),
+        t("Restaurer cette sauvegarde ?", "Restore this save?", "¿Restaurar esta partida?", "Восстановить это сохранение?", "Diesen Spielstand wiederherstellen?", "恢复此存档？", "このセーブを復元しますか？"),
+        t("Fermez le jeu. La sauvegarde actuelle sera remplacée ; une copie de sécurité sera créée avant la restauration.", "Close the game. The current save will be replaced; a backup will be created before restoring.", "Cierra el juego. Se reemplazará la partida actual; se creará una copia de seguridad antes de restaurar.", "Закройте игру. Текущее сохранение будет заменено; перед восстановлением будет создана резервная копия.", "Schließe das Spiel. Der aktuelle Spielstand wird ersetzt; vorher wird eine Sicherung erstellt.", "请关闭游戏。当前存档将被替换；恢复前会先创建备份。", "ゲームを終了してください。現在のセーブを置き換える前に、バックアップを作成します。"),
+        t("Restaurer", "Restore", "Restaurar", "Восстановить", "Wiederherstellen", "恢复", "復元"),
+        t("Supprimer cette copie de sécurité ?", "Delete this backup?", "¿Eliminar esta copia de seguridad?", "Удалить эту резервную копию?", "Diese Sicherung löschen?", "删除此备份？", "このバックアップを削除しますか？"),
+        t("Ren'Py peut demander de confirmer le chargement après modification.", "Ren'Py may ask you to confirm loading after an edit.", "Ren'Py puede pedir que confirmes la carga después de editar.", "После изменения Ren'Py может запросить подтверждение загрузки.", "Ren'Py kann nach einer Änderung eine Bestätigung beim Laden verlangen.", "修改后，Ren'Py 可能会要求确认加载。", "編集後、Ren'Py が読み込みの確認を求める場合があります。"),
+        t("Avancé", "Advanced", "Avanzado", "Расширенный", "Erweitert", "高级", "詳細"),
+        t("Inventaire", "Inventory", "Inventario", "Инвентарь", "Inventar", "物品栏", "所持品"),
+        t("Relations", "Relationships", "Relaciones", "Отношения", "Beziehungen", "关系", "関係"),
+        t("Progression", "Progress", "Progreso", "Прогресс", "Fortschritt", "进度", "進行状況"),
+        t("Variables", "Variables", "Variables", "Переменные", "Variablen", "变量", "変数"),
+        t("Switches", "Switches", "Interruptores", "Переключатели", "Schalter", "开关", "スイッチ"),
+        t("Aucune valeur reconnue automatiquement. Passez en mode avance.", "No values recognized automatically. Switch to advanced mode.", "No se reconocieron valores automáticamente. Cambia al modo avanzado.", "Значения не распознаны автоматически. Перейдите в расширенный режим.", "Keine Werte automatisch erkannt. Wechsle zum erweiterten Modus.", "未自动识别出数值。请切换到高级模式。", "値を自動認識できませんでした。詳細モードに切り替えてください。"),
+        t("Abandonner les modifications ?", "Discard changes?", "¿Descartar los cambios?", "Отменить изменения?", "Änderungen verwerfen?", "放弃修改？", "変更を破棄しますか？"),
+        t("Les modifications non enregistrées seront perdues.", "Unsaved changes will be lost.", "Los cambios sin guardar se perderán.", "Несохранённые изменения будут потеряны.", "Ungespeicherte Änderungen gehen verloren.", "未保存的修改将会丢失。", "保存していない変更は失われます。"),
+        t("Abandonner", "Discard", "Descartar", "Отменить", "Verwerfen", "放弃", "破棄"),
+        t("Continuer à modifier", "Keep editing", "Seguir editando", "Продолжить редактирование", "Weiter bearbeiten", "继续编辑", "編集を続ける"),
+        t("Supprimer les tags sélectionnés ?", "Delete selected tags?", "¿Eliminar las etiquetas seleccionadas?", "Удалить выбранные теги?", "Ausgewählte Tags löschen?", "删除所选标签？", "選択したタグを削除しますか？"),
+        t("Les tags seront retirés de tous les jeux associés.", "The tags will be removed from all linked games.", "Las etiquetas se quitarán de todos los juegos asociados.", "Теги будут удалены из всех связанных игр.", "Die Tags werden von allen zugehörigen Spielen entfernt.", "这些标签将从所有关联游戏中移除。", "関連するすべてのゲームからタグを削除します。"),
+        t("Backup restaure, version precedente conservee", "Backup restored; previous save kept", "Copia restaurada; partida anterior conservada", "Копия восстановлена; предыдущее сохранение оставлено", "Sicherung wiederhergestellt; vorheriger Spielstand behalten", "已恢复备份，之前的存档已保留", "バックアップを復元し、以前のセーブを保持しました"),
+        t("Backup supprime", "Backup deleted", "Copia eliminada", "Резервная копия удалена", "Sicherung gelöscht", "备份已删除", "バックアップを削除しました"),
+        t("Extraction des textes", "Extracting text", "Extrayendo textos", "Извлечение текстов", "Texte werden extrahiert", "正在提取文本", "テキストを抽出中"),
+        t("Vérification du fichier traduit", "Checking translated file", "Verificando el archivo traducido", "Проверка переведённого файла", "Übersetzte Datei wird geprüft", "正在检查翻译文件", "翻訳ファイルを確認中"),
+        t("Expérience", "Experience", "Experiencia", "Опыт", "Erfahrung", "经验", "経験値"),
+        t("PV", "HP", "PV", "ОЗ", "LP", "生命值", "HP"),
+        t("PM", "MP", "PM", "ОМ", "MP", "魔法值", "MP"),
+        t("Exportez vers un nouveau fichier, hors du dossier data et des sauvegardes du jeu.", "Export to a new file outside the game's data and save folders.", "Exporta a un archivo nuevo fuera de las carpetas data y de guardados del juego.", "Экспортируйте в новый файл вне папок data и сохранений игры.", "Exportiere in eine neue Datei außerhalb der data- und Spielstandordner.", "请导出为新文件，并保存在游戏的 data 和存档文件夹之外。", "ゲームの data フォルダとセーブフォルダ以外に、新しいファイルとしてエクスポートしてください。"),
         t("Astra est verrouillé", "Astra is locked", "Astra está bloqueado", "Astra заблокирован", "Astra ist gesperrt", "Astra 已锁定", "Astra はロック中です"),
         t("Déverrouiller Astra", "Unlock Astra", "Desbloquear Astra", "Разблокировать Astra", "Astra entsperren", "解锁 Astra", "Astra のロックを解除"),
         t("Déverrouiller", "Unlock", "Desbloquear", "Разблокировать", "Entsperren", "解锁", "ロック解除"),
@@ -79,7 +140,6 @@ object AppLocalizer {
         t("Activité", "Activity", "Actividad", "Активность", "Aktivität", "动态", "アクティビティ"),
         t("Reprendre", "Continue playing", "Continuar", "Продолжить", "Weiterspielen", "继续游玩", "プレイを再開"),
         t("Sources", "Sources", "Fuentes", "Источники", "Quellen", "来源", "ソース"),
-        t("Nom du jeu copié", "Game name copied", "Nombre del juego copiado", "Название игры скопировано", "Spielname kopiert", "已复制游戏名称", "ゲーム名をコピーしました"),
         t("Traduction partielle appliquée", "Partial translation applied", "Traducción parcial aplicada", "Частичный перевод применён", "Teilübersetzung angewendet", "已应用部分翻译", "部分的な翻訳を適用しました"),
         t("Accueil", "Home", "Inicio", "Главная", "Start", "主页", "ホーム"),
         t("Jeux", "Games", "Juegos", "Игры", "Spiele", "游戏", "ゲーム"),
@@ -556,6 +616,19 @@ object AppLocalizer {
     private fun dynamicPattern(pattern: String): Regex = dynamicPatterns.getOrPut(pattern) { Regex(pattern) }
 
     private fun translateDynamic(source: String, language: AppLanguage): String? {
+        val recoveryPrefix = "La restauration a échoué et le retour arrière est incomplet. Les copies originales sont conservées pour récupération. Ne désinstallez pas Astra. Dossier :"
+        if (source.startsWith("$recoveryPrefix ")) return "${text(recoveryPrefix, language)} ${source.removePrefix("$recoveryPrefix ")}"
+        dynamicPattern("^Original : (.*)$").matchEntire(source)?.groupValues?.get(1)?.let { original ->
+            return when (language) {
+                AppLanguage.ENGLISH -> "Original: $original"
+                AppLanguage.SPANISH -> "Original: $original"
+                AppLanguage.RUSSIAN -> "Исходное: $original"
+                AppLanguage.GERMAN -> "Original: $original"
+                AppLanguage.CHINESE -> "原值：$original"
+                AppLanguage.JAPANESE -> "元の値: $original"
+                AppLanguage.FRENCH -> source
+            }
+        }
         fun count(pattern: Regex, value: (Int) -> String): String? = pattern.matchEntire(source)?.groupValues?.get(1)?.toIntOrNull()?.let(value)
         count(dynamicPattern("(\\d+) colonnes")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number columns"; AppLanguage.SPANISH -> "$number columnas"; AppLanguage.RUSSIAN -> "$number столбцов"; AppLanguage.GERMAN -> "$number Spalten"; AppLanguage.CHINESE -> "$number 列"; AppLanguage.JAPANESE -> "$number 列"; AppLanguage.FRENCH -> source
@@ -723,7 +796,7 @@ object AppLocalizer {
     }
 }
 
-/** Drop-in text wrapper used by the Compose UI so existing user data is never translated. */
+/** Localizes app labels. Render titles, paths and other user-authored data with MaterialText. */
 @Composable
 internal fun Text(
     text: String,

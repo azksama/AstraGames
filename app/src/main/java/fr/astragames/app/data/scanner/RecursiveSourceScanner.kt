@@ -100,6 +100,7 @@ class RecursiveSourceScanner(
 
         suspend fun walk(directory: DocumentFile, relativePath: String, depth: Int) {
             coroutineContext.ensureActive()
+            require(depth <= 128 && visited.size < 100_000) { "Source trop profonde ou trop volumineuse : limitez le dossier à analyser." }
             if (!visited.add(directory.uri.toString())) return
             if (source.maxDepth != null && depth > source.maxDepth) return
             val deletedGame = dao.findDeletedGameByDocumentUri(directory.uri.toString())
@@ -135,7 +136,10 @@ class RecursiveSourceScanner(
                 visitedFolders = visited.size,
                 foundGames = found
             )
-            val children = runCatching { directory.listFiles().toList() }.getOrElse {
+            val children = runCatching {
+                check(directory.canRead()) { "Accès au dossier refusé" }
+                directory.listFiles().toList()
+            }.getOrElse {
                 val message = "Lecture impossible: ${directory.name ?: relativePath}"
                 errors += message
                 reportItems += ScanReportItem(
