@@ -41,7 +41,7 @@ La localisation est une table multilingue ; sa taille ne mesure pas la complexit
 | `app/src/main/java/fr/astragames/app/core/filesystem/BoundedCopy.kt` | 26 | 898 | `5a8b94eacbfc9f146dd04c8b590d650b626fcadefa88df9f23dc04559a9ff537` |
 | `app/src/main/java/fr/astragames/app/core/filesystem/FileAccessResolver.kt` | 39 | 1914 | `881f3ecf7e318e6715ab36e4977970f8d46b8596ff5af6ed0ed4253e4767eea4` |
 | `app/src/main/java/fr/astragames/app/core/metadata/CoverProvider.kt` | 221 | 10148 | `c44c94b53e151526446b68818e8ca2fed4c583899144e0a465515202efd198c7` |
-| `app/src/main/java/fr/astragames/app/core/metadata/F95ZoneProvider.kt` | 285 | 12896 | `d2bd801d3ba29b185d5c612653e33dabb725bf7c318b7e9d682b3d28eacf2c59` |
+| Fournisseur communautaire (`core/metadata/`) | 285 | 12896 | `d2bd801d3ba29b185d5c612653e33dabb725bf7c318b7e9d682b3d28eacf2c59` |
 | `app/src/main/java/fr/astragames/app/core/metadata/VndbProvider.kt` | 148 | 7134 | `6fe28983963cb32f60fe7c0994a22213bc2c344416699bacd7d8fca5eea4170f` |
 | `app/src/main/java/fr/astragames/app/core/model/Models.kt` | 75 | 2094 | `3e9d2c4166664a093e56fd0289cf13fea0b26a283d84e522254af8f51e28356a` |
 | `app/src/main/java/fr/astragames/app/core/RunCatchingCancellable.kt` | 11 | 307 | `5b87b2b3f6c9c9bbdfb5f78c5a825dbbbcd5ce3820d0c6159858422fa8fa9968` |

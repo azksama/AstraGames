@@ -17,7 +17,7 @@ Cette version réunit la revue globale du 19 septembre et les ajustements de nav
 - Correction des conjonctions FTS4, des groupes de doublons et de la synchronisation des versions recherchables.
 - Scanner transactionnel, annulation et scans concurrents mieux gérés.
 - Contrôle des mods avant suppression groupée, erreurs présentées à l’utilisateur.
-- Métadonnées F95/VNDB et état des mises à jour fiabilisés.
+- Métadonnées communautaires, VNDB et état des mises à jour fiabilisés.
 - Améliorations de navigation, localisation, accessibilité, thèmes et outils décrites dans `docs/AUDIT_2026-09-19.md`.
 
 ## Validation
@@ -34,4 +34,4 @@ Cette version réunit la revue globale du 19 septembre et les ajustements de nav
 - `astra-1.6.3-sources.zip` : sources correspondant au commit publié.
 - `SHA256SUMS.txt` : empreintes des fichiers distribués.
 
-Les essais sur émulateur ne remplacent pas les vérifications sur téléphone physique, avec des jeux réels sous JoiPlay ou des comptes F95 authentifiés.
+Les essais sur émulateur ne remplacent pas les vérifications sur téléphone physique, avec des jeux réels sous JoiPlay ou des comptes communautaires authentifiés.

@@ -12,7 +12,7 @@ Base examinée : `2fe2ae0` (1.9.0). Revue statique et corrections du stockage, d
 | P1 | La désinstallation d'un mod concaténait un identifiant issu du catalogue dans un `deleteRecursively`, et lisait un backup sans confinement. | Identifiant d'installation validé avant l'opération ; fichier backup canonique strictement sous `mod-backups`. |
 | P2 | Les ZIP de mods pouvaient décompresser le contenu d'une entrée répertoire sans le compter dans le quota ; une entrée normale allouait jusqu'à 200 Mio. | Copie par blocs et budget total incluant les répertoires, sans tableau mémoire de la taille d'une entrée. |
 | P2 | L'extraction de catalogue acceptait des chemins avec `..` tant qu'ils restaient dans le staging ; des noms distincts pouvaient aliaser la même cible. | Nouveau `BackupArchive` : allowlist des dossiers, rejet traversal et doublons sans distinction de casse, extraction en flux, limite totale y compris les répertoires. |
-| P2 | PIN et cookies chiffrés étaient inclus dans Auto Backup, alors que leur clé Keystore ne migre pas. | Exclusion du fichier DataStore dans les règles Android anciennes/nouvelles et le transfert entre appareils. Sur une nouvelle installation, préférences/PIN/session F95 sont à reconfigurer ; le catalogue reste sauvegardé. |
+| P2 | PIN et cookies chiffrés étaient inclus dans Auto Backup, alors que leur clé Keystore ne migre pas. | Exclusion du fichier DataStore dans les règles Android anciennes/nouvelles et le transfert entre appareils. Sur une nouvelle installation, préférences/PIN/session communautaire sont à reconfigurer ; le catalogue reste sauvegardé. |
 | P2 | Fusionner deux tags présents sur le même jeu violait la clé composée `(gameId, tagId)`. | Insertion des références avec `OR IGNORE`, suppression des anciennes références et du tag dans une transaction. |
 | P2 | Les opérations sur de grandes sélections/sources dépassaient les limites de paramètres SQL de certaines versions SQLite. | Lots de 900 identifiants pour suppression de source/tags, favoris, dossiers et catégories. |
 | P2 | Manifestes mods, fichiers de tags et réponses VNDB/JoiPlay étaient lus sans limite. | Limites respectives 1, 4, 4 et 2 Mio avant interprétation. |
@@ -30,7 +30,7 @@ Base examinée : `2fe2ae0` (1.9.0). Revue statique et corrections du stockage, d
 |---|---|
 | Initialisation | `AstraApplication.kt`, `MainActivity.kt` |
 | Fichiers/sécurité | `core/filesystem/FileAccessResolver.kt`, `core/filesystem/BoundedCopy.kt`, `core/security/KeystoreCrypto.kt`, `core/RunCatchingCancellable.kt` |
-| Métadonnées | `core/metadata/CoverProvider.kt`, `F95ZoneProvider.kt`, `VndbProvider.kt` |
+| Métadonnées | `core/metadata/CoverProvider.kt`, fournisseur communautaire, `VndbProvider.kt` |
 | Recherche/modèle/collections | `core/search/DuplicateDetector.kt`, `EditDistance.kt`, `SearchParser.kt`, `TagMatcher.kt`, `TextTagParser.kt`, `core/model/Models.kt`, `core/collections/SmartCollectionEvaluator.kt` |
 | Catalogue | `data/local/AstraDao.kt`, `AstraDatabase.kt`, `Entities.kt`, `data/repository/GameRepository.kt` |
 | Backups/mods | `data/backup/BackupManager.kt`, `BackupArchive.kt`, `data/mods/ModArchive.kt`, `ModModels.kt`, `ModsManager.kt` |
@@ -62,7 +62,7 @@ Base examinée : `2fe2ae0` (1.9.0). Revue statique et corrections du stockage, d
 - Les preuves natives concernent l’émulateur Android et les fixtures de test. Aucun téléphone physique, jeu ou runtime JoiPlay réel, fournisseur SAF distant ni environnement de production n'a été validé. Les restaurations Auto Backup entre installations et les comportements de fournisseurs tiers ne sont pas couverts par cette suite.
 - Les `.astra` chiffrés restent liés à la clé Keystore de l'installation ; ils ne sont pas un format portable après désinstallation/changement d'appareil. Le complément AST2 ci-dessous supprime les buffers complets pour les nouveaux exports ; la lecture des anciens AST1 conserve le buffer proportionnel à l'archive du provider Android.
 - Les écritures de fichiers multi-documents SAF ne peuvent pas être rendues atomiques par Room. Les backups/journaux limitent les pertes, mais un arrêt du processus pendant une opération ou un fournisseur qui refuse également le rollback nécessite une restauration explicite.
-- Les téléchargements HTTPS et cookies F95 ont été relus, sans connexion personnelle ni validation de l'état fournisseur. La vérification de signatures APK JoiPlay demanderait une empreinte officielle fiable ; le filtrage des packages empêche l'interception par un package tiers mais ne prouve pas l'origine d'un APK usurpant le package attendu.
+- Les téléchargements HTTPS et cookies de session ont été relus, sans connexion personnelle ni validation de l'état fournisseur. La vérification de signatures APK JoiPlay demanderait une empreinte officielle fiable ; le filtrage des packages empêche l'interception par un package tiers mais ne prouve pas l'origine d'un APK usurpant le package attendu.
 - Exclusions de revue directe de ce volet : `ui/`, `translation/`, `data/saves/` et leurs nouveaux tests (autres volets), contenus binaires, images/fonts et artefacts générés/Gradle/build. Ce rapport core seul ne doit pas être décrit comme l'audit intégral de l'interface ou des codecs.
 
 ## Complément : mémoire des archives chiffrées
