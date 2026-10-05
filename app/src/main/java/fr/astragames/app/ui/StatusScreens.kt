@@ -60,9 +60,9 @@ internal fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel, onBack: 
                                         color = MaterialTheme.colorScheme.primary
                                     )
                                 }
-                                update.game.f95Url?.let { url ->
+                                (update.game.f95Url ?: update.game.ryuugamesUrl)?.let { url ->
                                     IconButton(onClick = { uriHandler.openUri(url) }) {
-                                        Icon(Icons.AutoMirrored.Filled.OpenInNew, AppLocalizer.text("Ouvrir le thread F95Zone"))
+                                        Icon(Icons.AutoMirrored.Filled.OpenInNew, AppLocalizer.text("Ouvrir la fiche du jeu"))
                                     }
                                 }
                                 IconButton(onClick = { vm.acknowledgeGameUpdate(update.game.id) }) {

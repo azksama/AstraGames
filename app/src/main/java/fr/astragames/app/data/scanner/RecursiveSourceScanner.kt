@@ -235,6 +235,7 @@ class RecursiveSourceScanner(
                     productCode = existing?.productCode ?: normalized.productCode,
                     language = existing?.language,
                     f95Url = existing?.f95Url,
+                    ryuugamesUrl = existing?.ryuugamesUrl,
                     releaseDate = existing?.releaseDate,
                     dateAdded = existing?.dateAdded ?: now,
                     lastModified = directory.lastModified(),

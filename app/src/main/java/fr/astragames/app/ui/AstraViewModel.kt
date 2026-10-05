@@ -20,6 +20,7 @@ import fr.astragames.app.core.model.ThemeMode
 import fr.astragames.app.core.model.ScanReport
 import fr.astragames.app.core.metadata.CoverCandidate
 import fr.astragames.app.core.metadata.F95Session
+import fr.astragames.app.core.metadata.MetadataSource
 import fr.astragames.app.core.search.DuplicateDetector
 import fr.astragames.app.data.local.AuditEventEntity
 import fr.astragames.app.data.local.DeletedGameEntity
@@ -90,6 +91,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 8)
     internal val translation = GameTranslationController(app, viewModelScope, beforeExternalPicker = { ignoreNextRelock = true })
     val tools = GameToolsController(app, viewModelScope, events) { ignoreNextRelock = true }
+    internal val appUpdates get() = app.updates
     private val mutableCoverSearch = MutableStateFlow(
         CoverSearchState(configured = app.container.covers.configured)
     )
@@ -107,7 +109,6 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val isLocked: StateFlow<Boolean> = locked
     private val playHistory = dao.observePlayHistory(200)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), emptyList())
-    private var backgrounded = false
     private var ignoreNextRelock = false
     private val runtimeManager = JoiPlayRuntimeManager()
     private val metadataRefresh = MutableStateFlow(MetadataRefreshState())
@@ -645,40 +646,45 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun fetchF95Metadata(gameId: String, url: String): Job {
         f95ImportJob?.cancel()
         val previous = mutableF95Import.value.takeIf { it.gameId == gameId } ?: F95ImportState(gameId = gameId)
+        val source = previous.source
         mutableF95Import.value = previous.copy(loading = true, metadata = null, error = null)
         return viewModelScope.launch {
             runCatchingCancellable {
-                val metadata = app.container.f95Zone.fetch(url)
+                val metadata = when (source) {
+                    MetadataSource.F95ZONE -> app.container.f95Zone.fetch(url)
+                    MetadataSource.RYUUGAMES -> app.container.ryuugames.fetch(url)
+                }
                 ensureActive()
-                repository.setF95Url(gameId, metadata.sourceUrl)
+                if (source == MetadataSource.F95ZONE) repository.setF95Url(gameId, metadata.sourceUrl)
+                else repository.setRyuugamesUrl(gameId, metadata.sourceUrl)
                 repository.applyAutomaticMetadata(
-                    gameId = gameId, originalTitle = null, developer = null, description = null,
-                    f95Url = metadata.sourceUrl, version = metadata.version, language = metadata.language
+                    gameId = gameId, originalTitle = metadata.originalTitle, developer = metadata.developer, description = metadata.description,
+                    f95Url = metadata.sourceUrl.takeIf { source == MetadataSource.F95ZONE }, version = metadata.version, language = metadata.language
                 )
                 metadata
             }.onSuccess { metadata ->
                 mutableF95Import.value = mutableF95Import.value.copy(loading = false, metadata = metadata, error = null)
             }.onFailure { error ->
                 mutableF95Import.value = mutableF95Import.value.copy(
-                    loading = false, error = error.message ?: "Import F95Zone impossible."
+                    loading = false, error = error.message ?: "Import des métadonnées impossible."
                 )
             }
         }.also { f95ImportJob = it }
     }
 
-    fun prepareF95Search(gameId: String, title: String): Job {
+    fun prepareF95Search(gameId: String, title: String, source: MetadataSource = MetadataSource.F95ZONE): Job {
         f95ImportJob?.cancel()
-        mutableF95Import.value = F95ImportState(gameId = gameId)
+        mutableF95Import.value = F95ImportState(gameId = gameId, source = source)
         return viewModelScope.launch {
             val searchEngine = settingsRepository.settings.first().searchEngine
             mutableF95Import.value = mutableF95Import.value.copy(
-                browserUrl = app.container.f95Zone.searchUrl(title, searchEngine), searchEngine = searchEngine
+                browserUrl = source.searchUrl(title, searchEngine), searchEngine = searchEngine
             )
         }.also { f95ImportJob = it }
     }
     fun applyF95Tags(gameId: String, selectedTags: Set<String>) = viewModelScope.launch {
-        val imported = repository.importF95Tags(gameId, selectedTags)
-        events.emit(UiEvent.Message("$imported tag(s) F95Zone associé(s) au jeu"))
+        val imported = repository.importSourceTags(gameId, selectedTags, mutableF95Import.value.source.label)
+        events.emit(UiEvent.Message("$imported tag(s) associé(s) au jeu"))
         if (mutableF95Import.value.gameId == gameId) clearF95Import()
     }
     fun chooseF95Cover(gameId: String, candidate: CoverCandidate) = chooseRemoteCover(gameId, candidate)
@@ -849,9 +855,9 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         if (mutableUpdatesChecking.value) return@launch
         mutableUpdatesChecking.value = true
         try {
-            val candidates = repository.games.first().filter { !it.f95Url.isNullOrBlank() }
+            val candidates = repository.games.first().filter { !it.f95Url.isNullOrBlank() || !it.ryuugamesUrl.isNullOrBlank() }
             if (candidates.isEmpty()) {
-                events.emit(UiEvent.Message("Aucun jeu lié à un thread F95Zone"))
+                events.emit(UiEvent.Message("Aucun jeu lié à une source de métadonnées"))
                 return@launch
             }
             val candidateIds = candidates.mapTo(hashSetOf()) { it.id }
@@ -859,9 +865,9 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                 .filterKeys { it in candidateIds }.toMutableMap()
             var failures = 0
             candidates.forEachIndexed { index, game ->
-                val url = game.f95Url ?: return@forEachIndexed
                 val latest = try {
-                    app.container.f95Zone.fetchVersion(url)
+                    game.f95Url?.let { app.container.f95Zone.fetchVersion(it) }
+                        ?: game.ryuugamesUrl?.let { app.container.ryuugames.fetch(it).version }
                 } catch (error: CancellationException) {
                     throw error
                 } catch (error: Exception) {
@@ -1144,14 +1150,13 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
 
     fun onAppResumed() {
         finishActivePlaySession()
-        if (backgrounded && !ignoreNextRelock) {
+        if (app.visibility.consumeBackground() && !ignoreNextRelock) {
             val settings = uiState.value.settings
             if (settings.lockOnBackground && (settings.lockBiometricEnabled || settings.lockPinEnabled)) locked.value = true
         }
         ignoreNextRelock = false
-        backgrounded = false
     }
 
-    fun onAppBackgrounded() { backgrounded = true }
+    fun prepareExternalPicker() { ignoreNextRelock = true }
 
 }

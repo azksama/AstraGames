@@ -171,6 +171,11 @@ internal fun GameDetailScreen(
                         }
                     }
                 }
+                item.ryuugamesUrl?.let { url -> item {
+                    OutlinedButton(onClick = { uriHandler.openUri(url) }, Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
+                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir la fiche Ryuugames")
+                    }
+                } }
                 if (!item.description.isNullOrBlank()) item {
                     Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp)) {
                         ExpandableDetailSection("Description", descriptionExpanded, { descriptionExpanded = !descriptionExpanded }) {
@@ -225,7 +230,7 @@ internal fun GameDetailScreen(
         onPickCover(item.id); pickCover = false
     }, { vm.removeCover(item.id); pickCover = false }, { pickCover = false; vm.clearCoverSearch() })
     if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, state.settings.openSearchInExternalBrowser, state.settings.f95SessionUser, { vm.fetchF95Metadata(item.id, it) }, {
-        vm.prepareF95Search(item.id, item.title)
+        vm.prepareF95Search(item.id, item.title, it)
     }, { tags, image ->
         vm.applyF95Tags(item.id, tags)
         image?.let { vm.chooseF95Cover(item.id, it) }

@@ -131,7 +131,8 @@ class BackupAndroidTest {
         val game = GameEntity(
             id = "backup-game", title = "Backup Android", documentUri = gameFolder.uri.toString(), physicalPath = null,
             executableName = "Game.exe", engine = "RPG_MAKER_MV", launcher = "JOIPLAY", sourceId = "backup-source",
-            dateAdded = 1, lastModified = 1, fingerprint = "backup-fixture"
+            dateAdded = 1, lastModified = 1, fingerprint = "backup-fixture",
+            f95Url = "https://f95zone.to/threads/42/", ryuugamesUrl = "https://www.ryuugames.com/example/"
         )
         dao.upsertSource(GameSourceEntity(game.sourceId, "Backup fixture", treeUri.toString()))
         dao.upsertGame(game)
@@ -170,6 +171,8 @@ class BackupAndroidTest {
         dao.deleteGameCompletely(game.id)
         manager.restore(exported.uri)
         assertEquals(game.title, dao.getGame(game.id)!!.title)
+        assertEquals(game.f95Url, dao.getGame(game.id)!!.f95Url)
+        assertEquals(game.ryuugamesUrl, dao.getGame(game.id)!!.ryuugamesUrl)
         assertEquals(1, dao.getSaveLocations(game.id).size)
         assertEquals(1, dao.getSaveBackupsForSource(sourceUri).size)
         assertEquals(savedOriginal, backupFile.readText())

@@ -19,11 +19,22 @@ import fr.astragames.app.worker.GameUpdatesWorker
 import fr.astragames.app.worker.JoiPlayUpdateWorker
 
 class AstraApplication : Application() {
+    internal val updates by lazy { fr.astragames.app.updates.AppUpdateManager(this) }
+    val visibility = fr.astragames.app.core.security.AppVisibility()
     lateinit var container: AppContainer
         private set
 
     override fun onCreate() {
         super.onCreate()
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityStarted(activity: android.app.Activity) = visibility.started()
+            override fun onActivityStopped(activity: android.app.Activity) = visibility.stopped(activity.isChangingConfigurations)
+            override fun onActivityCreated(activity: android.app.Activity, state: android.os.Bundle?) = Unit
+            override fun onActivityResumed(activity: android.app.Activity) = Unit
+            override fun onActivityPaused(activity: android.app.Activity) = Unit
+            override fun onActivitySaveInstanceState(activity: android.app.Activity, state: android.os.Bundle) = Unit
+            override fun onActivityDestroyed(activity: android.app.Activity) = Unit
+        })
         val database = AstraDatabase.create(this)
         val resolver = FileAccessResolver(this)
         val scanner = RecursiveSourceScanner(this, database.dao(), resolver)
@@ -34,6 +45,7 @@ class AstraApplication : Application() {
             launcher = JoiPlayLauncher(),
             covers = SearchCoverProvider(this),
             f95Zone = F95ZoneProvider(),
+            ryuugames = fr.astragames.app.core.metadata.RyuugamesProvider(),
             vndb = VndbProvider(),
             joiPlayCatalog = JoiPlayCatalogProvider(),
             saveManager = SaveManager(this, database.dao(), finder),
@@ -41,6 +53,7 @@ class AstraApplication : Application() {
             dao = database.dao()
         )
         JoiPlayUpdateWorker.schedule(this)
+        fr.astragames.app.updates.AppUpdateWorker.schedule(this, updates.state.value.automatic, updates.state.value.wifiOnly)
 
     }
 }
@@ -51,6 +64,7 @@ data class AppContainer(
     val launcher: JoiPlayLauncher,
     val covers: SearchCoverProvider,
     val f95Zone: F95ZoneProvider,
+    val ryuugames: fr.astragames.app.core.metadata.RyuugamesProvider,
     val vndb: VndbProvider,
     val joiPlayCatalog: JoiPlayCatalogProvider,
     val saveManager: SaveManager,

@@ -17,8 +17,8 @@ android {
         applicationId = "fr.astragames.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 27
-        versionName = "1.10.0"
+        versionCode = 28
+        versionName = "1.11.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -44,6 +44,7 @@ android {
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
     testOptions.unitTests.isIncludeAndroidResources = true
     sourceSets.getByName("main").res.srcDir(layout.buildDirectory.dir("generated/astraIconRes"))
+    sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 }
 
 val prepareAstraIcon by tasks.registering(Copy::class) {

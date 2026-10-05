@@ -5,7 +5,7 @@ Le mode manuel concerne les jeux **RPG Maker MV et MZ**. Il fonctionne sans comp
 ## Parcours
 
 1. Fermez le jeu et ouvrez sa fiche dans Astra, puis **Outils → Traduire → Fichier pour IA**.
-2. Choisissez la langue d’origine et la langue souhaitée. Si une traduction est déjà appliquée, utilisez d’abord **Restaurer les originaux**.
+2. Touchez **Analyser les textes**, puis choisissez la langue d’origine et la langue souhaitée. Un résultat terminé est conservé pour la prochaine ouverture ; **Actualiser l’analyse** le renouvelle à votre demande. Si une traduction est déjà appliquée, utilisez d’abord **Restaurer les originaux**.
 3. Touchez **Exporter les textes** et créez un nouveau fichier JSON hors du dossier `data` du jeu, par exemple dans Documents. Une destination contenant déjà des données est refusée pour éviter tout écrasement.
 4. Donnez le fichier à l’IA avec le prompt ci-dessous. Demandez un fichier JSON complet, en UTF-8. Ne supprimez pas les entrées que l’IA ne peut pas traduire : laissez leur `translation` vide.
 5. Revenez au même jeu dans Astra, touchez **Importer la traduction**, choisissez le fichier retourné et **Vérifier et appliquer**.

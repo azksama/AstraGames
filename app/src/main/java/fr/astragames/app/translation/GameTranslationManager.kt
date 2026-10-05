@@ -47,10 +47,20 @@ internal class GameTranslationManager(
         val files = SafTranslationFiles(context, dir)
         val installed = TranslationPatch(files).exists()
         if (installed) return@withContext TranslationAnalysis(0, 0, 0, true, TranslationPatch(files).preservedFragments())
-        val documents = load(dir, files)
+        val documents = load(game, dir, files)
         val texts = documents.flatMap { it.texts }.distinct()
         TranslationAnalysis(documents.size, texts.size, texts.sumOf { it.length }, false)
     }
+
+    /** No extraction or game JSON reads here: only cached counts and the recovery journal. */
+    suspend fun savedAnalysis(game: GameEntity): TranslationAnalysis? = withContext(Dispatchers.IO) {
+        val saved = analysisCache(game).summary()
+        val patch = TranslationPatch(SafTranslationFiles(context, dataDir(game, requireWrite = false)))
+        if (patch.exists()) (saved ?: TranslationAnalysis(0, 0, 0, true)).copy(installed = true, preservedFragments = patch.preservedFragments())
+        else saved
+    }
+
+    private fun analysisCache(game: GameEntity) = TranslationAnalysisCache(File(context.noBackupFilesDir, "text-analysis/v1"), game)
 
     suspend fun translate(
         game: GameEntity, source: String, target: String, wifiOnly: Boolean,
@@ -63,7 +73,7 @@ internal class GameTranslationManager(
         val patch = TranslationPatch(files)
         check(!patch.exists()) { "Restaurez les originaux avant une nouvelle traduction." }
         progress(TranslationProgress("Analyse des textes"))
-        val documents = load(dir, files)
+        val documents = load(game, dir, files)
         val originalTexts = documents.flatMap { it.texts }.distinct()
         val protectedGroups = protectedActorNameGroups(documents)
         val translatableTexts = documents.flatMap { it.entries }.filterNot { it.identityGroup in protectedGroups }.map { it.text }.distinct()
@@ -118,7 +128,7 @@ internal class GameTranslationManager(
         val dir = dataDir(game, requireWrite = false)
         val files = SafTranslationFiles(context, dir)
         check(!TranslationPatch(files).exists()) { "Restaurez les originaux avant d’exporter leurs textes." }
-        val documents = load(dir, files)
+        val documents = load(game, dir, files)
         val bytes = ManualTranslationBundle.export(game.id, game.title, game.engine, source, target, documents)
         currentCoroutineContext().ensureActive()
         verifyExportDestination(dir, destination)
@@ -143,7 +153,7 @@ internal class GameTranslationManager(
         val bytes = context.contentResolver.openInputStream(source)?.use { readTranslationBytes(it, ManualTranslationBundle.MAX_BYTES) }
             ?: error("Impossible de lire le fichier traduit.")
         currentCoroutineContext().ensureActive()
-        val documents = load(dir, files)
+        val documents = load(game, dir, files)
         val imported = ManualTranslationBundle.import(bytes, game.id, game.engine, documents)
         val changes = changes(documents, files, imported.replacements)
         currentCoroutineContext().ensureActive()
@@ -204,19 +214,25 @@ internal class GameTranslationManager(
         else TranslationPatch.Change(snapshot.name, original, RpgTextDocument(snapshot.name, original).translatedEntries(dictionary))
     }
 
-    private suspend fun load(dir: DocumentFile, files: TranslationFiles): List<TranslationSnapshot> {
+    private suspend fun load(game: GameEntity, dir: DocumentFile, files: TranslationFiles): List<TranslationSnapshot> {
         val names = dir.listFiles().filter { it.isFile && RpgTextDocument.accepts(it.name.orEmpty()) }.map { it.name!! }.sorted()
         require(names.size in 1..2000) { "Aucun fichier RPG Maker lisible, ou trop de fichiers." }
         require(names.distinct().size == names.size) { "Le dossier contient des fichiers de données portant le même nom." }
+        val cache = analysisCache(game)
+        val cached = cache.snapshots()
         var total = 0L
-        return names.map { name ->
+        val documents = names.map { name ->
             currentCoroutineContext().ensureActive()
             val bytes = files.read(name) ?: error("Fichier inaccessible : $name")
             total += bytes.size
             require(total <= 64L * 1024 * 1024) { "Les textes du jeu dépassent la limite de 64 Mo." }
             // Release map tile arrays and other non-text JSON data between files.
-            TranslationSnapshot(name, textHash(bytes), RpgTextDocument(name, bytes).entries)
+            val hash = textHash(bytes)
+            cached[name]?.takeIf { it.hash == hash } ?: TranslationSnapshot(name, hash, RpgTextDocument(name, bytes).entries)
         }
+        currentCoroutineContext().ensureActive()
+        cache.save(documents)
+        return documents
     }
 }
 

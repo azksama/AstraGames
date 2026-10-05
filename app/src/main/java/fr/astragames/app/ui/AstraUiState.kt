@@ -101,6 +101,7 @@ data class CoverSearchState(
 data class CropRequest(val gameId: String, val source: Uri)
 
 data class F95ImportState(
+    val source: fr.astragames.app.core.metadata.MetadataSource = fr.astragames.app.core.metadata.MetadataSource.F95ZONE,
     val gameId: String? = null,
     val loading: Boolean = false,
     val metadata: F95ZoneMetadata? = null,

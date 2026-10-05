@@ -50,7 +50,7 @@ internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslation
         if (state.busy) view.keepScreenOn = true
         onDispose { view.keepScreenOn = previous }
     }
-    LaunchedEffect(game.id) { controller.analyze(game) }
+    LaunchedEffect(game.id) { controller.open(game) }
     Dialog(
         onDismissRequest = { if (!state.busy) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = !state.busy, dismissOnClickOutside = false)
@@ -79,6 +79,7 @@ internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslation
                         Text("Télécharger les langues uniquement en Wi-Fi", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
                     }
                     state.analysis?.let { analysis ->
+                        if (state.cachedAnalysis && !analysis.installed) Text("Analyse enregistrée. Actualisez-la si les fichiers du jeu ont changé.", style = MaterialTheme.typography.bodySmall)
                         if (analysis.installed) Text("Originaux sauvegardés. Restaurez-les avant de retraduire ou de modifier les mods.")
                         else androidx.compose.material3.Text(
                             listOf("Fichiers" to analysis.files, "Textes uniques" to analysis.texts, "Caractères" to analysis.characters)
@@ -105,6 +106,7 @@ internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslation
                     }
                     state.message?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.primary) }
                     state.error?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Assertive }, color = MaterialTheme.colorScheme.error) }
+                    if (!state.busy && state.analysis == null) Text("Lancez l’analyse pour compter les textes. Le résultat sera conservé pour une prochaine utilisation.")
                     if (!state.busy && state.analysis?.texts == 0 && state.analysis?.installed != true) Text("Aucun texte compatible trouvé. Vérifiez que le dossier data du jeu MV/MZ est accessible.")
                     Text("MV/MZ : dialogues, choix et menus standards. Images, plugins et sauvegardes exclus.", style = MaterialTheme.typography.bodySmall)
                     Text("Les noms utilisés par les conditions du jeu sont conservés pour rester compatibles avec vos sauvegardes.", style = MaterialTheme.typography.bodySmall)
@@ -121,7 +123,7 @@ internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslation
                     } else if (state.analysis?.installed == true) {
                         OutlinedButton(onClick = { controller.restore(game) }) { Text("Restaurer les originaux") }
                     } else {
-                        TextButton(onClick = { controller.analyze(game) }) { Text("Actualiser") }
+                        TextButton(onClick = { controller.analyze(game) }) { Text(if (state.analysis == null) "Analyser les textes" else "Actualiser l’analyse") }
                         Spacer(Modifier.width(8.dp))
                         if (manual) {
                             OutlinedButton(onClick = {

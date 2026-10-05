@@ -206,14 +206,14 @@ internal fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPick
                 item { EditField(description, { description = it }, "Description", false) }
                 item { TextTagInput(textTags, { textTags = it }) }
                 item { OutlinedButton(onClick = { showTags = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Style, null); Spacer(Modifier.width(6.dp)); Text("Tags (${selectedTags.size})") } }
-                item { OutlinedButton(onClick = { showF95 = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Link, null); Spacer(Modifier.width(6.dp)); Text("Importer depuis F95Zone") } }
+                item { OutlinedButton(onClick = { showF95 = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Link, null); Spacer(Modifier.width(6.dp)); Text("Importer des métadonnées") } }
             }
             Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Button(
                     onClick = {
                         vm.configureScannedGame(
                             game.id,
-                            GameEdits(title, game.originalTitle, developer, version, game.productCode, game.language, description, game.f95Url),
+                            GameEdits(title, game.originalTitle, developer, version, game.productCode, game.language, description, game.f95Url, game.ryuugamesUrl),
                             selectedTags,
                             textTags
                         )
@@ -228,7 +228,7 @@ internal fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPick
         onPickCover(game.id); showCover = false
     }, { vm.removeCover(game.id); showCover = false }, { showCover = false; vm.clearCoverSearch() })
     if (showF95) F95ImportSheet(game, state.tags, f95State, state.settings.openSearchInExternalBrowser, state.settings.f95SessionUser, { vm.fetchF95Metadata(game.id, it) }, {
-        vm.prepareF95Search(game.id, game.title)
+        vm.prepareF95Search(game.id, game.title, it)
     }, { tags, image ->
         importedF95TagNames = tags.map { it.trim().lowercase(java.util.Locale.ROOT) }.toSet()
         vm.applyF95Tags(game.id, tags)
@@ -251,6 +251,7 @@ internal fun EditGameDialog(
     var developer by rememberSaveable(game.id) { mutableStateOf(game.developer.orEmpty()) }; var version by rememberSaveable(game.id) { mutableStateOf(game.version.orEmpty()) }
     var description by rememberSaveable(game.id) { mutableStateOf(game.description.orEmpty()) }
     var f95Url by rememberSaveable(game.id) { mutableStateOf(game.f95Url.orEmpty()) }
+    var ryuugamesUrl by rememberSaveable(game.id) { mutableStateOf(game.ryuugamesUrl.orEmpty()) }
     var textTags by rememberSaveable(game.id) { mutableStateOf("") }
     AlertDialog(
         onDismissRequest = onDismiss, title = { Text("Modifier le jeu") },
@@ -268,10 +269,11 @@ internal fun EditGameDialog(
                 }
             }
             item { HorizontalDivider(); Text("Métadonnées", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium) }
-            item { OutlinedButton(onClick = onF95, Modifier.fillMaxWidth()) { Icon(Icons.Default.Link, null); Spacer(Modifier.width(6.dp)); Text("Importer depuis F95Zone") } }
+            item { OutlinedButton(onClick = onF95, Modifier.fillMaxWidth()) { Icon(Icons.Default.Link, null); Spacer(Modifier.width(6.dp)); Text("Importer des métadonnées") } }
             item { EditField(title, { title = it }, "Titre") }; item { EditField(original, { original = it }, "Titre original") }
             item { EditField(developer, { developer = it }, "Développeur") }; item { EditField(version, { version = it }, "Version") }
             item { EditField(f95Url, { f95Url = it }, "Lien F95Zone") }
+            item { EditField(ryuugamesUrl, { ryuugamesUrl = it }, "Lien Ryuugames") }
             item { EditField(description, { description = it }, "Description", false) }
             item { TextTagInput(textTags, { textTags = it }) }
             item { HorizontalDivider(); Text("Zone sensible", Modifier.padding(top = 8.dp), style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.error) }
@@ -281,7 +283,7 @@ internal fun EditGameDialog(
                 colors = ButtonDefaults.outlinedButtonColors(contentColor = MaterialTheme.colorScheme.error)
             ) { Icon(Icons.Default.DeleteForever, null); Spacer(Modifier.width(6.dp)); Text("Supprimer le jeu") } }
         } },
-        confirmButton = { TextButton(onClick = { onSave(GameEdits(title, original, developer, version, game.productCode, game.language, description, f95Url), textTags) }, enabled = title.isNotBlank()) { Text("Enregistrer") } },
+        confirmButton = { TextButton(onClick = { onSave(GameEdits(title, original, developer, version, game.productCode, game.language, description, f95Url, ryuugamesUrl), textTags) }, enabled = title.isNotBlank()) { Text("Enregistrer") } },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
     )
 }

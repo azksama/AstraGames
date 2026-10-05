@@ -44,6 +44,7 @@ import androidx.navigation.compose.*
 import coil3.compose.AsyncImage
 import fr.astragames.app.core.metadata.CoverCandidate
 import fr.astragames.app.core.metadata.extractF95ThreadUrl
+import fr.astragames.app.core.metadata.MetadataSource
 import fr.astragames.app.core.model.*
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.TagEntity
@@ -58,13 +59,14 @@ internal fun F95ImportSheet(
     openInExternalBrowser: Boolean,
     f95SessionUser: String?,
     onFetch: (String) -> Unit,
-    onPrepareSearch: () -> Unit,
+    onPrepareSearch: (MetadataSource) -> Unit,
     onComplete: (Set<String>, CoverCandidate?) -> Unit,
     onDismiss: () -> Unit,
     onConnectSession: (cookies: String, username: String?) -> Unit,
     onDisconnectSession: () -> Unit
 ) {
-    var url by remember(game.id) { mutableStateOf(game.f95Url.orEmpty()) }
+    val source = state.source
+    var url by rememberSaveable(game.id, source) { mutableStateOf(if (source == MetadataSource.F95ZONE) game.f95Url.orEmpty() else game.ryuugamesUrl.orEmpty()) }
     val metadata = state.metadata
     var step by rememberSaveable(game.id) { mutableIntStateOf(0) }
     var selectedTags by rememberSaveable(metadata?.sourceUrl) { mutableStateOf(metadata?.tags.orEmpty()) }
@@ -76,7 +78,7 @@ internal fun F95ImportSheet(
     LaunchedEffect(metadata?.sourceUrl) {
         if (metadata != null && step == 0) step = 1
     }
-    LaunchedEffect(game.id) { onPrepareSearch() }
+    LaunchedEffect(game.id) { onPrepareSearch(source) }
     Dialog(
         onDismissRequest = { if (step > 0) step-- else onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
@@ -87,14 +89,14 @@ internal fun F95ImportSheet(
                     Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 8.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    IconButton(onClick = { if (step > 0) step-- else onDismiss() }) { Icon(Icons.Default.Close, "Fermer l'import F95Zone") }
+                    IconButton(onClick = { if (step > 0) step-- else onDismiss() }) { Icon(Icons.Default.Close, "Fermer") }
                     Column(Modifier.weight(1f)) {
-                        Text("Importer depuis F95Zone", style = MaterialTheme.typography.titleLarge)
+                        Text("Importer des métadonnées", style = MaterialTheme.typography.titleLarge)
                         Text("Étape ${step + 1} sur 3 · ${game.title}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                     }
                 }
                 HorizontalDivider()
-                Row(
+                if (source == MetadataSource.F95ZONE) Row(
                     Modifier.fillMaxWidth().padding(vertical = 6.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -122,9 +124,14 @@ internal fun F95ImportSheet(
                         LinearProgressIndicator(progress = { (step + 1) / 3f }, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp))
             when (step) {
                 0 -> Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        MetadataSource.entries.forEach { option ->
+                            FilterChip(selected = source == option, onClick = { showSearch = false; onPrepareSearch(option) }, enabled = !state.loading, label = { MaterialText(option.label) })
+                        }
+                    }
                     OutlinedTextField(
                         url, { url = it }, Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true,
-                        label = { Text("Lien du thread") }, placeholder = { Text("https://f95zone.to/threads/…") },
+                        label = { Text("Lien de la fiche") }, placeholder = { MaterialText(if (source == MetadataSource.F95ZONE) "https://f95zone.to/threads/…" else "https://www.ryuugames.com/…/") },
                         leadingIcon = { Icon(Icons.Default.Link, null) }
                     )
                     if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
@@ -170,14 +177,14 @@ internal fun F95ImportSheet(
                         TextButton(onClick = { selectedTags = emptyList() }) { Text("Aucun") }
                     }
                     val detectedTags = metadata?.tags.orEmpty()
-                    if (detectedTags.isEmpty()) CenterMessage("Aucun tag détecté sur ce thread.", Modifier.fillMaxWidth().weight(1f))
+                    if (detectedTags.isEmpty()) CenterMessage("Aucun tag détecté sur cette fiche.", Modifier.fillMaxWidth().weight(1f))
                     else LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
                         items(detectedTags, key = { it.lowercase(java.util.Locale.ROOT) }) { tag ->
                             val normalized = tag.normalizeTagName()
                             ListItem(
                                 modifier = Modifier.clickable { selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag },
                                 headlineContent = { MaterialText(tag) },
-                                supportingContent = { Text(if (normalized in existingNames) "Tag existant" else "Nouveau tag · F95Zone") },
+                                supportingContent = { Text(if (normalized in existingNames) "Tag existant" else "Nouveau tag") },
                                 leadingContent = { Checkbox(tag in selectedTags, { selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag }) }
                             )
                         }
@@ -193,7 +200,7 @@ internal fun F95ImportSheet(
                     Text("L’image choisie pourra être recadrée avant enregistrement.", color = MaterialTheme.colorScheme.onSurfaceVariant)
                     val images = metadata?.images.orEmpty()
                     val selectedImage = images.firstOrNull { it.imageUrl == selectedImageUrl }
-                    if (images.isEmpty()) CenterMessage("Aucune image détectée sur ce thread.", Modifier.fillMaxWidth().weight(1f))
+                    if (images.isEmpty()) CenterMessage("Aucune image détectée sur cette fiche.", Modifier.fillMaxWidth().weight(1f))
                     else LazyVerticalGrid(
                         GridCells.Adaptive(150.dp), Modifier.fillMaxWidth().weight(1f).padding(top = 10.dp),
                         horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)
@@ -218,6 +225,7 @@ internal fun F95ImportSheet(
         }
     }
     if (showSearch && state.browserUrl != null) SearchF95PickerDialog(
+        source = source,
         searchUrl = state.browserUrl,
         searchEngine = state.searchEngine,
         onThreadSelected = { selectedUrl ->
@@ -242,7 +250,8 @@ internal fun SearchF95PickerDialog(
     searchUrl: String,
     searchEngine: SearchEngine,
     onThreadSelected: (String) -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    source: MetadataSource = MetadataSource.F95ZONE
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var selectionError by remember { mutableStateOf<String?>(null) }
@@ -253,7 +262,7 @@ internal fun SearchF95PickerDialog(
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 CompactHeader(
                     "Rechercher sur ${searchEngine.displayName}",
-                    "Appui long sur le bon résultat F95Zone",
+                    "Appui long sur la fiche du jeu",
                     onBack = onDismiss
                 )
                 AndroidView(
@@ -270,9 +279,9 @@ internal fun SearchF95PickerDialog(
                                 if (hit.type !in setOf(WebView.HitTestResult.SRC_ANCHOR_TYPE, WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)) {
                                     return@setOnLongClickListener false
                                 }
-                                val threadUrl = hit.extra?.let(::extractF95ThreadUrl)
+                                val threadUrl = hit.extra?.let(source::pageUrl)
                                 if (threadUrl == null) {
-                                    selectionError = "Ce lien n’est pas un thread F95Zone valide. Maintenez le titre d’un résultat F95Zone."
+                                    selectionError = "Ce lien ne correspond pas à la source sélectionnée."
                                 } else {
                                     selectionError = null
                                     latestSelection(threadUrl)
@@ -295,9 +304,9 @@ internal fun SearchF95PickerDialog(
                 }
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
                     Button(onClick = {
-                        val threadUrl = webView?.url?.let(::extractF95ThreadUrl)
+                        val threadUrl = webView?.url?.let(source::pageUrl)
                         if (threadUrl == null) {
-                            selectionError = "Ce lien n’est pas un thread F95Zone valide. Maintenez le titre d’un résultat F95Zone."
+                            selectionError = "Ce lien ne correspond pas à la source sélectionnée."
                         } else {
                             selectionError = null
                             latestSelection(threadUrl)

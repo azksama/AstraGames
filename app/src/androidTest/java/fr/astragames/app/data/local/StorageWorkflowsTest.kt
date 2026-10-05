@@ -68,6 +68,20 @@ class StorageWorkflowsTest {
         }
     }
 
+    @Test fun rescanningKeepsBothMetadataSources() = runTest {
+        val folder = File(root, "metadata-rescan").apply { mkdirs() }
+        File(folder, "Game.exe").writeText("fixture")
+        val dao = database.dao()
+        val original = game(folder).copy(f95Url = "https://f95zone.to/threads/42/", ryuugamesUrl = "https://www.ryuugames.com/example/")
+        dao.upsertGame(original)
+        dao.upsertSource(GameSourceEntity(original.sourceId, "Fixture", Uri.fromFile(folder).toString()))
+        RecursiveSourceScanner(context, dao, FileAccessResolver(context)).scan(original.sourceId)
+        val scanned = dao.getGame(original.id)!!
+        assertEquals(original.f95Url, scanned.f95Url)
+        assertEquals(original.ryuugamesUrl, scanned.ryuugamesUrl)
+        assertFalse(scanned.missing)
+    }
+
     @Test fun cancellationDuringScanReconciliationFinishesTheSourceAndHistory() = runTest {
         val folder = File(root, "scan-root").apply { mkdirs() }
         val dao = database.dao()

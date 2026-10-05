@@ -66,6 +66,10 @@ class GameTranslationUiTest {
                 AstraTheme { GameTranslationScreen(game, controller) {} }
             }
         }
+        compose.waitForIdle()
+        assertNull(controller.state.value.analysis)
+        compose.onNodeWithText("Traduire avec Google").assertIsNotEnabled()
+        compose.onNodeWithText("Analyser les textes").assertIsDisplayed().performClick()
         compose.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.analysis != null }
         compose.onNodeWithText("The Clockwork Garden").performScrollTo().assertIsDisplayed()
         compose.onNodeWithText("Traduire avec Google").assertIsDisplayed().assertIsEnabled()
@@ -107,6 +111,10 @@ class GameTranslationUiTest {
         compose.setContent { CompositionLocalProvider(LocalAppLanguage provides AppLanguage.FRENCH) { AstraTheme {
             GameTranslationScreen(game, controller) {}
         } } }
+        compose.waitForIdle()
+        assertNull(controller.state.value.analysis)
+        compose.onNodeWithText("Traduire avec Google").assertIsNotEnabled()
+        compose.onNodeWithText("Analyser les textes").assertIsDisplayed().performClick()
         compose.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.analysis != null }
         compose.onNodeWithText("Traduire avec Google").performClick()
         compose.onAllNodesWithText("Traduire avec Google").onLast().performClick()
@@ -143,6 +151,10 @@ class GameTranslationUiTest {
                 AstraTheme { GameTranslationScreen(game, controller) {} }
             }
         }
+        compose.waitForIdle()
+        assertNull(controller.state.value.analysis)
+        compose.onNodeWithText("Traduire avec Google").assertIsNotEnabled()
+        compose.onNodeWithText("Analyser les textes").assertIsDisplayed().performClick()
         compose.waitUntil(10_000) { !controller.state.value.busy && controller.state.value.analysis != null }
         assertNull(controller.state.value.error)
         assertEquals(2, controller.state.value.analysis!!.files)

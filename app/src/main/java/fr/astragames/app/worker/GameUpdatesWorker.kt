@@ -26,7 +26,7 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
                 F95Session(settings.f95SessionUser, settings.f95SessionXfUser, settings.f95SessionXfSession)
             else null
         )
-        val games = app.container.repository.games.first().filter { !it.f95Url.isNullOrBlank() && it.version != null }
+        val games = app.container.repository.games.first().filter { (!it.f95Url.isNullOrBlank() || !it.ryuugamesUrl.isNullOrBlank()) && it.version != null }
         val gameIds = games.mapTo(mutableSetOf()) { it.id }
         val found = mutableListOf<Pair<GameEntity, String>>()
         val latest = settings.f95LatestVersions.split('|').mapNotNull { entry ->
@@ -36,8 +36,10 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
         }.toMap().toMutableMap()
         var failures = 0
         games.forEach { game ->
-            val url = game.f95Url ?: return@forEach
-            val version = runCatchingCancellable { app.container.f95Zone.fetchVersion(url) }.getOrNull()
+            val version = runCatchingCancellable {
+                game.f95Url?.let { app.container.f95Zone.fetchVersion(it) }
+                    ?: game.ryuugamesUrl?.let { app.container.ryuugames.fetch(it).version }
+            }.getOrNull()
             if (version == null) failures++ else latest.remove(game.id)
             if (version != null && version != game.version) {
                 latest[game.id] = version

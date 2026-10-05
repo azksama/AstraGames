@@ -250,7 +250,7 @@ class BackupManager(
 
     companion object {
         private const val DATABASE_ENTRY = BackupArchive.DATABASE_ENTRY
-        private const val DATABASE_VERSION = 8
+        private const val DATABASE_VERSION = 9
         private val SUPPORTED_DATABASE_VERSIONS = (5..DATABASE_VERSION).toSet()
         private const val MAX_ARCHIVE_BYTES = BackupArchive.MAX_BYTES
         private val INTERNAL_DIRECTORIES = BackupArchive.DIRECTORIES

@@ -28,6 +28,7 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - sauvegarde et restauration chiffrée du catalogue, des profils, des jaquettes et des journaux de sauvegardes/mods, avec raccourci vers le dossier choisi ;
 - choix automatique et manuel de jaquettes dans le moteur sélectionné (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), sans filtre de contenu ajouté par Astra, sélection de l’image affichée, ouverture navigateur, choix local et recadrage libre ;
 - enrichissement silencieux des nouveaux jeux via VNDB (sans importer ses tags), puis recherche de la page de métadonnées avec le moteur sélectionné et URL canonique conservée dans la fiche ;
+- choix entre plusieurs sources de métadonnées, avec leurs liens conservés séparément ;
 - import de métadonnées pendant l'ajout ou l'édition : lien conservé dans la fiche, sélection des tags puis choix d'une image recadrable ;
 - assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
@@ -45,6 +46,8 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - copie rapide du nom d’une jaquette en touchant son libellé et raccourci vers le dossier de sauvegarde d’un jeu ;
 - verrouillage biométrique et code chiffré, historique des sessions, bouton Outils, éditeur de sauvegardes et gestionnaire de mods ;
 - traduction locale des textes RPG Maker MV/MZ avec Google Translate (ML Kit), sans compte ni clé API, cache réutilisable et restauration des originaux ;
+- analyse des textes déclenchée uniquement par l’utilisateur, avec résultat persistant et réutilisation des extractions lorsque les fichiers restent identiques ;
+- mises à jour d’Astra depuis les releases GitHub publiques, vérification et téléchargement périodiques, contrôle SHA-256 et signature APK avant confirmation Android ;
 - mode manuel de traduction MV/MZ : export JSON pour l’IA de votre choix, commandes protégées par marqueurs, import validé et restauration des originaux ;
 - payload et Intent JoiPlay sans appel à `ShortcutActivity` ;
 - diagnostic de compatibilité par jeu et profils de lancement personnalisables (moteur, dossier, fichier d'entrée, arguments ou application externe) avec test direct ;
@@ -67,6 +70,7 @@ data/mods    import ZIP, installation et restauration journalisées
 data/backup  archives chiffrées du catalogue
 launcher/    JoiPlay et futur MTool
 translation/ ML Kit, extraction MV/MZ, cache et restauration journalisée
+updates/     releases GitHub, téléchargement vérifié et installation Android
 settings/    DataStore
 worker/      WorkManager
 ui/          navigation, écrans par domaine, état et contrôleur des outils
@@ -134,7 +138,7 @@ Depuis **Outils → Mods**, sélectionner un dépôt, importer le ZIP puis insta
 
 L’import ZIP est limité à 4 000 entrées et 200 Mio décompressés. La désinstallation vérifie les fichiers avant de restaurer les originaux. Un conflit avec une modification ultérieure est signalé ; une installation interrompue conserve son journal et propose **Restaurer**. Les mods RPG Maker doivent inclure leur configuration d’activation lorsque nécessaire : copier un plugin JavaScript isolé ne le déclare pas automatiquement dans `js/plugins.js`.
 
-Les archives du catalogue `.astra` utilisent la clé Android Keystore de l’installation actuelle. Elles ne constituent pas une migration vers un autre téléphone ou après désinstallation de l’app. Les anciens ZIP non chiffrés restent importables (schémas 5 à 8). Les jeux et leurs permissions SAF ne sont pas embarqués dans ces archives.
+Les archives du catalogue `.astra` utilisent la clé Android Keystore de l’installation actuelle. Elles ne constituent pas une migration vers un autre téléphone ou après désinstallation de l’app. Les anciens ZIP non chiffrés restent importables (schémas 5 à 9). Les jeux et leurs permissions SAF ne sont pas embarqués dans ces archives.
 
 Les bilans et limites des vérifications figurent dans l’[audit du 5 octobre](docs/AUDIT_2026-10-05.md), la [revue sauvegardes/mods du 16 septembre](docs/AUDIT_2026-09-16.md) et la [revue technique/UI du 19 septembre](docs/AUDIT_2026-09-19.md).
 
@@ -142,7 +146,9 @@ Les bilans et limites des vérifications figurent dans l’[audit du 5 octobre](
 
 Le mode **Fichier pour IA** permet d’exporter tous les textes standards pris en charge, avec leur contexte, puis d’importer le fichier traduit. Il ne nécessite ni modèle ML Kit ni compte connecté dans Astra. Seuls les champs `translation` doivent changer ; les marqueurs `⟦ASTRA_…⟧` protègent les commandes RPGM. Le jeu doit rester dans la même version entre export et import. Voir le [guide complet et le prompt prêt à utiliser](docs/MANUAL_TRANSLATION.md).
 
-Depuis **Fiche du jeu → Outils → Traduire le jeu**, choisir la langue source et la langue cible, fermer le jeu puis toucher **Traduire avec Google**. Google Translate (ML Kit) télécharge les modèles nécessaires au premier usage, puis traduit sur l’appareil sans compte ni clé API. Le téléchargement utilise uniquement le Wi-Fi par défaut ; cette option peut être désactivée. Une fois les modèles disponibles, la traduction fonctionne hors connexion. Garder Astra ouvert pendant le traitement ; après un arrêt, les fragments déjà traduits sont réutilisés au prochain essai.
+Depuis **Fiche du jeu → Outils → Traduire le jeu**, toucher **Analyser les textes**, choisir la langue source et la langue cible, fermer le jeu puis toucher **Traduire avec Google**. Google Translate (ML Kit) télécharge les modèles nécessaires au premier usage, puis traduit sur l’appareil sans compte ni clé API. Le téléchargement utilise uniquement le Wi-Fi par défaut ; cette option peut être désactivée. Une fois les modèles disponibles, la traduction fonctionne hors connexion. Garder Astra ouvert pendant le traitement ; après un arrêt, les fragments déjà traduits sont réutilisés au prochain essai.
+
+L’ouverture de l’écran ne lance aucune extraction. Une analyse terminée est conservée dans le stockage privé de l’application et réaffichée à la prochaine ouverture. **Actualiser l’analyse** permet de la relancer explicitement. Avant traduction, export ou import, les empreintes des fichiers sont contrôlées et les fichiers modifiés sont relus ; une analyse interrompue ou invalide ne remplace pas le dernier résultat complet.
 
 Le module lit les JSON standards dans `data` ou `www/data` : dialogues, choix, noms affichés, descriptions, termes des menus et messages de combat. Les commandes de mise en forme et variables comme `\N[1]`, `\V[2]`, `\C[3]`, `%1` et les retours à la ligne sont conservés. Les textes identiques sont traduits une seule fois, avec un cache distinct pour chaque paire de langues. Les scripts, notes, noms de ressources, images, contenus propres aux plugins et sauvegardes du joueur ne sont pas traduits. XP, VX et VX Ace ne sont pas couverts par ce module.
 
@@ -161,6 +167,14 @@ adb shell am instrument -w -r -e class fr.astragames.app.translation.GameTransla
 ```
 
 Sans l’argument `liveTranslation`, le test nécessitant les modèles est ignoré ; les tests d’extraction, de stockage local/SAF, d’interface et de restauration restent exécutables sans téléchargement.
+
+## Mises à jour d’Astra
+
+Ouvrir **Paramètres → Mises à jour d’Astra**. Astra interroge les releases stables du [dépôt public](https://github.com/azksama/AstraGames/releases), sans compte ni jeton. La vérification périodique et le téléchargement automatique sont activés par défaut, avec un réseau non facturé (Wi-Fi) requis pour le téléchargement. La cadence demandée est de 12 heures ; Android peut la décaler selon la batterie et le réseau.
+
+Une notification ouvre l’écran lorsqu’un APK est prêt. **Télécharger et installer** enchaîne le téléchargement manuel et l’ouverture de l’installateur ; **Installer la mise à jour** utilise le fichier déjà prêt. Android demande l’autorisation d’installer depuis Astra au premier usage, puis la confirmation de chaque installation. Astra ne peut pas effectuer une installation silencieuse sur un appareil Android ordinaire.
+
+Le fichier doit correspondre à la taille et au SHA-256 annoncés par GitHub, au package Astra, à une version supérieure et à la signature de l’installation actuelle. Ces contrôles sont répétés avant de donner accès au fichier à l’installateur. Les APK non signés sont exclus. Les versions distribuées avec la clé de développement locale peuvent se mettre à jour entre elles ; une installation signée avec une autre clé doit disposer d’un APK compatible.
 
 ## Limites de preuve
 

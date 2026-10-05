@@ -91,6 +91,9 @@ interface AstraDao {
     @Query("UPDATE games SET f95Url = :f95Url WHERE id = :id")
     suspend fun setF95Url(id: String, f95Url: String?)
 
+    @Query("UPDATE games SET ryuugamesUrl = :url WHERE id = :id")
+    suspend fun setRyuugamesUrl(id: String, url: String?)
+
     @Query("UPDATE games SET libraryFolderId = :folderId WHERE id = :id")
     suspend fun setGameFolder(id: String, folderId: String?)
 

@@ -257,6 +257,7 @@ class GameRepository(
             keywords = (primary.keywords.split(' ') + secondary.keywords.split(' ')).filter(String::isNotBlank).distinct().joinToString(" ")
         )
         dao.replaceGameTags(primary.id, primaryTags + secondaryTags)
+        dao.setRyuugamesUrl(primary.id, primary.ryuugamesUrl ?: secondary.ryuugamesUrl)
         dao.movePlaySessions(primary.id, secondary.id)
         if (!deleteSecondaryFiles) dao.upsertDeletedGame(
             DeletedGameEntity(
@@ -523,12 +524,17 @@ class GameRepository(
     suspend fun updateGame(gameId: String, edits: GameEdits) {
         val title = edits.title.trim()
         if (title.isBlank()) return
+        val ryuu = edits.ryuugamesUrl?.trim()?.takeIf(String::isNotBlank)?.let { requireNotNull(fr.astragames.app.core.metadata.canonicalRyuugamesUrl(it)) { "Lien Ryuugames invalide." } }
         dao.updateGameFields(
             gameId, title, edits.originalTitle.cleanOrNull(), edits.developer.cleanOrNull(),
             edits.version.cleanOrNull(), edits.productCode.cleanOrNull(), edits.language.cleanOrNull(),
             edits.description.cleanOrNull(), edits.f95Url.cleanF95UrlOrNull()
         )
+        dao.setRyuugamesUrl(gameId, ryuu)
     }
+
+    suspend fun setRyuugamesUrl(gameId: String, url: String?) = dao.setRyuugamesUrl(gameId,
+        url?.trim()?.takeIf(String::isNotBlank)?.let { requireNotNull(fr.astragames.app.core.metadata.canonicalRyuugamesUrl(it)) { "Lien Ryuugames invalide." } })
 
     suspend fun setF95Url(gameId: String, url: String?) = dao.setF95Url(gameId, url.cleanF95UrlOrNull())
 
@@ -559,6 +565,8 @@ class GameRepository(
         val categoryName = "F95Zone"
         return associateTagNames(gameId, tagNames, categoryName)
     }
+
+    suspend fun importSourceTags(gameId: String, tagNames: Collection<String>, source: String): Int = associateTagNames(gameId, tagNames, source)
 
     suspend fun importTextTags(gameId: String, raw: String): Int =
         associateTagNames(gameId, parseTextTagList(raw), categoryName = null)
@@ -792,7 +800,8 @@ data class GameEdits(
     val productCode: String?,
     val language: String?,
     val description: String?,
-    val f95Url: String?
+    val f95Url: String?,
+    val ryuugamesUrl: String? = null
 )
 
 data class CollectionRuleDraft(val field: String, val operator: String, val value: String)

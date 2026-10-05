@@ -65,6 +65,7 @@ internal fun SettingsScreen(
     var showDuplicates by remember { mutableStateOf(false) }
     var showDeleted by remember { mutableStateOf(false) }
     var showAudit by remember { mutableStateOf(false) }
+    var showAppUpdates by rememberSaveable { mutableStateOf(false) }
     var sourcesExpanded by rememberSaveable { mutableStateOf(false) }
     var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
     var joiplayExpanded by rememberSaveable { mutableStateOf(false) }
@@ -176,6 +177,12 @@ internal fun SettingsScreen(
             ) }
             }
         }, second = {
+            item { RoundedListItem(
+                modifier = Modifier.clickable { vm.requestNotificationPermission(); showAppUpdates = true },
+                headlineContent = { Text("Mises à jour d’Astra") },
+                supportingContent = { Text("Téléchargement et installation depuis GitHub") },
+                leadingContent = { Icon(Icons.Default.SystemUpdate, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
+            ) }
             item { SettingsSectionHeader("Organisation", organizationExpanded) { organizationExpanded = !organizationExpanded } }
             if (organizationExpanded) {
             item { RoundedListItem(
@@ -261,6 +268,7 @@ internal fun SettingsScreen(
     if (showDuplicates) DuplicatesDialog(state, vm) { showDuplicates = false }
     if (showDeleted) DeletedGamesDialog(state.deletedGames, vm::restoreDeletedGame) { showDeleted = false }
     if (showAudit) AuditDialog(vm) { showAudit = false }
+    if (showAppUpdates) AppUpdateScreen(vm.appUpdates, vm::prepareExternalPicker) { showAppUpdates = false }
     if (showRuntimes) RuntimeManagerDialog(state.runtimes) { showRuntimes = false }
     if (confirmRestore) ConfirmDialog(
         "Restaurer une sauvegarde ?",

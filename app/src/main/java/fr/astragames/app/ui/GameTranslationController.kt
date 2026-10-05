@@ -21,6 +21,7 @@ internal data class GameTranslationState(
     val gameId: String? = null,
     val busy: Boolean = false,
     val analysis: TranslationAnalysis? = null,
+    val cachedAnalysis: Boolean = false,
     val progress: TranslationProgress? = null,
     val message: String? = null,
     val error: String? = null
@@ -35,6 +36,21 @@ internal class GameTranslationController(
     private val mutableState = MutableStateFlow(GameTranslationState())
     val state = mutableState.asStateFlow()
     private var job: Job? = null
+
+    fun open(game: GameEntity) {
+        if (mutableState.value.busy) return
+        job?.cancel()
+        mutableState.value = GameTranslationState(gameId = game.id)
+        job = scope.launch {
+            try {
+                val saved = manager.savedAnalysis(game)
+                if (mutableState.value.gameId == game.id) mutableState.update { it.copy(analysis = saved, cachedAnalysis = saved != null) }
+            } catch (cancel: CancellationException) { throw cancel }
+            catch (failure: Exception) {
+                if (mutableState.value.gameId == game.id) mutableState.update { it.copy(error = failure.message ?: "Dossier du jeu inaccessible.") }
+            }
+        }
+    }
 
     fun analyze(game: GameEntity) = run(game, "Analyse des textes") {
         mutableState.update { it.copy(analysis = manager.analyze(game)) }
@@ -55,7 +71,7 @@ internal class GameTranslationController(
 
     fun restore(game: GameEntity) = run(game, "Restauration des originaux") {
         manager.restore(game)
-        mutableState.update { it.copy(analysis = manager.analyze(game), message = "Originaux restaurés") }
+        mutableState.update { it.copy(analysis = manager.savedAnalysis(game), cachedAnalysis = true, message = "Originaux restaurés") }
     }
 
     fun prepareExternalPicker() = beforeExternalPicker()
@@ -86,6 +102,7 @@ internal class GameTranslationController(
 
     private fun run(game: GameEntity, phase: String, block: suspend () -> Unit) {
         if (mutableState.value.busy) return
+        job?.cancel()
         val previous = mutableState.value.takeIf { it.gameId == game.id }
         mutableState.value = GameTranslationState(game.id, busy = true, analysis = previous?.analysis, progress = TranslationProgress(phase))
         job = scope.launch {

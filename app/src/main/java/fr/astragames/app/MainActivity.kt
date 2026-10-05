@@ -17,6 +17,10 @@ import androidx.biometric.BiometricManager
 import androidx.biometric.BiometricPrompt
 import androidx.core.content.ContextCompat
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
@@ -27,6 +31,8 @@ import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import fr.astragames.app.ui.AstraApp
 import fr.astragames.app.ui.AstraViewModel
+import fr.astragames.app.ui.AppUpdateScreen
+import fr.astragames.app.ui.LocalAppLanguage
 import fr.astragames.app.ui.theme.AstraTheme
 import kotlinx.coroutines.launch
 
@@ -34,6 +40,10 @@ class MainActivity : FragmentActivity() {
     private val viewModel by viewModels<AstraViewModel>()
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private var coverGameId: String? = null
+    private val coverPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        val gameId = coverGameId
+        if (uri != null && gameId != null) launchCrop(gameId, uri) else coverGameId = null
+    }
     private val sourcePicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let(viewModel::addSource)
     }
@@ -63,6 +73,7 @@ class MainActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        coverGameId = savedInstanceState?.getString("coverGameId")
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
         lifecycleScope.launch {
@@ -108,6 +119,8 @@ class MainActivity : FragmentActivity() {
         }
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
+            val locked by viewModel.isLocked.collectAsStateWithLifecycle()
+            var showAppUpdates by rememberSaveable { mutableStateOf(intent.getBooleanExtra("openAppUpdates", false)) }
             AstraTheme(hue = state.settings.accentHue) {
                 AstraApp(
                     state = state,
@@ -115,12 +128,17 @@ class MainActivity : FragmentActivity() {
                     onPickSource = { sourcePicker.launch(null) },
                     onPickTags = { tagPicker.launch(arrayOf("text/plain", "text/csv", "application/json")) },
                     onPickCover = { gameId ->
-                        launchCrop(gameId, null)
+                        coverGameId = gameId
+                        viewModel.prepareExternalPicker()
+                        coverPicker.launch(arrayOf("image/*"))
                     },
                     onPickBackupFolder = { backupFolderPicker.launch(null) },
                     onRestoreBackup = { backupRestorePicker.launch(arrayOf("application/zip", "application/octet-stream")) },
                     onOpenBackupFolder = ::openBackupFolder
                 )
+                if (showAppUpdates && !locked) CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
+                    AppUpdateScreen(viewModel.appUpdates, viewModel::prepareExternalPicker) { showAppUpdates = false }
+                }
             }
         }
     }
@@ -131,9 +149,9 @@ class MainActivity : FragmentActivity() {
         viewModel.onAppResumed()
     }
 
-    override fun onStop() {
-        if (!isChangingConfigurations) viewModel.onAppBackgrounded()
-        super.onStop()
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putString("coverGameId", coverGameId)
+        super.onSaveInstanceState(outState)
     }
 
     private fun promptBiometric() {
@@ -158,7 +176,7 @@ class MainActivity : FragmentActivity() {
         )
     }
 
-    private fun launchCrop(gameId: String, source: Uri?) {
+    private fun launchCrop(gameId: String, source: Uri) {
         coverGameId = gameId
         coverCropper.launch(
             CropImageContractOptions(
@@ -169,7 +187,7 @@ class MainActivity : FragmentActivity() {
                     aspectRatioX = 18,
                     aspectRatioY = 25,
                     imageSourceIncludeCamera = false,
-                    imageSourceIncludeGallery = source == null,
+                    imageSourceIncludeGallery = false,
                     outputCompressQuality = 100
                 )
             )

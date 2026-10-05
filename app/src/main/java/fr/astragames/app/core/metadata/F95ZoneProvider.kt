@@ -16,7 +16,10 @@ data class F95ZoneMetadata(
     val tags: List<String>,
     val images: List<CoverCandidate>,
     val version: String? = null,
-    val language: String? = null
+    val language: String? = null,
+    val originalTitle: String? = null,
+    val developer: String? = null,
+    val description: String? = null
 )
 
 /** Session membre F95Zone récupérée depuis le navigateur intégré. */
