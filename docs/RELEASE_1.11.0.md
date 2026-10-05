@@ -9,13 +9,16 @@
 
 Ouvrir **Paramètres → Mises à jour d’Astra** pour vérifier la disponibilité ou régler les automatismes. Android demande l’autorisation d’installer depuis Astra au premier usage, puis la confirmation de chaque installation. Une application Android ordinaire ne peut pas installer silencieusement une mise à jour.
 
+Installez cet APK une première fois depuis GitHub pour bénéficier du module intégré dans les prochaines mises à jour.
+
 ## Validation
 
 - 209 tests JVM réussis, sans échec ni test ignoré.
 - 68 tests Android réussis dans la suite finale sur Android Emulator API 36.1, sans échec ni test ignoré. Le modèle ML Kit réel, la migration Room 8 vers 9, le stockage SAF, Android Keystore et la conservation des liens après scan sont inclus.
 - Les trois parcours de traduction sont aussi vérifiés en paysage et portrait avec le texte à 150 %.
 - Builds debug, release optimisée R8 et Baseline Profile réussis. Lint : 0 erreur, 47 avertissements ; les deux nouveaux conseils KTX concernent des commits de préférences dont le résultat d’écriture est contrôlé.
-- Consultation du dépôt public depuis les APK debug et R8, signature et alignement de l’APK debug vérifiés. Voir les [preuves et limites](https://github.com/azksama/AstraGames/blob/v1.11.0/docs/VALIDATION_1.11.0.md).
+- Téléchargement depuis la release publique puis installation par l’installateur Android validés sur l’émulateur, depuis une copie de test du nouveau code déclarant une version inférieure. Le SHA-256 de l’APK effectivement installé correspond au fichier publié.
+- Consultation du dépôt public depuis les APK debug et R8, signature et alignement de l’APK debug vérifiés. Voir les [preuves et limites](https://github.com/azksama/AstraGames/blob/main/docs/VALIDATION_1.11.0.md).
 
 La preuve concerne l’émulateur et des données synthétiques. L’authentification est simulée dans le test de cycle de vie du rognage ; aucune biométrie physique ni exécution de jeu personnel n’est revendiquée.
 

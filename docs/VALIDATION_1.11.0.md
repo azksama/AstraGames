@@ -25,6 +25,14 @@ Le premier outil de test de migration a rencontré une incompatibilité de séri
 
 Les trois parcours de traduction passent en paysage et en portrait avec texte à 150 %. La dernière passe portrait fixe explicitement la rotation dans WindowManager : capture 1080 × 2274 et écran 1080 × 2400 confirmés après les tests (`build/android-1.11.0-translation-portrait-final.log`). Les captures locales se trouvent dans `build/emulator-validation-1.11.0/`. Une capture d’un dialogue défilé peut omettre son en-tête ; les assertions contrôlent les actions après défilement.
 
+## Vérification après publication
+
+Les quatre fichiers de la release publique ont été retéléchargés et comparés aux artefacts locaux, avec contrôle des tailles et SHA-256 fournis par GitHub.
+
+Une copie de validation du nouveau code, déclarant volontairement la version 1.10.0/code 27, a servi de point de départ sur l’émulateur. Ce n’est pas l’ancienne release 1.10.0, qui ne possède pas le module de mise à jour. Le parcours réel a été exécuté : **Vérifier → Télécharger et installer → autoriser cette source dans Android → confirmer la mise à jour → analyse Play Protect → Installer**. Aucune protection Android n’a été désactivée.
+
+Android a confirmé **App installed**, puis PackageManager a indiqué **version 1.11.0 / code 28**. L’empreinte du `base.apk` effectivement installé correspond exactement à l’APK GitHub : `ec9fc3b19e0cedd534298adb7d492961e5cdc2ae5c4092f16d27f17fdd07c181`. Preuves locales : `build/emulator-validation-1.11.0/update-installation-verified.json`, captures et hiérarchies de l’installateur. Cette vérification confirme le téléchargement et l’installation après actions explicites ; elle ne mesure pas la cadence des tâches périodiques en veille prolongée.
+
 ## Limites
 
 Les données de jeux sont synthétiques. L’authentification est simulée dans le test de rognage ; le cycle de vie et l’activité Android sont réels. Les fournisseurs sont couverts par des fixtures de leurs pages et la consultation de leur structure publique ; aucun compte personnel ni téléchargement de jeu n’est utilisé. Aucun téléphone physique, runtime JoiPlay réel ni couverture universelle des plugins n’est revendiqué. Android garde la confirmation de chaque installation.
