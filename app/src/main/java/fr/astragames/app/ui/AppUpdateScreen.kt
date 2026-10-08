@@ -59,9 +59,16 @@ internal fun AppUpdateScreen(manager: AppUpdateManager, beforeExternal: () -> Un
                     SettingsSwitch("Vérification automatique", state.automatic, { value -> scope.launch { manager.configure(value, state.autoDownload, state.wifiOnly) } })
                     SettingsSwitch("Téléchargement automatique", state.autoDownload, { value -> scope.launch { manager.configure(state.automatic, value, state.wifiOnly) } })
                     SettingsSwitch("Télécharger uniquement en Wi-Fi", state.wifiOnly, { value -> scope.launch { manager.configure(state.automatic, state.autoDownload, value) } })
+                    SettingsSwitch("Recevoir les versions bêta", state.includePrereleases, { value -> scope.launch {
+                        localError = null
+                        runCatching { manager.setIncludePrereleases(value) }
+                            .onSuccess { manager.check() }.onFailure { localError = it.message }
+                    } }, enabled = !state.busy)
+                    Text("Inclut les préversions, qui peuvent être moins stables. Désactiver cette option ne réinstalle pas une ancienne version.", style = MaterialTheme.typography.bodySmall)
                     state.release?.let { release ->
                         HorizontalDivider()
                         MaterialText("Astra ${release.version}", style = MaterialTheme.typography.titleLarge)
+                        if (release.prerelease) Text("Préversion", color = MaterialTheme.colorScheme.primary)
                         MaterialText("${release.bytes / (1024 * 1024)} MiB · ${release.assetName}", style = MaterialTheme.typography.bodySmall)
                         if (release.assetName.contains("debug", true)) Text("APK signé avec une clé de développement.", style = MaterialTheme.typography.bodySmall)
                         TextButton(onClick = { uriHandler.openUri(release.pageUrl) }) { Text("Notes de version") }

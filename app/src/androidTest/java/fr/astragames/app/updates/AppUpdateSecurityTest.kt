@@ -45,4 +45,43 @@ class AppUpdateSecurityTest {
         assertFalse(manager.state.value.ready)
         assertFalse(AppUpdateManager(context).state.value.ready)
     }
+
+    @Test fun betaOptInPersistsAndOptOutInvalidatesDownloadedPreview() = runBlocking {
+        val manager = AppUpdateManager(context)
+        assertFalse(manager.state.value.includePrereleases)
+        manager.setIncludePrereleases(true)
+        val apk = File(root, "app-updates/update.apk").apply { parentFile!!.mkdirs(); writeText("preview") }
+        val beta = GitHubRelease("99.0.0-beta.1", 42, "Astra.apk", apk.length(), fileDigest(apk), "", true)
+        context.getSharedPreferences("app_updates", Context.MODE_PRIVATE).edit()
+            .putString("release", beta.json().toString()).putString("ready", beta.sha256).commit()
+        val restored = AppUpdateManager(context)
+        assertTrue(restored.state.value.includePrereleases)
+        assertTrue(restored.state.value.ready)
+        restored.setIncludePrereleases(false)
+        assertFalse(restored.state.value.ready)
+        assertNull(restored.state.value.release)
+        assertFalse(apk.exists())
+        assertTrue(runCatching { restored.installerIntent() }.isFailure)
+        assertFalse(AppUpdateManager(context).state.value.includePrereleases)
+        assertNull(AppUpdateManager(context).state.value.release)
+    }
+
+    @Test fun stableChannelIgnoresPreviewCacheAndAutomaticCheckUsesSelectedChannel() = runBlocking {
+        val beta = GitHubRelease("99.0.0-beta.1", 42, "Astra.apk", 100, "a".repeat(64), "", true)
+        context.getSharedPreferences("app_updates", Context.MODE_PRIVATE).edit().putString("release", beta.json().toString()).commit()
+        context.getSharedPreferences("app_updates", Context.MODE_PRIVATE).edit().putBoolean("download", false).commit()
+        val requestedChannels = mutableListOf<Boolean>()
+        val manager = AppUpdateManager(context) { _, previews ->
+            requestedChannels += previews
+            if (previews) beta else beta.copy(version = "98.0.0", prerelease = false)
+        }
+        assertNull(manager.state.value.release)
+        // Keep this automatic-check test offline: it checks selection, not transport.
+        manager.check(downloadAutomatically = true)
+        assertEquals("98.0.0", manager.state.value.release?.version)
+        manager.setIncludePrereleases(true)
+        manager.check(downloadAutomatically = true)
+        assertEquals(listOf(false, true), requestedChannels)
+        assertEquals(beta, manager.state.value.release)
+    }
 }

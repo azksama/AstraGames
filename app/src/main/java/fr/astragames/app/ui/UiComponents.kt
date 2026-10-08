@@ -79,10 +79,13 @@ internal fun RoundedListItem(
 }
 
 @Composable
-internal fun SettingsSwitch(title: String, checked: Boolean, onChange: (Boolean) -> Unit) = RoundedListItem(
-    modifier = Modifier.toggleable(value = checked, role = Role.Switch, onValueChange = onChange),
+internal fun SettingsSwitch(title: String, checked: Boolean, onChange: (Boolean) -> Unit) = SettingsSwitch(title, checked, onChange, enabled = true)
+
+@Composable
+internal fun SettingsSwitch(title: String, checked: Boolean, onChange: (Boolean) -> Unit, enabled: Boolean) = RoundedListItem(
+    modifier = Modifier.toggleable(value = checked, role = Role.Switch, onValueChange = onChange, enabled = enabled),
     headlineContent = { Text(title) },
-    trailingContent = { Switch(checked, null) }
+    trailingContent = { Switch(checked, null, enabled = enabled) }
 )
 
 internal fun updateIntervalLabel(code: String) = when (code) {

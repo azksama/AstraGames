@@ -3,6 +3,7 @@ package fr.astragames.app.updates
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import org.json.JSONObject
+import org.json.JSONArray
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
@@ -10,8 +11,9 @@ import java.net.URL
 import java.security.MessageDigest
 
 internal class GitHubUpdateClient {
-    suspend fun latest(debug: Boolean): GitHubRelease {
-        val connection = connect("$UPDATE_API/releases/latest", "application/vnd.github+json")
+    suspend fun latest(debug: Boolean, includePrereleases: Boolean = false): GitHubRelease {
+        val endpoint = if (includePrereleases) "$UPDATE_API/releases?per_page=100" else "$UPDATE_API/releases/latest"
+        val connection = connect(endpoint, "application/vnd.github+json")
         try {
             val bytes = connection.inputStream.use { input ->
                 val output = java.io.ByteArrayOutputStream()
@@ -20,12 +22,14 @@ internal class GitHubUpdateClient {
                     currentCoroutineContext().ensureActive()
                     val count = input.read(buffer)
                     if (count < 0) break
-                    require(output.size() + count <= 1024 * 1024) { "Réponse GitHub trop volumineuse." }
+                    require(output.size() + count <= 4 * 1024 * 1024) { "Réponse GitHub trop volumineuse." }
                     output.write(buffer, 0, count)
                 }
                 output.toByteArray()
             }
-            return GitHubRelease.parse(JSONObject(String(bytes, Charsets.UTF_8)), debug)
+            val json = String(bytes, Charsets.UTF_8)
+            return if (includePrereleases) GitHubRelease.newest(JSONArray(json), debug, true)
+            else GitHubRelease.parse(JSONObject(json), debug)
         } finally { connection.disconnect() }
     }
 

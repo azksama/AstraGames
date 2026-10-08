@@ -24,20 +24,24 @@ import kotlin.coroutines.cancellation.CancellationException
 internal data class AppUpdateState(
     val release: GitHubRelease? = null, val busy: Boolean = false, val progress: Int? = null,
     val ready: Boolean = false, val error: String? = null, val message: String? = null,
-    val automatic: Boolean = true, val autoDownload: Boolean = true, val wifiOnly: Boolean = true
+    val automatic: Boolean = true, val autoDownload: Boolean = true, val wifiOnly: Boolean = true,
+    val includePrereleases: Boolean = false
 )
 
-internal class AppUpdateManager(private val context: Context) {
+internal class AppUpdateManager(
+    private val context: Context,
+    private val latestRelease: suspend (Boolean, Boolean) -> GitHubRelease = { debug, previews -> GitHubUpdateClient().latest(debug, previews) }
+) {
     private val preferences = context.getSharedPreferences("app_updates", Context.MODE_PRIVATE)
     private val directory = File(context.cacheDir, "app-updates")
     private val apk get() = File(directory, "update.apk")
     private val mutex = Mutex()
     private val saved = runCatching { GitHubRelease.fromCache(JSONObject(preferences.getString("release", "")!!)) }.getOrNull()
-        ?.takeIf { newerVersion(it.version, BuildConfig.VERSION_NAME) }
+        ?.takeIf { newerVersion(it.version, BuildConfig.VERSION_NAME) && it.allowedInChannel(preferences.getBoolean("includePrereleases", false)) }
     private val mutableState = MutableStateFlow(AppUpdateState(
         release = saved, ready = saved != null && preferences.getString("ready", null) == saved.sha256 && apk.isFile,
         automatic = preferences.getBoolean("automatic", true), autoDownload = preferences.getBoolean("download", true),
-        wifiOnly = preferences.getBoolean("wifi", true)
+        wifiOnly = preferences.getBoolean("wifi", true), includePrereleases = preferences.getBoolean("includePrereleases", false)
     ))
     val state = mutableState.asStateFlow()
 
@@ -49,8 +53,16 @@ internal class AppUpdateManager(private val context: Context) {
 
     private fun client() = GitHubUpdateClient()
 
+    suspend fun setIncludePrereleases(enabled: Boolean) = withContext(Dispatchers.IO) { mutex.withLock {
+        if (mutableState.value.includePrereleases == enabled) return@withLock
+        check(preferences.edit().putBoolean("includePrereleases", enabled).remove("release").remove("ready").remove("notified").commit())
+        mutableState.update { it.copy(includePrereleases = enabled, release = null, ready = false, message = null, error = null) }
+        apk.delete()
+        context.getSystemService(android.app.NotificationManager::class.java).cancel(811)
+    } }
+
     suspend fun check(downloadAutomatically: Boolean = false) = operation {
-        val release = client().latest(BuildConfig.DEBUG)
+        val release = latestRelease(BuildConfig.DEBUG, mutableState.value.includePrereleases)
         preferences.edit { putLong("lastCheck", System.currentTimeMillis()) }
         if (!newerVersion(release.version, BuildConfig.VERSION_NAME)) {
             preferences.edit { remove("release"); remove("ready") }

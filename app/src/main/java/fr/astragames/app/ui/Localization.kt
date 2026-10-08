@@ -53,6 +53,9 @@ object AppLocalizer {
     ) = Translation(source, english, spanish, russian, german, chinese, japanese)
 
     private val catalog = listOf(
+        t("Recevoir les versions bêta", "Receive beta versions", "Recibir versiones beta", "Получать бета-версии", "Betaversionen erhalten", "接收测试版本", "ベータ版を受け取る"),
+        t("Préversion", "Prerelease", "Versión preliminar", "Предварительная версия", "Vorabversion", "预发布版本", "プレリリース"),
+        t("Inclut les préversions, qui peuvent être moins stables. Désactiver cette option ne réinstalle pas une ancienne version.", "Includes prereleases, which may be less stable. Turning this off does not reinstall an older version.", "Incluye versiones preliminares, que pueden ser menos estables. Desactivar esta opción no reinstala una versión anterior.", "Включает предварительные версии, которые могут быть менее стабильными. Отключение не возвращает предыдущую версию.", "Enthält Vorabversionen, die weniger stabil sein können. Das Ausschalten installiert keine ältere Version erneut.", "包含可能不够稳定的预发布版本。关闭此选项不会重新安装旧版本。", "安定性が低い可能性のあるプレリリースを含みます。無効にしても旧バージョンには戻りません。"),
         t("Analyser les textes", "Analyze text", "Analizar textos", "Анализировать тексты", "Texte analysieren", "分析文本", "テキストを分析"),
         t("Actualiser l’analyse", "Refresh analysis", "Actualizar análisis", "Обновить анализ", "Analyse aktualisieren", "更新分析", "分析を更新"),
         t("Analyse enregistrée. Actualisez-la si les fichiers du jeu ont changé.", "Saved analysis. Refresh it if the game files have changed.", "Análisis guardado. Actualízalo si han cambiado los archivos del juego.", "Анализ сохранён. Обновите его, если файлы игры изменились.", "Analyse gespeichert. Aktualisiere sie, wenn sich die Spieldateien geändert haben.", "分析已保存。如游戏文件已更改，请更新分析。", "分析を保存しました。ゲームのファイルが変わった場合は更新してください。"),

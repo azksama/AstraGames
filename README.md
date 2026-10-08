@@ -172,7 +172,9 @@ Sans l’argument `liveTranslation`, le test nécessitant les modèles est ignor
 
 ## Mises à jour d’Astra
 
-Ouvrir **Paramètres → Mises à jour d’Astra**. Astra interroge les releases stables du [dépôt public](https://github.com/azksama/AstraGames/releases), sans compte ni jeton. La vérification périodique et le téléchargement automatique sont activés par défaut, avec un réseau non facturé (Wi-Fi) requis pour le téléchargement. La cadence demandée est de 12 heures ; Android peut la décaler selon la batterie et le réseau.
+Ouvrir **Paramètres → Mises à jour d’Astra**. Astra interroge par défaut les releases stables du [dépôt public](https://github.com/azksama/AstraGames/releases), sans compte ni jeton. L’option **Recevoir les versions bêta**, désactivée par défaut, inclut aussi les préversions. Son changement relance la vérification et retire toute mise à jour en attente du canal précédent. La version la plus récente est choisie en respectant l’ordre des versions (bêta 2, bêta 10, puis stable), sans retour automatique vers une ancienne version. Le choix est conservé après fermeture et utilisé aussi par les vérifications automatiques.
+
+La vérification périodique et le téléchargement automatique sont activés par défaut, avec un réseau non facturé (Wi-Fi) requis pour le téléchargement. La cadence demandée est de 12 heures ; Android peut la décaler selon la batterie et le réseau.
 
 Une notification ouvre l’écran lorsqu’un APK est prêt. **Télécharger et installer** enchaîne le téléchargement manuel et l’ouverture de l’installateur ; **Installer la mise à jour** utilise le fichier déjà prêt. Android demande l’autorisation d’installer depuis Astra au premier usage, puis la confirmation de chaque installation. Astra ne peut pas effectuer une installation silencieuse sur un appareil Android ordinaire.
 
@@ -185,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.1](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.1). Les mises à jour automatiques stables ne proposent pas les préversions ; télécharger l’APK depuis cette page.
+Disponible dans la [préversion 1.12.0-beta.2](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.2). Installer une première fois cet APK depuis GitHub, puis activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta** pour recevoir les suivantes.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
