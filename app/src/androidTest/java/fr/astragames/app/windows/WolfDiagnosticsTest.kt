@@ -68,6 +68,23 @@ class WolfDiagnosticsTest {
         assertFalse(report.contains("État : Crash"))
     }
 
+    @Test fun recoveryIgnoresLiveFinishedAndDismissedSessions() {
+        val store = WolfDiagnostics(context)
+        val live = store.begin("Live", "Game.exe")
+        assertNull(store.pendingRecovery())
+        live.finish("Normal close")
+        assertNull(store.pendingRecovery())
+        val interrupted = File(root, "wolf-diagnostics/9999999999999-interrupted").apply { mkdirs() }
+        WolfDiagnosticSession(interrupted, false).stage("Installation : Box64")
+        assertEquals(interrupted, store.pendingRecovery())
+        store.dismissRecovery(interrupted)
+        assertNull(WolfDiagnostics(context).pendingRecovery())
+        assertTrue(interrupted.exists()) // Dismissing never deletes the report.
+        val older = File(root, "wolf-diagnostics/9999999999998-older").apply { mkdirs() }
+        WolfDiagnosticSession(older, false).stage("Older interruption")
+        assertNull(store.pendingRecovery())
+    }
+
     @Test fun prepareProcessDeathRecovery() {
         Assume.assumeTrue(InstrumentationRegistry.getArguments().getString("wolfRecovery") == "prepare")
         WolfDiagnostics(app).begin("PROCESS_DEATH_PROBE", "Game.exe").apply { stage("Box64 interrupted probe"); event("PERSIST_BEFORE_DEATH") }

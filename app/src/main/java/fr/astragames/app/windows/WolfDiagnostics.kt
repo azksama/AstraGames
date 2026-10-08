@@ -49,6 +49,22 @@ internal class WolfDiagnostics(private val context: Context) {
     fun reports(): List<File> = root.listFiles()?.filter { it.isDirectory && File(it, "session.json").isFile }
         ?.sortedByDescending { it.name } ?: emptyList()
 
+    /** Old beta.3 reports are included. Active and normally finished sessions never trigger recovery. */
+    fun pendingRecovery(): File? {
+        val dismissed = preferences.getString("recoveryDismissed", "").orEmpty()
+        return reports().firstOrNull { directory ->
+            directory.name > dismissed && !active.containsKey(directory.name) && runCatching {
+                !JSONObject(AtomicFile(File(directory, "session.json")).readFully().toString(Charsets.UTF_8)).optBoolean("finished")
+            }.getOrDefault(false)
+        }
+    }
+
+    fun dismissRecovery(directory: File) {
+        require(directory.canonicalFile.parentFile == root.canonicalFile)
+        val previous = preferences.getString("recoveryDismissed", "").orEmpty()
+        check(preferences.edit().putString("recoveryDismissed", maxOf(previous, directory.name)).commit())
+    }
+
     fun report(directory: File): String {
         require(directory.canonicalFile.parentFile == root.canonicalFile)
         val metadata = JSONObject(AtomicFile(File(directory, "session.json")).readFully().toString(Charsets.UTF_8))

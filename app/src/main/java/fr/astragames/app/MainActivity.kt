@@ -35,11 +35,17 @@ import fr.astragames.app.ui.AppUpdateScreen
 import fr.astragames.app.ui.LocalAppLanguage
 import fr.astragames.app.ui.theme.AstraTheme
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import fr.astragames.app.windows.WolfDiagnostics
+import fr.astragames.app.ui.WolfDiagnosticsDialog
+import java.io.File
 
 class MainActivity : FragmentActivity() {
     private val viewModel by viewModels<AstraViewModel>()
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
     private var coverGameId: String? = null
+    private var recoveredWolfReport by mutableStateOf<File?>(null)
     private val coverPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         val gameId = coverGameId
         if (uri != null && gameId != null) launchCrop(gameId, uri) else coverGameId = null
@@ -136,8 +142,18 @@ class MainActivity : FragmentActivity() {
                     onRestoreBackup = { backupRestorePicker.launch(arrayOf("application/zip", "application/octet-stream")) },
                     onOpenBackupFolder = ::openBackupFolder
                 )
-                if (showAppUpdates && !locked) CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
+                if (showAppUpdates && !locked && recoveredWolfReport == null) CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
                     AppUpdateScreen(viewModel.appUpdates, viewModel::prepareExternalPicker) { showAppUpdates = false }
+                }
+                if (state.settingsLoaded && !locked) recoveredWolfReport?.let { report ->
+                    CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
+                        WolfDiagnosticsDialog(initialReport = report, recovered = true, beforeExternal = viewModel::prepareExternalPicker) {
+                            lifecycleScope.launch {
+                                withContext(Dispatchers.IO) { runCatching { WolfDiagnostics(this@MainActivity).dismissRecovery(report) } }
+                                recoveredWolfReport = null
+                            }
+                        }
+                    }
                 }
             }
         }
@@ -147,6 +163,10 @@ class MainActivity : FragmentActivity() {
         super.onResume()
         viewModel.refreshRuntimes()
         viewModel.onAppResumed()
+        lifecycleScope.launch {
+            val report = withContext(Dispatchers.IO) { runCatching { WolfDiagnostics(this@MainActivity).pendingRecovery() }.getOrNull() }
+            if (!isFinishing) recoveredWolfReport = report
+        }
     }
 
     override fun onSaveInstanceState(outState: Bundle) {

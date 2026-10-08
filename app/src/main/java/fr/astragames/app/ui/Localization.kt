@@ -53,6 +53,7 @@ object AppLocalizer {
     ) = Translation(source, english, spanish, russian, german, chinese, japanese)
 
     private val catalog = listOf(
+        t("Le lancement Wolf précédent a été interrompu. Voici le rapport conservé.", "The previous Wolf launch was interrupted. Here is the saved report.", "El inicio anterior de Wolf se interrumpió. Aquí está el informe guardado.", "Предыдущий запуск Wolf был прерван. Ниже сохранённый отчёт.", "Der letzte Wolf-Start wurde unterbrochen. Hier ist der gespeicherte Bericht.", "上次 Wolf 启动已中断。以下是保存的报告。", "前回の Wolf 起動が中断されました。保存されたレポートを表示します。"),
         t("Diagnostic Wolf RPG", "Wolf RPG diagnostics", "Diagnóstico de Wolf RPG", "Диагностика Wolf RPG", "Wolf-RPG-Diagnose", "Wolf RPG 诊断", "Wolf RPG 診断"),
         t("Mode debug Wolf RPG", "Wolf RPG debug mode", "Modo de depuración de Wolf RPG", "Режим отладки Wolf RPG", "Wolf-RPG-Debugmodus", "Wolf RPG 调试模式", "Wolf RPG デバッグモード"),
         t("Mode debug et rapports de lancement", "Debug mode and launch reports", "Depuración e informes de inicio", "Отладка и отчёты о запуске", "Debugmodus und Startberichte", "调试模式和启动报告", "デバッグモードと起動レポート"),

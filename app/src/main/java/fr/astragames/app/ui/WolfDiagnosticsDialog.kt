@@ -21,7 +21,7 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 @Composable
-internal fun WolfDiagnosticsDialog(initialReport: File? = null, beforeExternal: () -> Unit = {}, onDismiss: () -> Unit) {
+internal fun WolfDiagnosticsDialog(initialReport: File? = null, recovered: Boolean = false, beforeExternal: () -> Unit = {}, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val diagnostics = remember(context) { WolfDiagnostics(context) }
     val scope = rememberCoroutineScope()
@@ -46,6 +46,7 @@ internal fun WolfDiagnosticsDialog(initialReport: File? = null, beforeExternal: 
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState())) {
                 CompactHeader("Diagnostic Wolf RPG", onBack = onDismiss)
+                if (recovered) Text("Le lancement Wolf précédent a été interrompu. Voici le rapport conservé.", Modifier.padding(16.dp), color = MaterialTheme.colorScheme.error)
                 SettingsSwitch("Mode debug Wolf RPG", enabled, { value ->
                     scope.launch {
                         busy = true

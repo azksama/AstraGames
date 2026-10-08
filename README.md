@@ -187,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.3](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.3). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.4](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.4). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
@@ -207,8 +207,11 @@ Si le lancement s’arrête, ouvrir **Paramètres → Diagnostic Wolf RPG**, act
 puis relancer le jeu. Le rapport indique la dernière étape, le code de sortie, les exceptions et les
 journaux de Box64/Wine et de l’audio. Le mode debug ajoute les détails du chargeur Wine, de Box64,
 un test de démarrage de Box64 avant Wine sur ARM64, et Logcat limité au processus Astra.
-Les erreurs détectées proposent aussi **Voir le rapport de diagnostic**. Après un arrêt complet
-d’Astra, rouvrir les paramètres pour retrouver le rapport, puis **Partager le rapport**.
+Les erreurs détectées proposent aussi **Voir le rapport de diagnostic**. Après une session interrompue,
+Astra présente automatiquement le rapport à sa réouverture, après déverrouillage si nécessaire.
+Fermer cet aperçu conserve le rapport dans les paramètres ; **Partager le rapport** permet son export.
+La bêta 4 corrige le crash natif Zstd pendant l’installation de Box64 dans l’APK optimisé et la reprise
+d’une extraction contenant des liens symboliques existants. Voir les [preuves de validation](docs/VALIDATION_1.12.0-beta.4.md).
 
 Les cinq dernières sessions sont conservées localement, avec rotation des logs (512 Kio × deux
 fichiers par flux). Aucun envoi automatique ; l’export texte peut contenir le nom du jeu et des

@@ -7,6 +7,8 @@ import org.apache.commons.compress.archivers.tar.TarArchiveInputStream;
 import org.tukaani.xz.XZInputStream;
 import java.io.*;
 import java.util.*;
+import java.nio.file.Files;
+import java.nio.file.LinkOption;
 
 /** Extracts a verified runtime archive into a fresh application-owned directory. */
 public final class RuntimeArchive {
@@ -50,7 +52,10 @@ public final class RuntimeArchive {
         // Links are materialized last, so they can never redirect subsequent writes.
         for (String[] link : links) {
             File out = new File(link[0]);
-            if (out.exists()) continue;
+            // File.exists follows symlinks and returns false for a dangling link.
+            // Such links are valid in a filtered runtime and may remain after an
+            // interrupted install; creating them again would fail with EEXIST.
+            if (Files.exists(out.toPath(), LinkOption.NOFOLLOW_LINKS)) continue;
             out.getParentFile().mkdirs();
             Os.symlink(link[1], link[0]);
         }

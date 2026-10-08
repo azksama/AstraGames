@@ -72,6 +72,14 @@ class WolfRuntimeActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // A restored activity must not automatically rerun the game that just killed the process.
+        // MainActivity recovers the original report after the app has been unlocked.
+        if (savedInstanceState != null) {
+            startActivity(Intent(this, fr.astragames.app.MainActivity::class.java)
+                .addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP or Intent.FLAG_ACTIVITY_SINGLE_TOP))
+            finish()
+            return
+        }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_SECURE)
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         status = TextView(this).apply {
@@ -90,7 +98,6 @@ class WolfRuntimeActivity : FragmentActivity() {
         })
         lifecycleScope.launch {
             settings = settingsRepository.settings.first()
-            if (savedInstanceState != null) lockRuntime()
             begin()
         }
     }
