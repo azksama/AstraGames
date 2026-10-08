@@ -122,7 +122,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                 val runtime = WolfRuntimeInstaller(this@WolfRuntimeActivity).install(::progress)
                 storage = WolfGameStorage(this@WolfRuntimeActivity, id, uri)
                 gameStorage = storage
-                storage.prepare(::progress)
+                storage.prepare(executable, ::progress)
                 val sockets = File(cacheDir, "wolf-sockets").apply { mkdirs() }
                 val xSocket = UnixSocketConfig.create(sockets.path, "/x/X0")
                 val shmSocket = UnixSocketConfig.create(sockets.path, "/shm/SM0")
@@ -152,6 +152,8 @@ class WolfRuntimeActivity : FragmentActivity() {
                     runCatching { runner?.stop() }.onFailure { diagnostic?.failure("Échec de l’arrêt du runtime", it) }
                     process?.let { if (it.isAlive) it.destroyForcibly() }
                     if (storage != null && runner != null) {
+                        runCatching { diagnostic?.gameErrorLog(safeFile(storage.game, requireNotNull(intent.getStringExtra("executable"))).parentFile!!) }
+                        val syncStarted = android.os.SystemClock.elapsedRealtime()
                         runCatching { storage.synchronize() }.onSuccess { conflicts ->
                             synchronized = conflicts == 0
                             if (conflicts > 0) failure = listOfNotNull(failure, "$conflicts fichier(s) ont changé dans le dossier source. Les sauvegardes restent dans Astra pour éviter un écrasement.").joinToString("\n")
@@ -159,6 +161,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                             diagnostic?.failure("Synchronisation des sauvegardes", it)
                             failure = listOfNotNull(failure, it.message).joinToString("\n")
                         }
+                        diagnostic?.event("Synchronisation terminée en ${android.os.SystemClock.elapsedRealtime() - syncStarted} ms")
                     }
                 }
                 runCatching { x11?.stop() }.onFailure { diagnostic?.failure("Arrêt X11", it) }; x11 = null

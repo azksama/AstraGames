@@ -91,10 +91,19 @@ object TranslateGameTool : GameTool {
 }
 
 /** Registre des outils disponibles sur la fiche d'un jeu. */
+object RefreshWolfFilesTool : GameTool {
+    override val id = "wolf_refresh"
+    override val title = "Actualiser les fichiers du jeu"
+    override val description = "Après une mise à jour ou un mod : relire le dossier au prochain lancement. Sauvegardes conservées."
+    override val icon = Icons.Default.Refresh
+    override val section = "Wolf RPG"
+    override fun isAvailable(game: GameEntity) = game.engine == "WOLF_RPG"
+}
+
 object GameToolsRegistry {
     private val tools = listOf(
         SaveFolderTool, SaveEditorTool, SaveBackupTool,
-        ModsManagerTool, TranslateGameTool, OpenGameFolderTool, RescanGameTool
+        ModsManagerTool, TranslateGameTool, OpenGameFolderTool, RescanGameTool, RefreshWolfFilesTool
     )
 
     fun availableFor(game: GameEntity): List<GameTool> = tools.filter { it.isAvailable(game) }

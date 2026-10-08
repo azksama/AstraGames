@@ -19,7 +19,8 @@ class WolfLogSinkTest {
         assertEquals("SIGSEGV\n", file.readText())
         assertEquals("Box64 starts\nok\n", File(temporary.root, "runtime.previous.log").readText())
         repeat(100) { sink.write("0123456789\n".toByteArray()) }
-        assertTrue(temporary.root.listFiles()!!.sumOf { it.length() } <= 40)
+        assertTrue(temporary.root.listFiles()!!.sumOf { it.length() } <= 42)
+        assertEquals("Bo", File(temporary.root, "runtime.head.log").readText())
     }
 
     @Test fun oversizedWritesKeepOnlyTheBoundedTail() {

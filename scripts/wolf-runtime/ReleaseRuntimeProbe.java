@@ -25,6 +25,7 @@ public class ReleaseRuntimeProbe extends Instrumentation {
                 .putExtra("id", "official-wolf-test-game3729-beta5").putExtra("source", sample.toURI().toString())
                 .putExtra("executable", "Game.exe").putExtra("title", "Wolf release test")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            long launchStarted = android.os.SystemClock.elapsedRealtime();
             activity = startActivitySync(intent);
             runOnMainSync(() -> activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE));
             boolean[] ready = {false};
@@ -33,6 +34,7 @@ public class ReleaseRuntimeProbe extends Instrumentation {
                 runOnMainSync(() -> { Button button = find(activity.getWindow().getDecorView(), "Valider"); ready[0] = button != null && button.isShown(); });
             }
             if (!ready[0]) throw new Exception("Runtime did not become ready");
+            long readyMs = android.os.SystemClock.elapsedRealtime() - launchStarted;
             Thread.sleep(10000);
             runOnMainSync(() -> activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE));
             waitForIdleSync();
@@ -41,6 +43,8 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             runOnMainSync(() -> find(activity.getWindow().getDecorView(), "Valider").performClick());
             Thread.sleep(4000);
             screenshot("release-game.png");
+            long renderedMs = android.os.SystemClock.elapsedRealtime() - launchStarted;
+            if (renderedMs >= 60000) throw new Exception("Prepared official sample exceeded 60 seconds: " + renderedMs);
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             StringBuilder hash = new StringBuilder();
             for (byte b : digest.digest("official-wolf-test-game3729-beta5".getBytes("UTF-8"))) hash.append(String.format("%02x", b));
@@ -61,7 +65,7 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             if (!events.contains("Serveur Windows supervisé") || !events.contains("Fin wineserver : code de sortie 0"))
                 throw new Exception("Missing supervised server lifecycle evidence");
             result.putBoolean("debuggable", (getTargetContext().getApplicationInfo().flags & 2) != 0);
-            result.putString("stream", "PASS: Release game rendered, accepted input and closed with supervised wineserver.\n" + state);
+            result.putString("stream", "PASS: Release game rendered, accepted input and closed with supervised wineserver. readyMs=" + readyMs + " renderedMs=" + renderedMs + "\n" + state);
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", android.util.Log.getStackTraceString(error));

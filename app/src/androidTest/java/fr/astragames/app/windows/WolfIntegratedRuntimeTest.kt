@@ -54,7 +54,7 @@ class WolfIntegratedRuntimeTest {
             if (diagnostics.enabled) {
                 val report = diagnostics.report(diagnostics.reports().first())
                 assertTrue(report.contains("debug=true"))
-                assertTrue(report.contains("WINEDEBUG=-all,err+all,warn+all"))
+                assertTrue(report.contains("WINEDEBUG=-all,err+all,warn+seh"))
                 assertTrue(report.contains("Lancement du jeu via"))
                 assertTrue(report.contains("===== runtime ====="))
                 assertTrue(report.contains("Serveur Windows supervisé"))

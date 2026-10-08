@@ -161,6 +161,9 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
         }
         val installation = ModInstallationEntity(UUID.randomUUID().toString(), mod.id, game.id, System.currentTimeMillis(), mod.version, mod.installMode, "INSTALLING")
         dao.upsertInstallation(installation)
+        // The runtime caches game assets. Invalidate before the first source mutation,
+        // including partial installations and rollback after a failed operation.
+        if (game.engine == "WOLF_RPG") fr.astragames.app.windows.WolfGameStorage(context, game.id, game.documentUri).requestRefresh()
         try {
             files.forEach { (path, file) ->
                 var parent = target
@@ -200,6 +203,9 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
                 UninstallWarning(record.relativePath, "Fichier modifie depuis l installation") else null
         }
         if (warnings.isNotEmpty()) return warnings
+        dao.getGame(installation.gameId)?.takeIf { it.engine == "WOLF_RPG" }?.let {
+            fr.astragames.app.windows.WolfGameStorage(context, it.id, it.documentUri).requestRefresh()
+        }
         files.filter { it.action == "REPLACED" }.forEach { record ->
             val backup = managedBackup(record.backupUri)
             check(hashOf(DocumentFile.fromFile(backup)) == record.originalHash) { "Backup original endommage." }

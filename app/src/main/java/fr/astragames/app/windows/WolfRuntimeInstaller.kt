@@ -24,7 +24,7 @@ class WolfRuntimeInstaller(private val context: Context) {
             val digest = MessageDigest.getInstance("SHA-256")
             val buffer = ByteArray(65536)
             while (true) { val read = input.read(buffer); if (read < 0) break; digest.update(buffer, 0, read) }
-            digest.digest().joinToString("") { "%02x".format(it) }
+            digest.digest().hexString()
         }
     }
     data class Component(val name: String, val url: String, val sha: String, val destination: String, val librariesOnly: Boolean = false, val raw: Boolean = false)
@@ -135,3 +135,9 @@ class WolfRuntimeInstaller(private val context: Context) {
 }
 
 private fun File.readTextOrNull() = if (isFile) readText() else null
+
+/** Avoid 32 locale-aware Formatter allocations for every imported game file. */
+internal fun ByteArray.hexString(): String = buildString(size * 2) {
+    val digits = "0123456789abcdef"
+    for (byte in this@hexString) { val value = byte.toInt() and 255; append(digits[value ushr 4]); append(digits[value and 15]) }
+}

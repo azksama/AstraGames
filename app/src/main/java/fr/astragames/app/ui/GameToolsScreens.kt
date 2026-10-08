@@ -66,6 +66,7 @@ internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () 
                             "translate" -> showTranslation = true
                             "open_folder" -> vm.openGameFolder(game.id)
                             "rescan" -> vm.rescanGame(game.id)
+                            "wolf_refresh" -> { vm.refreshWolfFiles(game.id); onDismiss() }
                         }
                     }
                 )

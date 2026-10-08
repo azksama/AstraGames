@@ -78,9 +78,9 @@ internal class WolfDiagnostics(private val context: Context) {
         if (unfinished) {
             result.append(androidExit(metadata))
         }
-        for (name in listOf("events", "runtime", "server", "startup", "audio", "shutdown", "android")) {
+        for (name in listOf("events", "runtime", "game", "server", "startup", "audio", "shutdown", "android")) {
             result.append("\n===== $name =====\n")
-            for (suffix in listOf(".previous.log", ".log")) {
+            for (suffix in listOf(".head.log", ".previous.log", ".log")) {
                 val file = File(directory, name + suffix)
                 if (file.isFile) result.append(readTail(file, LOG_LIMIT)).append('\n')
             }
@@ -141,6 +141,27 @@ internal class WolfDiagnosticSession(val directory: File, val verbose: Boolean) 
     var logcat: Process? = null
     private fun sink(name: String) = sinks.getOrPut(name) { WolfLogSink(File(directory, "$name.log")) }
     fun event(message: String) { sink("events").write("${java.time.Instant.now()} $message\n".toByteArray()) }
+    private var initialGameError: String? = null
+    private var gameLaunched = false
+    fun gameErrorLog(game: File, beforeLaunch: Boolean = false) {
+        val file = game.listFiles()?.firstOrNull { it.name.equals("Game_ErrorLog.txt", true) }
+        val fingerprint = file?.let { "${it.length()}:${it.lastModified()}" }
+        if (beforeLaunch) { initialGameError = fingerprint; gameLaunched = true; return }
+        if (file == null) { event("Aucun Game_ErrorLog.txt présent"); return }
+        val bytes = RandomAccessFile(file, "r").use { input ->
+            input.seek((input.length() - 32_768).coerceAtLeast(0))
+            ByteArray((input.length() - input.filePointer).toInt()).also(input::readFully)
+        }
+        val utf8 = bytes.toString(Charsets.UTF_8)
+        val text = if ('\uFFFD' in utf8) bytes.toString(java.nio.charset.Charset.forName("windows-31j")) else utf8
+        val status = when {
+            !gameLaunched -> "journal présent avant tout lancement du jeu"
+            fingerprint == initialGameError -> "déjà présent, inchangé pendant cette session"
+            else -> "créé ou modifié pendant cette session"
+        }
+        sink("game").write(("Game_ErrorLog.txt : $status; " +
+            "date=${java.time.Instant.ofEpochMilli(file.lastModified())}, taille=${file.length()}\n$text\n").toByteArray())
+    }
     @Synchronized fun stage(value: String) {
         if (metadata.optString("stage") == value) return
         metadata.put("stage", value); persist(); event("Étape : $value")
@@ -180,10 +201,13 @@ internal class WolfDiagnosticSession(val directory: File, val verbose: Boolean) 
     }
 }
 
-/** Two bounded files per stream. Each write reaches the OS immediately, surviving app death. */
+/** Keep startup context as well as the rolling tail. Total <= 2.125 * limit per stream. */
 internal class WolfLogSink(private val file: File, private val limit: Int = WolfDiagnostics.LOG_LIMIT) {
     @Synchronized fun write(bytes: ByteArray) {
         file.parentFile!!.mkdirs()
+        val head = File(file.parentFile, file.nameWithoutExtension + ".head.log")
+        val remaining = (limit / 8 - head.length()).toInt()
+        if (remaining > 0) head.appendBytes(bytes.copyOf(minOf(remaining, bytes.size)))
         if (file.length() + bytes.size > limit) {
             val previous = File(file.parentFile, file.nameWithoutExtension + ".previous.log")
             previous.delete()

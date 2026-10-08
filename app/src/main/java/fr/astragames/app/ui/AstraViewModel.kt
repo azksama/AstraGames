@@ -1033,6 +1033,16 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         events.emit(UiEvent.Message("Rescan du jeu lance"))
     }
 
+    fun refreshWolfFiles(gameId: String) = viewModelScope.launch {
+        val game = repository.getGame(gameId) ?: return@launch
+        runCatchingCancellable {
+            withContext(Dispatchers.IO) {
+                fr.astragames.app.windows.WolfGameStorage(getApplication(), game.id, game.documentUri).requestRefresh()
+            }
+        }.onSuccess { events.emit(UiEvent.Message("Les fichiers du jeu seront actualisés au prochain lancement. Les sauvegardes sont conservées.")) }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Actualisation impossible")) }
+    }
+
     fun mergeTagPair(keep: TagEntity, removed: TagEntity) = viewModelScope.launch {
         repository.mergeTags(keep.id, removed.id)
         refreshTagMerges()

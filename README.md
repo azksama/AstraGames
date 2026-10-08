@@ -187,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.5](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.5). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.6](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.6). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
@@ -219,8 +219,20 @@ Les commandes utilisent une croix à gauche et les actions à droite ; **Menu** 
 ou de quitter. Le rendu a été contrôlé en portrait et paysage sur émulateur.
 Voir les [preuves et limites de la bêta 5](docs/VALIDATION_1.12.0-beta.5.md).
 
+La bêta 6 réutilise la copie du jeu sans relire tous ses fichiers. Les copies déjà initialisées
+sur la bêta 5 sont reprises. Les dossiers Save/Saves et fichiers .sav/.save connus restent
+vérifiés à chaque lancement ; les conflits restent locaux. Pour une mise à jour externe,
+un mod externe ou une sauvegarde dans un emplacement personnalisé, utiliser **Fiche du jeu →
+Outils → Actualiser les fichiers du jeu**, puis relancer. Les mods installés/désinstallés dans
+Astra déclenchent cette actualisation automatiquement. Aucun effacement des données n’est nécessaire.
+La synchronisation vérifie le contenu des sauvegardes et des fichiers nouveaux/modifiés ;
+les ressources inchangées sont identifiées par taille/date. Au premier arrêt après migration,
+les anciens fichiers sans index de dates sont encore vérifiés par hash.
+Le diagnostic joint `Game_ErrorLog.txt`, en distinguant un fichier historique d’un fichier modifié
+pendant la partie, et préserve le début des logs. Voir les [mesures et limites de la bêta 6](docs/VALIDATION_1.12.0-beta.6.md).
+
 Les cinq dernières sessions sont conservées localement, avec rotation des logs (512 Kio × deux
-fichiers par flux). Aucun envoi automatique ; l’export texte peut contenir le nom du jeu et des
+fichiers et 64 Kio de début par flux). Aucun envoi automatique ; l’export texte peut contenir le nom du jeu et des
 chemins. Les rapports sont exclus de la sauvegarde système. Android 11 ou supérieur peut fournir
 la raison d’un arrêt du processus Astra ; si elle manque, le rapport le précise sans inventer
 de cause. Le mode debug aide à diagnostiquer le crash ; il ne garantit pas sa résolution.

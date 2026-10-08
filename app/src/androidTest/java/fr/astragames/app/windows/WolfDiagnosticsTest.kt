@@ -20,6 +20,25 @@ class WolfDiagnosticsTest {
     }
     @After fun cleanup() { root.deleteRecursively(); app.deleteSharedPreferences("wolf-test-$id") }
 
+    @Test fun gameErrorLogDistinguishesHistoricalAndCurrentMessagesAndDecodesJapanese() {
+        val store = WolfDiagnostics(context)
+        val game = File(root, "game").apply { mkdirs() }
+        val file = File(game, "Game_ErrorLog.txt")
+        file.writeText("保存エラー", java.nio.charset.Charset.forName("windows-31j"))
+        val old = store.begin("fixture", "Game.exe")
+        old.gameErrorLog(game, beforeLaunch = true)
+        old.gameErrorLog(game)
+        old.finish("done")
+        assertTrue(store.report(old.directory).contains("déjà présent, inchangé"))
+        assertTrue(store.report(old.directory).contains("保存エラー"))
+        val current = store.begin("fixture", "Game.exe")
+        current.gameErrorLog(game, beforeLaunch = true)
+        file.appendText(" new error")
+        current.gameErrorLog(game)
+        current.finish("done")
+        assertTrue(store.report(current.directory).contains("créé ou modifié pendant cette session"))
+    }
+
     @Test fun failingSubprocessHasStdoutStderrAndExitCodeInShareableReport() {
         val store = WolfDiagnostics(context)
         assertFalse(store.enabled)

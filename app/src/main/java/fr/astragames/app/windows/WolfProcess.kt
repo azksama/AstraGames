@@ -35,6 +35,13 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         "BOX64_LD_LIBRARY_PATH" to "${runtime.path}/proton/lib/wine/x86_64-unix:${runtime.path}/libs/usr/lib",
         "BOX64_PATH" to wine.parent,
         "BOX64_DYNAREC" to "1",
+        // Stability profile: honor x86 flags and SIMD memory ordering on ARM64.
+        // See Box64 docs/USAGE.md and Winlator's STABILITY preset.
+        "BOX64_DYNAREC_SAFEFLAGS" to "2",
+        "BOX64_DYNAREC_STRONGMEM" to "2",
+        "BOX64_DYNAREC_BIGBLOCK" to "0",
+        "BOX64_DYNAREC_NATIVEFLAGS" to "0",
+        "BOX64_DYNAREC_X87DOUBLE" to "1",
         "BOX64_MMAP32" to "1",
         "BOX64_NOBANNER" to "0",
         // LOG=2 traces every wrapped libc call and can rotate away the actual Wine error.
@@ -48,7 +55,8 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         "FONTCONFIG_FILE" to fontConfig.path,
         "WINE_DISABLE_FULLSCREEN_HACK" to "1",
         "WINEDLLOVERRIDES" to "winemenubuilder.exe,mscoree,mshtml=d",
-        "WINEDEBUG" to if (diagnostics?.verbose == true) "-all,err+all,warn+all,+timestamp,+pid,+tid,+seh,+loaddll" else "-all,err+all"
+        // warn+all floods the pipe with asset probes and starves audio on large games.
+        "WINEDEBUG" to if (diagnostics?.verbose == true) "-all,err+all,warn+seh,+timestamp,+pid,+tid,+seh,+loaddll" else "-all,err+all"
     ) + mapOf("PULSE_SERVER" to "unix:${pulseSocket.path}", "PULSE_LATENCY_MSEC" to "40")
 
     private fun startAudio() {
@@ -135,6 +143,8 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         diagnostics?.stage(if (arm) "Lancement du jeu via Box64 / Wine" else "Lancement du jeu via Wine x86_64")
         val file = safeFile(storage.game, executable)
         check(file.isFile && file.extension.equals("exe", true)) { "Exécutable Windows introuvable : $executable" }
+        diagnostics?.event("Espace disponible avant le jeu : ${storage.directory.usableSpace} octets")
+        diagnostics?.gameErrorLog(requireNotNull(file.parentFile), beforeLaunch = true)
         return start(wine, listOf(file.path), workingDirectory = requireNotNull(file.parentFile))
     }
     fun stop() {
