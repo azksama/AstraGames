@@ -24,7 +24,10 @@ class WolfIntegratedRuntimeTest {
         val intent = android.content.Intent().setClassName(context, "fr.astragames.app.windows.WolfRuntimeActivity")
             .putExtra("id", "official-wolf-test-$sample").putExtra("source", source.toURI().toString())
             .putExtra("executable", "Game.exe").putExtra("title", "Wolf officiel")
-        ActivityScenario.launch<android.app.Activity>(intent).use { scenario ->
+        val diagnostics = WolfDiagnostics(context)
+        val previousDebug = diagnostics.enabled
+        if (InstrumentationRegistry.getArguments().getString("wolfDebug") == "true") diagnostics.enabled = true
+        try { ActivityScenario.launch<android.app.Activity>(intent).use { scenario ->
             scenario.onActivity { it.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
             var ready = false
             for (attempt in 0 until 240) {
@@ -41,6 +44,15 @@ class WolfIntegratedRuntimeTest {
             scenario.onActivity { activity -> buttons(activity.window.decorView).first { it.text == "Quitter" }.performClick() }
             Thread.sleep(5000)
         }
+            if (diagnostics.enabled) {
+                val report = diagnostics.report(diagnostics.reports().first())
+                assertTrue(report.contains("debug=true"))
+                assertTrue(report.contains("WINEDEBUG=-all,err+all,warn+all"))
+                assertTrue(report.contains("Lancement du jeu via"))
+                assertTrue(report.contains("===== runtime ====="))
+                assertTrue("Normal close must finalize the diagnostic session", report.contains("État : Fermeture demandée"))
+            }
+        } finally { diagnostics.enabled = previousDebug }
     }
     private fun buttons(view: View): List<Button> = if (view is Button) listOf(view) else if (view is ViewGroup) (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) } else emptyList()
     private fun screenshot(name: String) {

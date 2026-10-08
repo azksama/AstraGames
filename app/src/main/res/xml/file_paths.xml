@@ -2,4 +2,5 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <cache-path name="cover_imports" path="cover-imports/" />
     <cache-path name="app_updates" path="app-updates/" />
+    <cache-path name="wolf_reports" path="wolf-reports/" />
 </paths>

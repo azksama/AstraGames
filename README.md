@@ -187,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.2](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.2). Installer une première fois cet APK depuis GitHub, puis activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta** pour recevoir les suivantes.
+Disponible dans la [préversion 1.12.0-beta.3](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.3). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
@@ -202,3 +202,16 @@ En cas de conflit ou de dossier non accessible, Astra conserve la sauvegarde pri
 son export ZIP. Les réglages de rendu sont appliqués uniquement à la copie privée de `Game.ini`.
 Les archives du catalogue Astra n'incluent pas cette copie des jeux ni leurs préfixes Windows.
 Les notices sont accessibles dans **Paramètres → Moteur Wolf · licences**.
+
+Si le lancement s’arrête, ouvrir **Paramètres → Diagnostic Wolf RPG**, activer **Mode debug Wolf RPG**,
+puis relancer le jeu. Le rapport indique la dernière étape, le code de sortie, les exceptions et les
+journaux de Box64/Wine et de l’audio. Le mode debug ajoute les détails du chargeur Wine, de Box64,
+un test de démarrage de Box64 avant Wine sur ARM64, et Logcat limité au processus Astra.
+Les erreurs détectées proposent aussi **Voir le rapport de diagnostic**. Après un arrêt complet
+d’Astra, rouvrir les paramètres pour retrouver le rapport, puis **Partager le rapport**.
+
+Les cinq dernières sessions sont conservées localement, avec rotation des logs (512 Kio × deux
+fichiers par flux). Aucun envoi automatique ; l’export texte peut contenir le nom du jeu et des
+chemins. Les rapports sont exclus de la sauvegarde système. Android 11 ou supérieur peut fournir
+la raison d’un arrêt du processus Astra ; si elle manque, le rapport le précise sans inventer
+de cause. Le mode debug aide à diagnostiquer le crash ; il ne garantit pas sa résolution.

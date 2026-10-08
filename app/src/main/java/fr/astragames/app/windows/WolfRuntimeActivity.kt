@@ -58,6 +58,8 @@ class WolfRuntimeActivity : FragmentActivity() {
     private lateinit var controls: LinearLayout
     private var closing = false
     private var gameStorage: WolfGameStorage? = null
+    private var diagnostic: WolfDiagnosticSession? = null
+    private var diagnosticOverlay: ComposeView? = null
     private var lockOverlay: ComposeView? = null
     private var settings: fr.astragames.app.settings.AstraSettings? = null
     private val settingsRepository by lazy { (application as fr.astragames.app.AstraApplication).container.settings }
@@ -93,7 +95,10 @@ class WolfRuntimeActivity : FragmentActivity() {
         }
     }
 
-    private fun progress(message: String) { runOnUiThread { if (!isDestroyed) status.text = message } }
+    private fun progress(message: String) {
+        diagnostic?.stage(message)
+        runOnUiThread { if (!isDestroyed) status.text = message }
+    }
     private fun begin() {
         session = lifecycleScope.launch {
             var runner: WolfProcess? = null
@@ -101,6 +106,9 @@ class WolfRuntimeActivity : FragmentActivity() {
             var failure: String? = null
             var synchronized = false
             try {
+                diagnostic = withContext(Dispatchers.IO) {
+                    WolfDiagnostics(this@WolfRuntimeActivity).begin(intent.getStringExtra("title") ?: "Wolf RPG", intent.getStringExtra("executable") ?: "?")
+                }
                 val id = requireNotNull(intent.getStringExtra("id"))
                 val uri = requireNotNull(intent.getStringExtra("source"))
                 val executable = requireNotNull(intent.getStringExtra("executable"))
@@ -111,38 +119,50 @@ class WolfRuntimeActivity : FragmentActivity() {
                 val sockets = File(cacheDir, "wolf-sockets").apply { mkdirs() }
                 val xSocket = UnixSocketConfig.create(sockets.path, "/x/X0")
                 val shmSocket = UnixSocketConfig.create(sockets.path, "/shm/SM0")
+                diagnostic?.stage("Initialisation de l’affichage X11 et de la mémoire partagée")
                 setupDisplay()
                 x11 = XServerComponent(server, xSocket).also { it.start() }
                 shm = SysVSharedMemoryComponent(server, shmSocket).also { it.start() }
-                runner = WolfProcess(this@WolfRuntimeActivity, runtime, storage, xSocket.path, shmSocket.path)
+                runner = WolfProcess(this@WolfRuntimeActivity, runtime, storage, xSocket.path, shmSocket.path, diagnostic)
                 progress("Initialisation de Windows… Le premier lancement peut prendre quelques minutes.")
                 runInterruptible(Dispatchers.IO) { runner.initialize() }
                 status.visibility = View.GONE
                 controls.visibility = View.VISIBLE
                 val result = runInterruptible(Dispatchers.IO) {
                     process = runner.launch(executable)
-                    process!!.waitFor()
+                    process!!.waitFor().also { diagnostic?.exited(process!!, "Jeu", it) }
                 }
-                if (result != 0 && !closing) failure = "Le jeu s’est arrêté (code $result). Le journal est conservé dans Astra."
-            } catch (cancelled: CancellationException) { throw cancelled }
-            catch (error: Exception) { failure = error.message ?: "Le lancement a échoué." }
+                if (result != 0 && !closing) failure = "Le jeu s’est arrêté : ${WolfDiagnosticSession.exitDescription(result)}. Consultez le rapport de diagnostic."
+            } catch (cancelled: CancellationException) { diagnostic?.event("Lancement annulé / fermeture demandée"); throw cancelled }
+            catch (error: Throwable) {
+                failure = error.message ?: "Le lancement a échoué."
+                runCatching { diagnostic?.failure("Échec du lancement", error) }
+            }
             finally {
+                withContext(NonCancellable) {
                 releaseKeys()
-                withContext(NonCancellable + Dispatchers.IO) {
-                    runCatching { runner?.stop() }
+                withContext(Dispatchers.IO) {
+                    runCatching { runner?.stop() }.onFailure { diagnostic?.failure("Échec de l’arrêt du runtime", it) }
                     process?.let { if (it.isAlive) it.destroyForcibly() }
                     if (storage != null && runner != null) {
                         runCatching { storage.synchronize() }.onSuccess { conflicts ->
                             synchronized = conflicts == 0
-                            if (conflicts > 0) failure = "$conflicts fichier(s) ont changé dans le dossier source. Les sauvegardes restent dans Astra pour éviter un écrasement."
-                        }.onFailure { failure = it.message }
+                            if (conflicts > 0) failure = listOfNotNull(failure, "$conflicts fichier(s) ont changé dans le dossier source. Les sauvegardes restent dans Astra pour éviter un écrasement.").joinToString("\n")
+                        }.onFailure {
+                            diagnostic?.failure("Synchronisation des sauvegardes", it)
+                            failure = listOfNotNull(failure, it.message).joinToString("\n")
+                        }
                     }
                 }
-                x11?.stop(); x11 = null
-                shm?.stop(); shm = null
+                runCatching { x11?.stop() }.onFailure { diagnostic?.failure("Arrêt X11", it) }; x11 = null
+                runCatching { shm?.stop() }.onFailure { diagnostic?.failure("Arrêt mémoire partagée", it) }; shm = null
+                withContext(Dispatchers.IO) {
+                    runCatching { diagnostic?.finish(failure ?: if (closing) "Fermeture demandée" else "Partie terminée") }
+                }
                 if (!isDestroyed) {
                     if (closing && failure == null) finish()
                     else showResult(failure ?: if (synchronized) "Partie terminée. Sauvegardes synchronisées." else "Partie terminée.")
+                }
                 }
             }
         }
@@ -224,9 +244,24 @@ class WolfRuntimeActivity : FragmentActivity() {
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(24, 24, 24, 24) }
         layout.addView(TextView(this).apply { text = message; textSize = 17f; setTextColor(Color.WHITE); gravity = Gravity.CENTER })
         layout.addView(Button(this).apply { text = "Retour à Astra"; setOnClickListener { finish() } })
+        if (diagnostic != null) layout.addView(Button(this).apply { text = "Voir le rapport de diagnostic"; setOnClickListener { showDiagnostic() } })
         if (gameStorage != null) layout.addView(Button(this).apply { text = "Exporter les sauvegardes"; setOnClickListener { exportPicker.launch("Astra-Wolf-sauvegardes.zip") } })
         root.addView(layout, FrameLayout.LayoutParams(-1, -1))
         lockOverlay?.let { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }
+    }
+    private fun showDiagnostic() {
+        if (diagnosticOverlay != null || lockOverlay != null) return
+        diagnosticOverlay = ComposeView(this).apply {
+            setContent {
+                fr.astragames.app.ui.theme.AstraTheme {
+                    androidx.compose.runtime.CompositionLocalProvider(fr.astragames.app.ui.LocalAppLanguage provides (settings?.language ?: fr.astragames.app.settings.AppLanguage.ENGLISH)) {
+                    fr.astragames.app.ui.WolfDiagnosticsDialog(initialReport = diagnostic?.directory, onDismiss = {
+                        diagnosticOverlay?.let(root::removeView); diagnosticOverlay = null
+                    })
+                    }
+                }
+            }
+        }.also { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }
     }
     private fun hardwareKey(event: KeyEvent): Boolean {
         if (lockOverlay == null && event.keyCode != KeyEvent.KEYCODE_BACK) {
@@ -251,6 +286,7 @@ class WolfRuntimeActivity : FragmentActivity() {
     private fun lockRuntime() {
         val current = settings ?: return
         if (lockOverlay != null || !(current.lockPinEnabled || current.lockBiometricEnabled)) return
+        diagnosticOverlay?.let(root::removeView); diagnosticOverlay = null
         releaseKeys()
         lockOverlay = ComposeView(this).apply {
             setContent {

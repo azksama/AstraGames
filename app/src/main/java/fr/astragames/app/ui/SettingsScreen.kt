@@ -68,6 +68,7 @@ internal fun SettingsScreen(
     var showAudit by remember { mutableStateOf(false) }
     var showAppUpdates by rememberSaveable { mutableStateOf(false) }
     var showWolfLicenses by rememberSaveable { mutableStateOf(false) }
+    var showWolfDiagnostics by rememberSaveable { mutableStateOf(false) }
     var sourcesExpanded by rememberSaveable { mutableStateOf(false) }
     var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
     var joiplayExpanded by rememberSaveable { mutableStateOf(false) }
@@ -181,6 +182,12 @@ internal fun SettingsScreen(
             }
         }, second = {
             item { RoundedListItem(
+                modifier = Modifier.clickable { showWolfDiagnostics = true },
+                headlineContent = { Text("Diagnostic Wolf RPG") },
+                supportingContent = { Text("Mode debug et rapports de lancement") },
+                leadingContent = { Icon(Icons.Default.BugReport, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
+            ) }
+            item { RoundedListItem(
                 modifier = Modifier.clickable { vm.requestNotificationPermission(); showAppUpdates = true },
                 headlineContent = { Text("Mises à jour d’Astra") },
                 supportingContent = { Text("Téléchargement et installation depuis GitHub") },
@@ -281,6 +288,7 @@ internal fun SettingsScreen(
     if (showDeleted) DeletedGamesDialog(state.deletedGames, vm::restoreDeletedGame) { showDeleted = false }
     if (showAudit) AuditDialog(vm) { showAudit = false }
     if (showWolfLicenses) WolfLicensesDialog { showWolfLicenses = false }
+    if (showWolfDiagnostics) WolfDiagnosticsDialog(beforeExternal = vm::prepareExternalPicker) { showWolfDiagnostics = false }
     if (showAppUpdates) AppUpdateScreen(vm.appUpdates, vm::prepareExternalPicker) { showAppUpdates = false }
     if (showRuntimes) RuntimeManagerDialog(state.runtimes) { showRuntimes = false }
     if (confirmRestore) ConfirmDialog(
