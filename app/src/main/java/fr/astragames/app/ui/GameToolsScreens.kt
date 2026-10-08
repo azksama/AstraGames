@@ -37,6 +37,7 @@ private val gameSaveSaver = listSaver<GameSave?, Any>(
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () -> Unit) {
+    val context = androidx.compose.ui.platform.LocalContext.current
     var showSaves by rememberSaveable(game.id) { mutableStateOf(false) }
     var showBackups by rememberSaveable(game.id) { mutableStateOf(false) }
     var showTranslation by rememberSaveable(game.id) { mutableStateOf(false) }
@@ -67,6 +68,7 @@ internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () 
                             "open_folder" -> vm.openGameFolder(game.id)
                             "rescan" -> vm.rescanGame(game.id)
                             "wolf_refresh" -> { vm.refreshWolfFiles(game.id); onDismiss() }
+                            "wolf_settings" -> fr.astragames.app.windows.showWolfOptions(context, fr.astragames.app.windows.WolfGameOptions(context, game.id))
                         }
                     }
                 )

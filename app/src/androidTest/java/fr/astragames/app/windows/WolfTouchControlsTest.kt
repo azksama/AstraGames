@@ -11,6 +11,56 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WolfTouchControlsTest {
+    @Test fun draggingPersistsAndCancelledDragRestoresPosition() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario -> scenario.onActivity { activity ->
+            val store = WolfGameOptions(activity, "drag-controls-${System.nanoTime()}")
+            val controls = WolfTouchControls(activity, { _, _ -> }, {}, store)
+            activity.setContentView(controls)
+            controls.measure(View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1800, View.MeasureSpec.EXACTLY))
+            controls.layout(0, 0, 1000, 1800)
+            controls.setEditing(true)
+            val left = buttons(controls).first { it.contentDescription == "Gauche" }
+            val beforeX = left.x
+            fun drag(action: Int, x: Float, y: Float) {
+                MotionEvent.obtain(0, 0, action, x, y, 0).let { left.dispatchTouchEvent(it); it.recycle() }
+            }
+            drag(MotionEvent.ACTION_DOWN, 10f, 10f)
+            drag(MotionEvent.ACTION_MOVE, 200f, -150f)
+            assertTrue(left.x > beforeX)
+            drag(MotionEvent.ACTION_CANCEL, 200f, -150f)
+            assertEquals(beforeX, left.x, .01f)
+            assertNull(store.position("left", false))
+            drag(MotionEvent.ACTION_DOWN, 10f, 10f)
+            drag(MotionEvent.ACTION_MOVE, 200f, -150f)
+            drag(MotionEvent.ACTION_UP, 200f, -150f)
+            val landscape = activity.resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            val saved = requireNotNull(store.position("left", landscape))
+            controls.reload()
+            controls.layout(0, 0, 1000, 1800)
+            assertEquals(saved.first * (1000 - left.width), left.x, .1f)
+        } }
+    }
+    @Test fun sharedRemappingDoesNotReleaseAnotherHeldButton() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario -> scenario.onActivity { activity ->
+            val store = WolfGameOptions(activity, "shared-controls-${System.nanoTime()}")
+            store.bind("left", XKeycode.KEY_Z)
+            store.bind("accept", XKeycode.KEY_Z)
+            val held = mutableSetOf<XKeycode>()
+            val controls = WolfTouchControls(activity, { code, down -> if (down) held.add(code) else held.remove(code) }, {}, store)
+            activity.setContentView(controls)
+            val left = buttons(controls).first { it.contentDescription.toString().startsWith("Gauche") }
+            val accept = buttons(controls).first { it.contentDescription.toString().startsWith("Valider") }
+            touch(left, MotionEvent.ACTION_DOWN)
+            touch(accept, MotionEvent.ACTION_DOWN)
+            touch(left, MotionEvent.ACTION_UP)
+            assertEquals(setOf(XKeycode.KEY_Z), held)
+            controls.setEditing(true)
+            assertTrue(held.isEmpty())
+            assertTrue(controls.editing)
+            buttons(controls).first { it.text == "Terminer" }.performClick()
+            assertFalse(controls.editing)
+        } }
+    }
     @Test fun movementAndActionCanBeHeldTogetherAndCancelReleasesThem() {
         ActivityScenario.launch(MainActivity::class.java).use { scenario ->
             scenario.onActivity { activity ->

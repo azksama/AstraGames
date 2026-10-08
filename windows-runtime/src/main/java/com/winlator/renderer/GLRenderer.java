@@ -63,6 +63,11 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     protected short surfaceWidth;
     protected short surfaceHeight;
     public final EffectComposer effectComposer = new EffectComposer(this);
+    private final java.util.concurrent.atomic.AtomicBoolean contentPending = new java.util.concurrent.atomic.AtomicBoolean();
+    private final java.util.concurrent.atomic.AtomicLong contentFrames = new java.util.concurrent.atomic.AtomicLong();
+    private volatile boolean smoothScaling = false;
+    public long getContentFrameCount() { return contentFrames.get(); }
+    public void setSmoothScaling(boolean value) { smoothScaling = value; xServerView.requestRender(); }
 
     public GLRenderer(XServerView xServerView, XServer xServer) {
         this.xServerView = xServerView;
@@ -107,6 +112,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
 
     @Override
     public void onDrawFrame(GL10 gl) {
+        boolean receivedContent = contentPending.getAndSet(false);
         if (toggleFullscreen) {
             fullscreen = !fullscreen;
             toggleFullscreen = false;
@@ -117,6 +123,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
             effectComposer.render();
         }
         else drawFrame();
+        if (receivedContent) contentFrames.incrementAndGet();
     }
 
     protected void drawFrame() {
@@ -170,7 +177,10 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
 
     @Override
     public void onUpdateWindowContent(Window window) {
-        xServerView.requestRender();
+        if (window.isRenderable()) {
+            contentPending.set(true);
+            xServerView.requestContentRender();
+        }
     }
 
     @Override
@@ -229,6 +239,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
             windowMaterial.setUniformFloat(windowMaterial.uniforms.noAlpha, !transparent ? 1.0f : 0.0f);
             windowMaterial.setUniformFloatArray(windowMaterial.uniforms.xform, tmpXForm1);
             windowMaterial.setUniformBool(windowMaterial.uniforms.flipY, texture.isFlipY());
+            windowMaterial.setUniformBool(windowMaterial.uniforms.smooth, smoothScaling);
 
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, quadVertices.count());
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
@@ -302,8 +313,13 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
                 short height = window.getHeight();
                 FullscreenTransformation fullscreenTransformation = null;
 
-                boolean inBounds = width >= ScreenInfo.MIN_WIDTH && height >= ScreenInfo.MIN_HEIGHT && width < xServer.screenInfo.width && height < xServer.screenInfo.height;
-                if (window.getType() == Window.Type.NORMAL && inBounds && window.hasNoDecorations()) {
+                boolean inBounds = width >= ScreenInfo.MIN_WIDTH && height >= ScreenInfo.MIN_HEIGHT &&
+                    width <= xServer.screenInfo.width && height <= xServer.screenInfo.height;
+                // Wine's software Wolf window advertises decorations even though no WM draws them.
+                // Fit its top-level client area too, while leaving dialogs and the desktop alone.
+                boolean gameWindow = window.hasNoDecorations() || (parent == xServer.windowManager.rootWindow &&
+                    !window.isDesktopWindow() && window.getTransientFor() == 0);
+                if (window.getType() == Window.Type.NORMAL && inBounds && gameWindow) {
                     fullscreenTransformation = window.getFullscreenTransformation();
                     if (fullscreenTransformation == null) window.setFullscreenTransformation(fullscreenTransformation = new FullscreenTransformation(window));
                     fullscreenTransformation.update(xServer.screenInfo, window.getWidth(), window.getHeight());

@@ -5,7 +5,8 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 internal class WolfProcess(private val context: Context, private val runtime: File, private val storage: WolfGameStorage,
-                  socket: String, sharedMemorySocket: String, private val diagnostics: WolfDiagnosticSession? = null) {
+                  socket: String, sharedMemorySocket: String, private val diagnostics: WolfDiagnosticSession? = null,
+                  private val options: WolfOptions = WolfOptions()) {
     private val arm = android.os.Build.SUPPORTED_ABIS.first() == "arm64-v8a"
     private val wine = File(runtime, "proton/bin/wine")
     private val box = File(runtime, "box64/usr/bin/box64")
@@ -35,13 +36,6 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         "BOX64_LD_LIBRARY_PATH" to "${runtime.path}/proton/lib/wine/x86_64-unix:${runtime.path}/libs/usr/lib",
         "BOX64_PATH" to wine.parent,
         "BOX64_DYNAREC" to "1",
-        // Stability profile: honor x86 flags and SIMD memory ordering on ARM64.
-        // See Box64 docs/USAGE.md and Winlator's STABILITY preset.
-        "BOX64_DYNAREC_SAFEFLAGS" to "2",
-        "BOX64_DYNAREC_STRONGMEM" to "2",
-        "BOX64_DYNAREC_BIGBLOCK" to "0",
-        "BOX64_DYNAREC_NATIVEFLAGS" to "0",
-        "BOX64_DYNAREC_X87DOUBLE" to "1",
         "BOX64_MMAP32" to "1",
         "BOX64_NOBANNER" to "0",
         // LOG=2 traces every wrapped libc call and can rotate away the actual Wine error.
@@ -56,8 +50,8 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         "WINE_DISABLE_FULLSCREEN_HACK" to "1",
         "WINEDLLOVERRIDES" to "winemenubuilder.exe,mscoree,mshtml=d",
         // warn+all floods the pipe with asset probes and starves audio on large games.
-        "WINEDEBUG" to if (diagnostics?.verbose == true) "-all,err+all,warn+seh,+timestamp,+pid,+tid,+seh,+loaddll" else "-all,err+all"
-    ) + mapOf("PULSE_SERVER" to "unix:${pulseSocket.path}", "PULSE_LATENCY_MSEC" to "40")
+        "WINEDEBUG" to if (diagnostics?.verbose == true) "-all,err+all,warn+seh,+timestamp,+pid,+tid,+loaddll" else "-all,err+all"
+    ) + options.performance.environment() + mapOf("PULSE_SERVER" to "unix:${pulseSocket.path}", "PULSE_LATENCY_MSEC" to "80")
 
     private fun startAudio() {
         diagnostics?.stage("Démarrage audio")

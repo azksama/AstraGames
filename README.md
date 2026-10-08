@@ -187,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.6](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.6). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.7](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.7). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
@@ -230,6 +230,21 @@ les ressources inchangées sont identifiées par taille/date. Au premier arrêt 
 les anciens fichiers sans index de dates sont encore vérifiés par hash.
 Le diagnostic joint `Game_ErrorLog.txt`, en distinguant un fichier historique d’un fichier modifié
 pendant la partie, et préserve le début des logs. Voir les [mesures et limites de la bêta 6](docs/VALIDATION_1.12.0-beta.6.md).
+
+La bêta 7 ajoute **Outils → Réglages Wolf RPG**, également accessibles dans **Menu → Réglages du jeu** :
+profils Équilibré/Rapide/Stable, affichage de 800×600 à 1920×1080, lissage, limite de 30/60 images/s
+et compteur des images reçues. Le bureau est à 1280×960 par défaut ; l’image du jeu est agrandie
+en conservant ses proportions. La définition interne reste celle du jeu. Les profils Box64 et
+la résolution prennent effet au prochain lancement ; les autres réglages sont immédiats.
+Les notifications de dessin sont regroupées et le debug n’active plus la trace de chaque exception.
+Le profil Stable conserve les paramètres CPU de la bêta 6.
+
+**Menu → Modifier les touches** permet de glisser chaque bouton et de toucher un bouton pour changer
+son action. Taille, opacité, remappage et positions portrait/paysage sont mémorisés par jeu.
+Le tactile propose le clic à l’endroit touché (déplacement si le jeu le gère) ou le maintien d’une
+direction depuis le centre de l’image. Ce second mode ne calcule pas un chemin vers une destination.
+Voir les [preuves et limites de la bêta 7](docs/VALIDATION_1.12.0-beta.7.md), notamment la distinction
+entre les FPS mesurés sur l’émulateur x86_64 et les performances ARM64 encore à confirmer sur appareil.
 
 Les cinq dernières sessions sont conservées localement, avec rotation des logs (512 Kio × deux
 fichiers et 64 Kio de début par flux). Aucun envoi automatique ; l’export texte peut contenir le nom du jeu et des

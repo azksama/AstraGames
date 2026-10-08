@@ -53,6 +53,12 @@ class WolfRuntimeActivity : FragmentActivity() {
     private var session: Job? = null
     private var process: Process? = null
     private val pressed = mutableSetOf<XKeycode>()
+    private val keySources = mutableMapOf<String, Set<XKeycode>>()
+    private lateinit var optionStore: WolfGameOptions
+    private var gameOptions = WolfOptions()
+    private var touchInput: WolfTouchInput? = null
+    private var fpsJob: Job? = null
+    private var fpsLabel: TextView? = null
     private lateinit var root: FrameLayout
     private lateinit var status: TextView
     private lateinit var controls: WolfTouchControls
@@ -81,6 +87,8 @@ class WolfRuntimeActivity : FragmentActivity() {
             return
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_SECURE)
+        optionStore = WolfGameOptions(this, requireNotNull(intent.getStringExtra("id")))
+        gameOptions = optionStore.read()
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         status = TextView(this).apply {
             setTextColor(Color.WHITE); textSize = 17f; gravity = Gravity.CENTER; setPadding(24, 24, 24, 24)
@@ -130,11 +138,13 @@ class WolfRuntimeActivity : FragmentActivity() {
                 setupDisplay()
                 x11 = XServerComponent(server, xSocket).also { it.start() }
                 shm = SysVSharedMemoryComponent(server, shmSocket).also { it.start() }
-                runner = WolfProcess(this@WolfRuntimeActivity, runtime, storage, xSocket.path, shmSocket.path, diagnostic)
+                diagnostic?.event("Options : profil=${gameOptions.performance}; écran=${gameOptions.resolution}; lissage=${gameOptions.smooth}; limite=${gameOptions.maxFps}")
+                runner = WolfProcess(this@WolfRuntimeActivity, runtime, storage, xSocket.path, shmSocket.path, diagnostic, gameOptions)
                 progress("Initialisation de Windows… Le premier lancement peut prendre quelques minutes.")
                 runInterruptible(Dispatchers.IO) { runner.initialize() }
                 status.visibility = View.GONE
                 controls.visibility = View.VISIBLE
+                startFpsCounter()
                 val result = runInterruptible(Dispatchers.IO) {
                     process = runner.launch(executable)
                     process!!.waitFor().also { diagnostic?.exited(process!!, "Jeu", it) }
@@ -147,6 +157,7 @@ class WolfRuntimeActivity : FragmentActivity() {
             }
             finally {
                 withContext(NonCancellable) {
+                fpsJob?.cancel(); fpsJob = null
                 releaseKeys()
                 withContext(Dispatchers.IO) {
                     runCatching { runner?.stop() }.onFailure { diagnostic?.failure("Échec de l’arrêt du runtime", it) }
@@ -179,33 +190,45 @@ class WolfRuntimeActivity : FragmentActivity() {
     }
 
     private fun setupDisplay() {
-        server = XServer(this, ScreenInfo(800, 600))
+        server = XServer(this, ScreenInfo(gameOptions.resolution))
         display = XServerView(this, server).also { view ->
             server!!.renderer = view.renderer
+            view.renderer.setForceWindowsFullscreen(true)
+            view.renderer.setSmoothScaling(gameOptions.smooth)
+            view.setMaxFps(gameOptions.maxFps)
             root.addView(view, 0, FrameLayout.LayoutParams(-1, -1))
+            touchInput = WolfTouchInput({ x, y -> server?.injectPointerMove(x, y) }, { down ->
+                if (down) server?.injectPointerButtonPress(Pointer.Button.BUTTON_LEFT)
+                else server?.injectPointerButtonRelease(Pointer.Button.BUTTON_LEFT)
+            }, { updateKeys("touch", it) }, ::focusGame)
             view.setOnTouchListener { _, event ->
                 val transform = view.renderer.viewTransformation
-                val scale = transform.aspect.takeIf { it > 0 } ?: 1f
-                server?.injectPointerMove(((event.x - transform.viewOffsetX) / scale).toInt(), ((event.y - transform.viewOffsetY) / scale).toInt())
-                when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> server?.injectPointerButtonPress(Pointer.Button.BUTTON_LEFT)
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> server?.injectPointerButtonRelease(Pointer.Button.BUTTON_LEFT)
-                }
-                true
+                if ((::controls.isInitialized && controls.editing) || lockOverlay != null) { touchInput?.cancel(); true }
+                else touchInput?.touch(event, WolfViewport(transform.viewOffsetX, transform.viewOffsetY,
+                    transform.viewWidth, transform.viewHeight, server!!.screenInfo.width.toInt(), server!!.screenInfo.height.toInt()), gameOptions.directionalTouch) ?: true
             }
         }
         controls = WolfTouchControls(this, { key, down ->
-            if (down) { focusGame(); pressed.add(key); server?.injectKeyPress(key) }
-            else { pressed.remove(key); server?.injectKeyRelease(key) }
-        }, ::closeSession).apply { visibility = View.GONE }
+            if (down) focusGame()
+            val current = keySources["controls"].orEmpty()
+            updateKeys("controls", if (down) current + key else current - key)
+        }, ::closeSession, optionStore, {
+            releaseKeys()
+            showWolfOptions(this, optionStore) {
+                gameOptions = optionStore.read(); controls.reload(); updateControlLayout()
+                display?.renderer?.setSmoothScaling(gameOptions.smooth); display?.setMaxFps(gameOptions.maxFps)
+            }
+        }, ::releaseKeys).apply { visibility = View.GONE }
         root.addView(controls, FrameLayout.LayoutParams(-1, -1))
+        fpsLabel = TextView(this).apply { setTextColor(Color.WHITE); setBackgroundColor(0xAA17121E.toInt()); textSize = 12f; setPadding(dp(8), dp(4), dp(8), dp(4)) }
+        root.addView(fpsLabel, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { leftMargin = dp(8); topMargin = dp(8) })
         updateControlLayout()
         lockOverlay?.bringToFront()
     }
     private fun updateControlLayout() {
         val portrait = resources.configuration.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
         (display?.layoutParams as? FrameLayout.LayoutParams)?.let {
-            it.bottomMargin = if (portrait) dp(184) else 0
+            it.bottomMargin = if (portrait) dp(maxOf(144, 156 * gameOptions.size / 100) + 28) else 0
             display?.layoutParams = it
         }
     }
@@ -222,7 +245,35 @@ class WolfRuntimeActivity : FragmentActivity() {
         }
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    private fun releaseKeys() { if (::controls.isInitialized) controls.releaseAll(); pressed.forEach { server?.injectKeyRelease(it) }; pressed.clear() }
+    private fun updateKeys(source: String, keys: Set<XKeycode>) {
+        keySources[source] = keys
+        val wanted = keySources.values.flatten().toSet()
+        (pressed - wanted).forEach { server?.injectKeyRelease(it) }
+        (wanted - pressed).forEach { server?.injectKeyPress(it) }
+        pressed.clear(); pressed.addAll(wanted)
+    }
+    private fun releaseKeys() {
+        touchInput?.cancel()
+        if (::controls.isInitialized) controls.releaseAll()
+        pressed.forEach { server?.injectKeyRelease(it) }; pressed.clear(); keySources.clear()
+    }
+    private fun startFpsCounter() {
+        fpsJob = lifecycleScope.launch {
+            var previous = display?.renderer?.contentFrameCount ?: 0L
+            var started = android.os.SystemClock.elapsedRealtime()
+            var seconds = 0
+            while (true) {
+                kotlinx.coroutines.delay(1000)
+                val now = android.os.SystemClock.elapsedRealtime()
+                val total = display?.renderer?.contentFrameCount ?: previous
+                val fps = (total - previous) * 1000f / (now - started).coerceAtLeast(1)
+                fpsLabel?.text = "Affichage : %.1f FPS".format(java.util.Locale.ROOT, fps)
+                fpsLabel?.visibility = if (gameOptions.showFps) View.VISIBLE else View.GONE
+                if (++seconds % 10 == 0) withContext(Dispatchers.IO) { diagnostic?.event("Images reçues affichées : %.1f FPS".format(java.util.Locale.ROOT, fps)) }
+                previous = total; started = now
+            }
+        }
+    }
     private fun closeSession() {
         if (closing) return
         closing = true
@@ -268,7 +319,11 @@ class WolfRuntimeActivity : FragmentActivity() {
                 KeyEvent.KEYCODE_DPAD_DOWN -> XKeycode.KEY_DOWN
                 else -> null
             }
-            if (gamepad != null) { if (event.action == KeyEvent.ACTION_DOWN) { pressed.add(gamepad); server?.injectKeyPress(gamepad) } else { pressed.remove(gamepad); server?.injectKeyRelease(gamepad) }; return true }
+            if (gamepad != null) {
+                val held = keySources["gamepad"].orEmpty()
+                updateKeys("gamepad", if (event.action == KeyEvent.ACTION_DOWN) held + gamepad else held - gamepad)
+                return true
+            }
             if (server?.keyboard?.onKeyEvent(event) == true) return true
         }
         return false

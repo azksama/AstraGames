@@ -103,11 +103,20 @@ object RefreshWolfFilesTool : GameTool {
 object GameToolsRegistry {
     private val tools = listOf(
         SaveFolderTool, SaveEditorTool, SaveBackupTool,
-        ModsManagerTool, TranslateGameTool, OpenGameFolderTool, RescanGameTool, RefreshWolfFilesTool
+        ModsManagerTool, TranslateGameTool, OpenGameFolderTool, RescanGameTool, WolfSettingsTool, RefreshWolfFilesTool
     )
 
     fun availableFor(game: GameEntity): List<GameTool> = tools.filter { it.isAvailable(game) }
 
     fun sectionsFor(game: GameEntity): List<Pair<String, List<GameTool>>> =
         availableFor(game).groupBy { it.section }.entries.map { it.key to it.value }
+}
+
+object WolfSettingsTool : GameTool {
+    override val id = "wolf_settings"
+    override val title = "Réglages Wolf RPG"
+    override val description = "Fluidité, affichage, tactile et commandes"
+    override val icon = Icons.Default.Build
+    override val section = "Wolf RPG"
+    override fun isAvailable(game: GameEntity) = game.engine == "WOLF_RPG"
 }

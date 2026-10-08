@@ -41,11 +41,57 @@ class WolfIntegratedRuntimeTest {
             scenario.onActivity { activity -> buttons(activity.window.decorView).first { it.text == "Valider" }.performClick() }
             Thread.sleep(4000)
             screenshot("integrated-game.png")
+            var renderer: com.winlator.renderer.GLRenderer? = null
+            scenario.onActivity { activity ->
+                renderer = descendants(activity.window.decorView).filterIsInstance<com.winlator.widget.XServerView>().first().renderer
+                val field = WolfRuntimeActivity::class.java.getDeclaredField("server").apply { isAccessible = true }
+                val server = field.get(activity) as com.winlator.xserver.XServer
+                fun describe(window: com.winlator.xserver.Window, level: Int = 0): String =
+                    "${" ".repeat(level)}${window.id} ${window.name} ${window.width}x${window.height} at ${window.x},${window.y} render=${window.isRenderable} type=${window.type} decorations=${window.decorations} fullscreen=${window.fullscreenTransformation != null}\n" + window.children.joinToString("") { describe(it, level + 1) }
+                File(context.getExternalFilesDir(null), "wolf-windows.txt").writeText(describe(server.windowManager.rootWindow))
+                val game = server.windowManager.rootWindow.children.last { it.isRenderable && it.width >= 320 }
+                val transform = requireNotNull(game.fullscreenTransformation)
+                assertEquals(server.screenInfo.width, transform.width)
+                val center = transform.transformPointerCoords((transform.x + transform.width / 2).toShort(), (transform.y + transform.height / 2).toShort())
+                assertEquals(game.rootX + game.width / 2, center[0].toInt())
+                assertEquals(game.rootY + game.height / 2, center[1].toInt())
+            }
+            val firstFrame = renderer!!.contentFrameCount
+            val frameStart = android.os.SystemClock.elapsedRealtime()
+            Thread.sleep(10_000)
+            val fps = (renderer!!.contentFrameCount - firstFrame) * 1000.0 / (android.os.SystemClock.elapsedRealtime() - frameStart)
+            File(context.getExternalFilesDir(null), "wolf-fps.txt").writeText("Official Wolf sample; emulator x86_64; received content FPS=$fps")
+            assertTrue("No game content frames were presented", fps > 0)
             scenario.onActivity { it.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             Thread.sleep(1500)
             screenshot("integrated-landscape.png")
+            scenario.onActivity { activity ->
+                descendants(activity.window.decorView).filterIsInstance<com.winlator.widget.XServerView>().first().setMaxFps(30)
+                renderer!!.setSmoothScaling(false)
+            }
+            Thread.sleep(1000)
+            val limitedStart = renderer!!.contentFrameCount
+            val limitedTime = android.os.SystemClock.elapsedRealtime()
+            Thread.sleep(5000)
+            val limitedFps = (renderer!!.contentFrameCount - limitedStart) * 1000.0 / (android.os.SystemClock.elapsedRealtime() - limitedTime)
+            assertTrue("30 FPS ceiling ignored: $limitedFps", limitedFps in 1.0..32.0)
+            File(context.getExternalFilesDir(null), "wolf-fps.txt").appendText("\nLandscape; standard smoothing; 30 ceiling: $limitedFps")
+            scenario.onActivity { activity ->
+                descendants(activity.window.decorView).filterIsInstance<com.winlator.widget.XServerView>().first().setMaxFps(60)
+                renderer!!.setSmoothScaling(true)
+            }
+            scenario.onActivity { activity -> showWolfOptions(activity, WolfGameOptions(activity, "official-wolf-test-$sample-beta5")) {} }
+            Thread.sleep(500)
+            screenshot("integrated-settings-landscape.png")
+            androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText("Annuler"))
+                .perform(androidx.test.espresso.action.ViewActions.click())
             scenario.onActivity { it.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
             Thread.sleep(1500)
+            scenario.onActivity { activity -> showWolfOptions(activity, WolfGameOptions(activity, "official-wolf-test-$sample-beta5")) {} }
+            Thread.sleep(500)
+            screenshot("integrated-settings.png")
+            androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText("Annuler"))
+                .perform(androidx.test.espresso.action.ViewActions.click())
             scenario.onActivity { activity -> buttons(activity.window.decorView).first { it.text == "Menu" }.performClick() }
             androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText("Quitter"))
                 .perform(androidx.test.espresso.action.ViewActions.click())
@@ -64,6 +110,7 @@ class WolfIntegratedRuntimeTest {
         } finally { diagnostics.enabled = previousDebug }
     }
     private fun buttons(view: View): List<Button> = if (view is Button) listOf(view) else if (view is ViewGroup) (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) } else emptyList()
+    private fun descendants(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()
     private fun screenshot(name: String) {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
