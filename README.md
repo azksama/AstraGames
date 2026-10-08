@@ -1,6 +1,6 @@
 # Astra
 
-Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
+Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay ou, pour Wolf RPG, avec le moteur Windows intégré. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
 
 ## Fonctions incluses
 
@@ -9,8 +9,10 @@ Astra est une application Android native qui indexe plusieurs dossiers de jeux, 
 - interface disponible en français, anglais (par défaut), espagnol, russe, allemand, chinois et japonais, avec conservation des titres, tags et recherches Unicode ;
 - permissions SAF persistantes, sans `MANAGE_EXTERNAL_STORAGE` ;
 - sources multiples, activation, suppression, scan individuel ou global ;
+- scan ciblé depuis **Paramètres → Sources et scan → Sous-dossier…** : navigation dans une source déjà autorisée, puis analyse du dossier choisi avec les options de récursivité de la source. Ce scan ajoute ou retrouve les jeux sans marquer les autres absents ; le scan complet reste nécessaire pour vérifier les suppressions ;
 - scan récursif hors thread principal (garde-fous de 128 niveaux et 100 000 dossiers), avec arrêt et remontée dès qu'un dossier contient un exécutable, et écran de progression indiquant source, chemin, profondeur, dossiers et jeux ;
-- détection RPG Maker MV/MZ, Ren'Py, HTML5, Tyrano, Construct, Twine et Electron ;
+- détection RPG Maker MV/MZ, Ren'Py, HTML5, Tyrano, Construct, Twine, Electron et Wolf RPG ;
+- moteur Wolf intégré expérimental : Wine, Box64 sur ARM64, affichage et commandes dans Astra, import SAF et synchronisation prudente des sauvegardes ;
 - fingerprint, reconnaissance de déplacement, doublons et jeux manquants ;
 - rapport détaillé et persistant après chaque scan : ajoutés, actualisés, déjà connus, déplacés, manquants, ignorés et erreurs avec chemin et raison ;
 - Room avec index FTS4, historique des scans et sessions de lancement ;
@@ -178,4 +180,23 @@ Le fichier doit correspondre à la taille et au SHA-256 annoncés par GitHub, au
 
 ## Limites de preuve
 
-Le build et les tests locaux valident le code de l'application. Un lancement réel de jeu exige une installation compatible de JoiPlay, le runtime correspondant et un jeu accessible par un chemin physique que JoiPlay sait lire.
+Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique accessible. Wolf RPG utilise son moteur intégré : les échantillons officiels 2.2961 et 3.729 ont été lancés et manipulés sur Android Emulator API 36.1 x86_64. Le parcours ARM64/Box64 est compilé, mais pas validé sur un téléphone ARM64 ; aucune garantie de compatibilité universelle. Voir le [guide et les preuves Wolf](docs/wolf-windows-runtime.md).
+
+
+## Jouer à Wolf RPG dans Astra
+
+Disponible dans la [préversion 1.12.0-beta.1](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.1). Les mises à jour automatiques stables ne proposent pas les préversions ; télécharger l’APK depuis cette page.
+
+Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
+`Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
+le profil **Astra · Wolf intégré** utilise le jeu original sans conversion ni application externe.
+Au premier lancement, Astra télécharge et vérifie les composants, copie le jeu dans son stockage
+privé et prépare Windows. Prévoir plusieurs centaines de Mo pour le moteur, puis la taille du
+jeu et de son préfixe Windows. Les lancements suivants réutilisent cette installation.
+
+Les flèches, Valider, Retour et Shift sont disponibles à l'écran ; clavier et boutons de manette
+sont également routés au jeu. **Quitter** ferme le moteur et synchronise les fichiers modifiés.
+En cas de conflit ou de dossier non accessible, Astra conserve la sauvegarde privée et propose
+son export ZIP. Les réglages de rendu sont appliqués uniquement à la copie privée de `Game.ini`.
+Les archives du catalogue Astra n'incluent pas cette copie des jeux ni leurs préfixes Windows.
+Les notices sont accessibles dans **Paramètres → Moteur Wolf · licences**.

@@ -12,6 +12,7 @@ import fr.astragames.app.data.mods.ModsManager
 import fr.astragames.app.data.saves.*
 import fr.astragames.app.core.filesystem.FileAccessResolver
 import fr.astragames.app.data.scanner.RecursiveSourceScanner
+import fr.astragames.app.data.scanner.SourceFolderBrowser
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.runTest
 import org.junit.*
@@ -80,6 +81,75 @@ class StorageWorkflowsTest {
         assertEquals(original.f95Url, scanned.f95Url)
         assertEquals(original.ryuugamesUrl, scanned.ryuugamesUrl)
         assertFalse(scanned.missing)
+    }
+
+    @Test fun scanningSubfolderPreservesSiblingsAndSourceCount() = runTest {
+        val sourceDir = File(root, "catalogue").apply { mkdirs() }
+        fun createGame(path: String) = File(sourceDir, path).apply {
+            mkdirs()
+            File(this, "Game.exe").writeText("fixture")
+            File(this, "data").mkdirs()
+            File(this, "data/System.rvdata2").writeText("fixture")
+        }
+        createGame("A/Original")
+        createGame("AB/Neighbour")
+        val dao = database.dao()
+        val source = GameSourceEntity("source", "Catalogue", Uri.fromFile(sourceDir).toString())
+        dao.upsertSource(source)
+        val scanner = RecursiveSourceScanner(context, dao, FileAccessResolver(context))
+        assertEquals(2, scanner.scan(source.id).added)
+        val sibling = dao.getGamesForSource(source.id).single { it.title == "Neighbour" }
+        createGame("A/New")
+        createGame("AB/Not scanned")
+        val paths = mutableListOf<String>()
+        val report = scanner.scanSubfolder(source.id, listOf("A")) { paths += it.currentPath }
+        assertEquals(1, report.added)
+        assertEquals(2, report.found)
+        assertEquals(0, report.missing)
+        assertEquals(sibling, dao.getGame(sibling.id))
+        assertEquals(3, dao.getSource(source.id)!!.gamesCount)
+        assertFalse(paths.any { it.startsWith("AB") })
+        val added = dao.getGamesForSource(source.id).single { it.title == "New" }
+        assertEquals(File(sourceDir, "A/New").canonicalPath, added.physicalPath)
+        assertEquals(source.id, added.sourceId)
+    }
+
+    @Test fun subfolderSelectionUsesGrantedSafTreeAndRejectsTraversal() = runTest {
+        withSafFixture { documents ->
+            val source = GameSourceEntity("saf-source", "SAF", documents.uri.toString())
+            val dao = database.dao()
+            dao.upsertSource(source)
+            val browser = SourceFolderBrowser(context)
+            assertTrue(browser.listFolders(source, emptyList()).contains("game"))
+            assertEquals(documents.findFile("game")!!.uri, browser.resolve(source, listOf("game")).uri)
+            val scanner = RecursiveSourceScanner(context, dao, FileAccessResolver(context))
+            val executable = documents.findFile("game")!!.createFile("application/octet-stream", "Game.exe")!!
+            context.contentResolver.openOutputStream(executable.uri)!!.use { it.write("fixture".toByteArray()) }
+            val report = scanner.scanSubfolder(source.id, listOf("game"))
+            assertEquals(1, report.added)
+            assertTrue(report.items.all { it.path.startsWith("game") })
+            val afterScan = dao.getSource(source.id)
+            for (path in listOf(listOf(".."), listOf("game/.."), listOf("missing"))) {
+                assertNotNull(runCatching { scanner.scanSubfolder(source.id, path) }.exceptionOrNull())
+                assertEquals(afterScan, dao.getSource(source.id))
+            }
+        }
+    }
+
+    @Test fun emptySubfolderDoesNotMarkOtherGamesMissing() = runTest {
+        val sourceDir = File(root, "catalogue").apply { mkdirs() }
+        File(sourceDir, "empty").mkdirs()
+        val siblingDir = File(sourceDir, "sibling").apply { mkdirs() }
+        val source = GameSourceEntity("test-source", "Catalogue", Uri.fromFile(sourceDir).toString())
+        val dao = database.dao()
+        val sibling = game(siblingDir)
+        dao.upsertSource(source)
+        dao.upsertGame(sibling)
+        val report = RecursiveSourceScanner(context, dao, FileAccessResolver(context))
+            .scanSubfolder(source.id, listOf("empty"))
+        assertEquals(0, report.found)
+        assertEquals(sibling, dao.getGame(sibling.id))
+        assertEquals(1, dao.getSource(source.id)!!.gamesCount)
     }
 
     @Test fun cancellationDuringScanReconciliationFinishesTheSourceAndHistory() = runTest {

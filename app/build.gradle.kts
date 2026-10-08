@@ -12,13 +12,14 @@ plugins {
 android {
     namespace = "fr.astragames.app"
     compileSdk = 36
+    ndkVersion = "29.0.14206865"
 
     defaultConfig {
         applicationId = "fr.astragames.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 28
-        versionName = "1.11.0"
+        versionCode = 29
+        versionName = "1.12.0-beta.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -42,6 +43,7 @@ android {
         buildConfig = true
     }
     packaging.resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+    packaging.jniLibs.useLegacyPackaging = true
     testOptions.unitTests.isIncludeAndroidResources = true
     sourceSets.getByName("main").res.srcDir(layout.buildDirectory.dir("generated/astraIconRes"))
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
@@ -63,6 +65,8 @@ kapt {
 jacoco { toolVersion = "0.8.13" }
 
 dependencies {
+    implementation(project(":windows-runtime"))
+    implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
     val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
     implementation(composeBom)
     androidTestImplementation(composeBom)

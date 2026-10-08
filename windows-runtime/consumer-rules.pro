@@ -1,0 +1,1 @@
+-keepclasseswithmembernames class com.winlator.** { native <methods>; }

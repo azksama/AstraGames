@@ -6,6 +6,12 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class EngineSignatureDetectorTest {
+    @Test fun detectsPackedAndUnpackedWolfButNotAnArbitraryExe() {
+        assertEquals(GameEngine.WOLF_RPG, EngineSignatureDetector.detect(setOf("Game.exe", "Data.wolf"))?.engine)
+        assertEquals(GameEngine.WOLF_RPG, EngineSignatureDetector.detect(setOf("GAME.EXE", "Data/BasicData/Game.dat"))?.engine)
+        assertEquals(null, EngineSignatureDetector.detect(setOf("Game.exe", "Game.ini")))
+        assertEquals(null, EngineSignatureDetector.detect(setOf("Data.wolf")))
+    }
     @Test fun detectsRpgMakerMv() {
         val result = EngineSignatureDetector.detect(setOf("Game.exe", "www/js/rpg_core.js", "www/index.html"))
         assertEquals(GameEngine.RPG_MAKER_MV, result?.engine)

@@ -62,10 +62,12 @@ internal fun SettingsScreen(
     onOpenBackupFolder: () -> Unit
 ) {
     var sourceToDelete by remember { mutableStateOf<GameSourceEntity?>(null) }
+    var subfolderSourceId by rememberSaveable { mutableStateOf<String?>(null) }
     var showDuplicates by remember { mutableStateOf(false) }
     var showDeleted by remember { mutableStateOf(false) }
     var showAudit by remember { mutableStateOf(false) }
     var showAppUpdates by rememberSaveable { mutableStateOf(false) }
+    var showWolfLicenses by rememberSaveable { mutableStateOf(false) }
     var sourcesExpanded by rememberSaveable { mutableStateOf(false) }
     var appearanceExpanded by rememberSaveable { mutableStateOf(false) }
     var joiplayExpanded by rememberSaveable { mutableStateOf(false) }
@@ -107,6 +109,7 @@ internal fun SettingsScreen(
                     source = source,
                     onToggle = { vm.toggleSource(source.id) },
                     onScan = { vm.scanSource(source.id) },
+                    onScanSubfolder = { subfolderSourceId = source.id },
                     onReport = { vm.showLatestScanReport(source.id) },
                     onRemove = { sourceToDelete = source }
                 )
@@ -256,6 +259,7 @@ internal fun SettingsScreen(
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             }
+            item { TextButton(onClick = { showWolfLicenses = true }, modifier = Modifier.fillMaxWidth()) { Text("Moteur Wolf · licences") } }
         })
     }
 
@@ -265,9 +269,18 @@ internal fun SettingsScreen(
         { vm.removeSource(source.id); sourceToDelete = null },
         { sourceToDelete = null }
     ) }
+    state.sources.firstOrNull { it.id == subfolderSourceId }?.let { source ->
+        SourceSubfolderDialog(
+            source = source,
+            loadFolders = { vm.listSourceSubfolders(source.id, it) },
+            onScan = { path -> vm.scanSource(source.id, path); subfolderSourceId = null },
+            onDismiss = { subfolderSourceId = null }
+        )
+    }
     if (showDuplicates) DuplicatesDialog(state, vm) { showDuplicates = false }
     if (showDeleted) DeletedGamesDialog(state.deletedGames, vm::restoreDeletedGame) { showDeleted = false }
     if (showAudit) AuditDialog(vm) { showAudit = false }
+    if (showWolfLicenses) WolfLicensesDialog { showWolfLicenses = false }
     if (showAppUpdates) AppUpdateScreen(vm.appUpdates, vm::prepareExternalPicker) { showAppUpdates = false }
     if (showRuntimes) RuntimeManagerDialog(state.runtimes) { showRuntimes = false }
     if (confirmRestore) ConfirmDialog(
@@ -285,6 +298,7 @@ private fun SourceSettingsCard(
     source: GameSourceEntity,
     onToggle: () -> Unit,
     onScan: () -> Unit,
+    onScanSubfolder: () -> Unit,
     onReport: () -> Unit,
     onRemove: () -> Unit
 ) {
@@ -320,7 +334,8 @@ private fun SourceSettingsCard(
                 modifier = Modifier.fillMaxWidth().padding(top = 4.dp),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                TextButton(onClick = onScan, enabled = !running) { Text("Scanner") }
+                TextButton(onClick = onScan, enabled = !running && source.enabled) { Text("Scanner") }
+                TextButton(onClick = onScanSubfolder, enabled = !running && source.enabled) { Text("Sous-dossier…") }
                 TextButton(onClick = onReport, enabled = source.lastScanAt != null) { Text("Rapport") }
                 TextButton(onClick = onRemove, enabled = !running) {
                     Icon(Icons.Default.DeleteOutline, null)

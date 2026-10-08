@@ -18,11 +18,12 @@ class CompatibilityDiagnostic(private val launcher: JoiPlayLauncher) {
         val path = LaunchProfileResolver.physicalPath(game, profile)
         val executable = LaunchProfileResolver.executable(game, profile)
         val launcherType = LaunchProfileResolver.launcherType(game, profile)
+        val internalWolf = engine == GameEngine.WOLF_RPG.name && launcherType != "EXTERNAL"
 
         checks += when {
             engine == GameEngine.UNKNOWN.name && launcherType == "EXTERNAL" -> warning("Moteur", "Moteur inconnu, lancement délégué à l'application externe")
             engine == GameEngine.UNKNOWN.name -> error("Moteur", "Moteur inconnu : choisissez-le dans le profil de lancement")
-            JoiPlayPayloadBuilder.typeFor(engine) == null && launcherType != "EXTERNAL" -> error("Moteur", "${engine.readable()} n'est pas pris en charge par JoiPlay")
+            JoiPlayPayloadBuilder.typeFor(engine) == null && launcherType != "EXTERNAL" && !internalWolf -> error("Moteur", "${engine.readable()} n'est pas pris en charge par JoiPlay")
             else -> ok("Moteur", engine.readable())
         }
 
@@ -41,9 +42,9 @@ class CompatibilityDiagnostic(private val launcher: JoiPlayLauncher) {
         }
 
         checks += when {
-            path.isNullOrBlank() -> error("Chemin JoiPlay", "Aucun chemin physique disponible")
+            path.isNullOrBlank() && !internalWolf -> error("Chemin JoiPlay", "Aucun chemin physique disponible")
             executable.isNullOrBlank() -> error("Fichier d'entrée", "Aucun exécutable ou fichier d'entrée configuré")
-            File(path, executable).exists() -> ok("Fichier d'entrée", executable)
+            path != null && File(path, executable).exists() -> ok("Fichier d'entrée", executable)
             uriAccessible -> warning("Fichier d'entrée", "$executable n'est pas vérifiable directement par Android ; utilisez Tester")
             else -> error("Fichier d'entrée", "$executable est introuvable dans $path")
         }
@@ -51,6 +52,9 @@ class CompatibilityDiagnostic(private val launcher: JoiPlayLauncher) {
         checks += if (launcherType == "EXTERNAL") {
             if (profile?.customAction.isNullOrBlank()) error("Lanceur", "Action Android externe manquante")
             else ok("Lanceur", listOfNotNull(profile?.packageName, profile?.customAction).joinToString(" • "))
+        } else if (internalWolf) {
+            if (fr.astragames.app.windows.WolfRuntimeInstaller.supportedAbi()) warning("Moteur Astra", "Wolf intégré : mode logiciel. Les composants Windows seront téléchargés au premier lancement. Compatibilité selon le jeu.")
+            else error("Moteur Astra", "Android ARM64 ou x86_64 requis.")
         } else {
             when {
                 launcher.resolveJoiPlayIntent(context, engine) != null -> ok("Runtime JoiPlay", "Runtime ${engine.readable()} détecté")

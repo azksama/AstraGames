@@ -16,4 +16,5 @@ dependencyResolutionManagement {
 
 rootProject.name = "AstraGames"
 include(":app")
+include(":windows-runtime")
 include(":baselineprofile")

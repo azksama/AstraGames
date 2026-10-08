@@ -47,6 +47,26 @@ class RecursiveSourceScanner(
     suspend fun scan(
         sourceId: String,
         onProgress: (ScanProgressUpdate) -> Unit = {}
+    ): ScanReport = scanSelected(sourceId, emptyList(), onProgress)
+
+    suspend fun scanSubfolder(
+        sourceId: String,
+        segments: List<String>,
+        onProgress: (ScanProgressUpdate) -> Unit = {}
+    ): ScanReport {
+        require(segments.isNotEmpty()) { "Choisissez un sous-dossier" }
+        return scanSelected(sourceId, segments.toList(), onProgress)
+    }
+
+    suspend fun listSubfolders(sourceId: String, segments: List<String>): List<String> {
+        val source = checkNotNull(dao.getSource(sourceId)) { "Source introuvable" }
+        return SourceFolderBrowser(context).listFolders(source, segments)
+    }
+
+    private suspend fun scanSelected(
+        sourceId: String,
+        segments: List<String>,
+        onProgress: (ScanProgressUpdate) -> Unit
     ): ScanReport = scanLock.withLock { withContext(Dispatchers.IO) {
         val source = dao.getSource(sourceId) ?: return@withContext ScanReport(
             UUID.randomUUID().toString(), sourceId, "Source introuvable", 0, 0, 0,
@@ -56,6 +76,10 @@ class RecursiveSourceScanner(
             UUID.randomUUID().toString(), sourceId, source.displayName, 0, 0, 0,
             0, 0, 0, 0, 0, 0, 0, emptyList()
         )
+        val targeted = segments.isNotEmpty()
+        // Resolve before recording RUNNING: an invalid selection must not leave a stuck scan.
+        val selectedRoot = if (targeted) SourceFolderBrowser(context).resolve(source, segments) else null
+        val selectedPath = segments.joinToString("/")
         fun progress(phase: String, path: String = "", depth: Int = 0, visitedFolders: Int = 0, foundGames: Int = 0) {
             onProgress(ScanProgressUpdate(source.id, source.displayName, phase, path, depth, visitedFolders, foundGames))
         }
@@ -78,7 +102,7 @@ class RecursiveSourceScanner(
         val knownGamesByUri = dao.getGamesForSource(sourceId).associateBy { it.documentUri }
         val exclusions = (dao.getExclusions(sourceId).mapNotNull { it.folderNamePattern } + DEFAULT_EXCLUSIONS)
             .map { it.lowercase(Locale.ROOT) }.toSet()
-        val root = fr.astragames.app.data.saves.documentDir(context, source.treeUri.toUri())
+        val root = selectedRoot ?: fr.astragames.app.data.saves.documentDir(context, source.treeUri.toUri())
         if (root == null || !root.exists() || !root.canRead()) {
             val message = "Permission de stockage absente ou expirée"
             val finishedAt = System.currentTimeMillis()
@@ -91,7 +115,7 @@ class RecursiveSourceScanner(
                 0, 0, 0, 0, 0, 0, 0, listOf(message), listOf(item)
             )
         }
-        dao.getDeletedGamesForSource(sourceId).forEach { deleted ->
+        if (!targeted) dao.getDeletedGamesForSource(sourceId).forEach { deleted ->
             val stillExists = runCatching {
                 DocumentFile.fromSingleUri(context, deleted.documentUri.toUri())?.exists() == true
             }.getOrDefault(false)
@@ -224,7 +248,11 @@ class RecursiveSourceScanner(
                     physicalPath = physicalPath,
                     executableName = executableName,
                     engine = detection.engine.name,
-                    launcher = if (detection.engine.name == "UNKNOWN") GameLauncherType.NONE.name else GameLauncherType.JOIPLAY.name,
+                    launcher = when (detection.engine) {
+                        GameEngine.UNKNOWN -> GameLauncherType.NONE.name
+                        GameEngine.WOLF_RPG -> GameLauncherType.ASTRA_WINDOWS.name
+                        else -> GameLauncherType.JOIPLAY.name
+                    },
                     sourceId = sourceId,
                     coverUri = existing?.coverUri ?: cover,
                     bannerUri = existing?.bannerUri,
@@ -282,7 +310,7 @@ class RecursiveSourceScanner(
         }
 
         try {
-            walk(root, "", 0)
+            walk(root, selectedPath, 0)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
@@ -290,11 +318,12 @@ class RecursiveSourceScanner(
         }
         val finishedAt = System.currentTimeMillis()
         val status = if (errors.isEmpty()) ScanStatus.SUCCESS else if (found > 0) ScanStatus.PARTIAL else ScanStatus.FAILED
-        if (status == ScanStatus.SUCCESS) {
+        // A partial traversal cannot establish that the source's other games are missing.
+        if (status == ScanStatus.SUCCESS && !targeted) {
             progress("Vérification des jeux déplacés ou supprimés", visitedFolders = visited.size, foundGames = found)
             dao.reconcileSourceGames(sourceId, foundIds.toList())
         }
-        val missing = dao.countMissing(sourceId)
+        val missing = if (targeted) 0 else dao.countMissing(sourceId)
         if (missing > 0) {
             dao.getGamesForSource(sourceId).filter { it.missing }.forEach { game ->
                 reportItems += ScanReportItem(
@@ -307,7 +336,7 @@ class RecursiveSourceScanner(
             source.copy(
                 lastScanAt = finishedAt,
                 lastScanStatus = status.name,
-                gamesCount = found,
+                gamesCount = if (targeted) dao.getGamesForSource(sourceId).count { !it.missing } else found,
                 lastError = errors.firstOrNull()
             )
         )
@@ -351,11 +380,11 @@ class RecursiveSourceScanner(
         private val IGNORED_EXECUTABLE_MARKERS = setOf(
             "unins", "uninstall", "setup", "crash", "update", "config", "notification", "helper"
         )
-        private val SIGNATURE_PRIORITY_NAMES = setOf("js", "data", "game", "renpy", "tyrano")
+        private val SIGNATURE_PRIORITY_NAMES = setOf("js", "data", "game", "renpy", "tyrano", "basicdata", "game.dat")
 
         private fun String.isDecisiveSignature(): Boolean {
             val path = lowercase(Locale.ROOT)
-            return path.endsWith("rmmz_core.js") || path.endsWith("rpg_core.js") ||
+            return path == "data/basicdata/game.dat" || path.endsWith("rmmz_core.js") || path.endsWith("rpg_core.js") ||
                 (path.startsWith("game/") && (path.endsWith(".rpy") || path.endsWith(".rpyc"))) ||
                 path.endsWith(".rvdata2") || path.endsWith(".rvdata") || path.endsWith(".rxdata") ||
                 path.endsWith("tyrano/plugins/kag/kag.js") || path.endsWith("data/system/config.tjs")

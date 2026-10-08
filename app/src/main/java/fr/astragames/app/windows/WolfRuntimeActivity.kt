@@ -1,0 +1,278 @@
+package fr.astragames.app.windows
+
+import android.content.Context
+import android.content.Intent
+import android.graphics.Color
+import android.os.Bundle
+import android.view.Gravity
+import android.view.KeyEvent
+import android.view.MotionEvent
+import android.view.View
+import android.view.WindowManager
+import android.widget.Button
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
+import androidx.fragment.app.FragmentActivity
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.ui.platform.ComposeView
+import androidx.biometric.BiometricPrompt
+import androidx.biometric.BiometricManager
+import androidx.core.content.ContextCompat
+import androidx.activity.OnBackPressedCallback
+import androidx.lifecycle.lifecycleScope
+import com.winlator.widget.XServerView
+import com.winlator.xconnector.UnixSocketConfig
+import com.winlator.xenvironment.components.SysVSharedMemoryComponent
+import com.winlator.xenvironment.components.XServerComponent
+import com.winlator.xserver.Pointer
+import com.winlator.xserver.ScreenInfo
+import com.winlator.xserver.XKeycode
+import com.winlator.xserver.XServer
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.flow.first
+import java.io.File
+
+/** Astra-owned display, input and session lifecycle. No exported entry point. */
+class WolfRuntimeActivity : FragmentActivity() {
+    companion object {
+        fun intent(context: Context, id: String, uri: String, executable: String, title: String) =
+            Intent(context, WolfRuntimeActivity::class.java).putExtra("id", id).putExtra("source", uri)
+                .putExtra("executable", executable).putExtra("title", title)
+    }
+    private var server: XServer? = null
+    private var display: XServerView? = null
+    private var x11: XServerComponent? = null
+    private var shm: SysVSharedMemoryComponent? = null
+    private var session: Job? = null
+    private var process: Process? = null
+    private val pressed = mutableSetOf<XKeycode>()
+    private lateinit var root: FrameLayout
+    private lateinit var status: TextView
+    private lateinit var controls: LinearLayout
+    private var closing = false
+    private var gameStorage: WolfGameStorage? = null
+    private var lockOverlay: ComposeView? = null
+    private var settings: fr.astragames.app.settings.AstraSettings? = null
+    private val settingsRepository by lazy { (application as fr.astragames.app.AstraApplication).container.settings }
+    private val exportPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
+        if (uri != null) lifecycleScope.launch {
+            runCatching { gameStorage?.exportSaves(requireNotNull(contentResolver.openOutputStream(uri, "wt"))) }
+                .onFailure { android.widget.Toast.makeText(this@WolfRuntimeActivity, it.message, android.widget.Toast.LENGTH_LONG).show() }
+        }
+    }
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        super.onCreate(savedInstanceState)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_SECURE)
+        root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
+        status = TextView(this).apply {
+            setTextColor(Color.WHITE); textSize = 17f; gravity = Gravity.CENTER; setPadding(24, 24, 24, 24)
+            text = "Préparation du moteur Wolf…"
+        }
+        root.addView(status, FrameLayout.LayoutParams(-1, -1))
+        setContentView(root)
+        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
+            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
+            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+            insets
+        }
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() { closeSession() }
+        })
+        lifecycleScope.launch {
+            settings = settingsRepository.settings.first()
+            if (savedInstanceState != null) lockRuntime()
+            begin()
+        }
+    }
+
+    private fun progress(message: String) { runOnUiThread { if (!isDestroyed) status.text = message } }
+    private fun begin() {
+        session = lifecycleScope.launch {
+            var runner: WolfProcess? = null
+            var storage: WolfGameStorage? = null
+            var failure: String? = null
+            var synchronized = false
+            try {
+                val id = requireNotNull(intent.getStringExtra("id"))
+                val uri = requireNotNull(intent.getStringExtra("source"))
+                val executable = requireNotNull(intent.getStringExtra("executable"))
+                val runtime = WolfRuntimeInstaller(this@WolfRuntimeActivity).install(::progress)
+                storage = WolfGameStorage(this@WolfRuntimeActivity, id, uri)
+                gameStorage = storage
+                storage.prepare(::progress)
+                val sockets = File(cacheDir, "wolf-sockets").apply { mkdirs() }
+                val xSocket = UnixSocketConfig.create(sockets.path, "/x/X0")
+                val shmSocket = UnixSocketConfig.create(sockets.path, "/shm/SM0")
+                setupDisplay()
+                x11 = XServerComponent(server, xSocket).also { it.start() }
+                shm = SysVSharedMemoryComponent(server, shmSocket).also { it.start() }
+                runner = WolfProcess(this@WolfRuntimeActivity, runtime, storage, xSocket.path, shmSocket.path)
+                progress("Initialisation de Windows… Le premier lancement peut prendre quelques minutes.")
+                runInterruptible(Dispatchers.IO) { runner.initialize() }
+                status.visibility = View.GONE
+                controls.visibility = View.VISIBLE
+                val result = runInterruptible(Dispatchers.IO) {
+                    process = runner.launch(executable)
+                    process!!.waitFor()
+                }
+                if (result != 0 && !closing) failure = "Le jeu s’est arrêté (code $result). Le journal est conservé dans Astra."
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) { failure = error.message ?: "Le lancement a échoué." }
+            finally {
+                releaseKeys()
+                withContext(NonCancellable + Dispatchers.IO) {
+                    runCatching { runner?.stop() }
+                    process?.let { if (it.isAlive) it.destroyForcibly() }
+                    if (storage != null && runner != null) {
+                        runCatching { storage.synchronize() }.onSuccess { conflicts ->
+                            synchronized = conflicts == 0
+                            if (conflicts > 0) failure = "$conflicts fichier(s) ont changé dans le dossier source. Les sauvegardes restent dans Astra pour éviter un écrasement."
+                        }.onFailure { failure = it.message }
+                    }
+                }
+                x11?.stop(); x11 = null
+                shm?.stop(); shm = null
+                if (!isDestroyed) {
+                    if (closing && failure == null) finish()
+                    else showResult(failure ?: if (synchronized) "Partie terminée. Sauvegardes synchronisées." else "Partie terminée.")
+                }
+            }
+        }
+    }
+
+    private fun setupDisplay() {
+        server = XServer(this, ScreenInfo(800, 600))
+        display = XServerView(this, server).also { view ->
+            server!!.renderer = view.renderer
+            root.addView(view, 0, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(120) })
+            view.setOnTouchListener { _, event ->
+                val transform = view.renderer.viewTransformation
+                val scale = transform.aspect.takeIf { it > 0 } ?: 1f
+                server?.injectPointerMove(((event.x - transform.viewOffsetX) / scale).toInt(), ((event.y - transform.viewOffsetY) / scale).toInt())
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> server?.injectPointerButtonPress(Pointer.Button.BUTTON_LEFT)
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> server?.injectPointerButtonRelease(Pointer.Button.BUTTON_LEFT)
+                }
+                true
+            }
+        }
+        controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; visibility = View.GONE }
+        val arrows = LinearLayout(this).apply { gravity = Gravity.CENTER }
+        listOf("←" to XKeycode.KEY_LEFT, "↑" to XKeycode.KEY_UP, "↓" to XKeycode.KEY_DOWN, "→" to XKeycode.KEY_RIGHT).forEach { (label, key) -> arrows.addView(keyButton(label, key)) }
+        val actions = LinearLayout(this).apply { gravity = Gravity.CENTER }
+        listOf("Valider" to XKeycode.KEY_ENTER, "Retour" to XKeycode.KEY_ESC, "Shift" to XKeycode.KEY_SHIFT_L).forEach { (label, key) -> actions.addView(keyButton(label, key)) }
+        actions.addView(Button(this).apply { text = "Quitter"; styleControl(this); setOnClickListener { closeSession() } })
+        controls.addView(arrows); controls.addView(actions)
+        root.addView(controls, FrameLayout.LayoutParams(-1, dp(120), Gravity.BOTTOM))
+        lockOverlay?.bringToFront()
+    }
+    private fun keyButton(label: String, key: XKeycode) = Button(this).apply {
+        text = label; contentDescription = label; isAllCaps = false
+        styleControl(this)
+        var touchClick = false
+        setOnClickListener {
+            if (!touchClick) {
+                focusGame()
+                server?.injectKeyPress(key)
+                postDelayed({ server?.injectKeyRelease(key) }, 200)
+            }
+        }
+        setOnTouchListener { view, event ->
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { focusGame(); pressed.add(key); server?.injectKeyPress(key); view.isPressed = true }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { pressed.remove(key); server?.injectKeyRelease(key); view.isPressed = false; if (event.actionMasked == MotionEvent.ACTION_UP) { touchClick = true; view.performClick(); touchClick = false } }
+            }; true
+        }
+    }
+    private fun styleControl(button: Button) {
+        button.isAllCaps = false
+        button.textSize = 14f
+        button.setTextColor(Color.rgb(236, 229, 249))
+        button.setPadding(0, 0, 0, 0)
+        button.layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply { setMargins(dp(3), dp(4), dp(3), dp(4)) }
+        val shape = android.graphics.drawable.GradientDrawable().apply { setColor(Color.rgb(42, 34, 56)); cornerRadius = dp(12).toFloat() }
+        button.background = android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(102, 80, 143)), shape, null)
+    }
+    private fun focusGame() {
+        val current = server ?: return
+        current.lockAll().use {
+            val target = current.windowManager.rootWindow.children.lastOrNull { it.isRenderable && !it.isDesktopWindow }
+            if (target != null) current.windowManager.setFocus(target, com.winlator.xserver.WindowManager.FocusRevertTo.PARENT)
+        }
+    }
+    private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
+    private fun releaseKeys() { pressed.forEach { server?.injectKeyRelease(it) }; pressed.clear() }
+    private fun closeSession() {
+        if (closing) return
+        closing = true
+        if (session?.isActive != true) { finish(); return }
+        status.visibility = View.VISIBLE
+        progress("Fermeture du jeu et synchronisation des sauvegardes…")
+        process?.destroy()
+        session?.cancel()
+    }
+    private fun showResult(message: String) {
+        root.removeAllViews()
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(24, 24, 24, 24) }
+        layout.addView(TextView(this).apply { text = message; textSize = 17f; setTextColor(Color.WHITE); gravity = Gravity.CENTER })
+        layout.addView(Button(this).apply { text = "Retour à Astra"; setOnClickListener { finish() } })
+        if (gameStorage != null) layout.addView(Button(this).apply { text = "Exporter les sauvegardes"; setOnClickListener { exportPicker.launch("Astra-Wolf-sauvegardes.zip") } })
+        root.addView(layout, FrameLayout.LayoutParams(-1, -1))
+        lockOverlay?.let { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }
+    }
+    private fun hardwareKey(event: KeyEvent): Boolean {
+        if (lockOverlay == null && event.keyCode != KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_DOWN) focusGame()
+            val gamepad = when (event.keyCode) {
+                KeyEvent.KEYCODE_BUTTON_A -> XKeycode.KEY_ENTER
+                KeyEvent.KEYCODE_BUTTON_B -> XKeycode.KEY_ESC
+                KeyEvent.KEYCODE_DPAD_LEFT -> XKeycode.KEY_LEFT
+                KeyEvent.KEYCODE_DPAD_RIGHT -> XKeycode.KEY_RIGHT
+                KeyEvent.KEYCODE_DPAD_UP -> XKeycode.KEY_UP
+                KeyEvent.KEYCODE_DPAD_DOWN -> XKeycode.KEY_DOWN
+                else -> null
+            }
+            if (gamepad != null) { if (event.action == KeyEvent.ACTION_DOWN) { pressed.add(gamepad); server?.injectKeyPress(gamepad) } else { pressed.remove(gamepad); server?.injectKeyRelease(gamepad) }; return true }
+            if (server?.keyboard?.onKeyEvent(event) == true) return true
+        }
+        return false
+    }
+    override fun onKeyDown(keyCode: Int, event: KeyEvent) = hardwareKey(event) || super.onKeyDown(keyCode, event)
+    override fun onKeyUp(keyCode: Int, event: KeyEvent) = hardwareKey(event) || super.onKeyUp(keyCode, event)
+    private fun unlockRuntime() { lockOverlay?.let(root::removeView); lockOverlay = null }
+    private fun lockRuntime() {
+        val current = settings ?: return
+        if (lockOverlay != null || !(current.lockPinEnabled || current.lockBiometricEnabled)) return
+        releaseKeys()
+        lockOverlay = ComposeView(this).apply {
+            setContent {
+                fr.astragames.app.ui.theme.AstraTheme(hue = current.accentHue) {
+                    fr.astragames.app.ui.LockContent(current.lockBiometricEnabled, current.lockPinEnabled, {
+                        val prompt = BiometricPrompt(this@WolfRuntimeActivity, ContextCompat.getMainExecutor(this@WolfRuntimeActivity),
+                            object : BiometricPrompt.AuthenticationCallback() {
+                                override fun onAuthenticationSucceeded(result: BiometricPrompt.AuthenticationResult) { unlockRuntime() }
+                            })
+                        prompt.authenticate(BiometricPrompt.PromptInfo.Builder().setTitle("Astra")
+                            .setAllowedAuthenticators(BiometricManager.Authenticators.BIOMETRIC_WEAK or BiometricManager.Authenticators.DEVICE_CREDENTIAL).build())
+                    }) { pin, result -> lifecycleScope.launch {
+                        val accepted = settingsRepository.verifyPin(pin)
+                        result(accepted)
+                        if (accepted) unlockRuntime()
+                    } }
+                }
+            }
+        }.also { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }
+    }
+    override fun onStop() { if (!isChangingConfigurations && settings?.lockOnBackground == true) lockRuntime(); super.onStop() }
+    override fun onPause() { releaseKeys(); display?.onPause(); super.onPause() }
+    override fun onResume() { super.onResume(); display?.onResume() }
+    override fun onDestroy() { process?.destroy(); session?.cancel(); super.onDestroy() }
+}

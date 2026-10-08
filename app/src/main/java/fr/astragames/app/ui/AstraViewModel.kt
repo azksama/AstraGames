@@ -385,13 +385,15 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             .onSuccess { events.emit(UiEvent.Message("Source retirée. Les fichiers du dossier sont conservés.")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Impossible de retirer la source")) }
     }
-    fun scanSource(id: String) { scanJob?.cancel(); scanJob = viewModelScope.launch {
+    suspend fun listSourceSubfolders(id: String, segments: List<String>) = repository.listSourceSubfolders(id, segments)
+    fun scanSource(id: String, segments: List<String> = emptyList()) { scanJob?.cancel(); scanJob = viewModelScope.launch {
         scanMutex.lock()
         scanning.value = true
         scanProgress.value = ScanProgressState(active = true, phase = "Préparation du scan")
         try {
             val before = repository.getGameIds()
-            val report = repository.scanSource(id, ::updateScanProgress)
+            val report = if (segments.isEmpty()) repository.scanSource(id, ::updateScanProgress)
+                else repository.scanSubfolder(id, segments, ::updateScanProgress)
             enqueueNewGames(before)
             mutableScanReports.value = listOf(report)
             events.emit(UiEvent.Message("${report.found} jeux trouvés, ${report.added} ajoutés"))

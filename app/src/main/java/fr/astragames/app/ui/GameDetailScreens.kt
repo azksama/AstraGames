@@ -424,7 +424,7 @@ internal fun LaunchProfileDialog(
     onReset: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var launcherType by rememberSaveable(game.id, saved) { mutableStateOf(saved?.launcherType ?: "JOIPLAY") }
+    var launcherType by rememberSaveable(game.id, saved) { mutableStateOf(saved?.launcherType ?: if (game.engine == GameEngine.WOLF_RPG.name) "ASTRA_WINDOWS" else "JOIPLAY") }
     var engineOverride by rememberSaveable(game.id, saved) { mutableStateOf(saved?.engineOverride) }
     var executable by rememberSaveable(game.id, saved) { mutableStateOf(saved?.executableName ?: game.executableName.orEmpty()) }
     var physicalPath by rememberSaveable(game.id, saved) { mutableStateOf(saved?.physicalPath ?: game.physicalPath.orEmpty()) }
@@ -433,6 +433,9 @@ internal fun LaunchProfileDialog(
     var arguments by rememberSaveable(game.id, saved) { mutableStateOf(saved?.arguments.orEmpty()) }
     var launcherMenu by remember { mutableStateOf(false) }
     var engineMenu by remember { mutableStateOf(false) }
+    LaunchedEffect(engineOverride, game.engine) {
+        if (launcherType != "EXTERNAL") launcherType = if ((engineOverride ?: game.engine) == GameEngine.WOLF_RPG.name) "ASTRA_WINDOWS" else "JOIPLAY"
+    }
     fun profile() = LaunchProfileEntity(
         gameId = game.id, launcherType = launcherType, engineOverride = engineOverride,
         executableName = executable.trim().ifBlank { null }, physicalPath = physicalPath.trim().ifBlank { null },
@@ -457,11 +460,13 @@ internal fun LaunchProfileDialog(
                         item {
                             Box {
                                 OutlinedButton(onClick = { launcherMenu = true }, Modifier.fillMaxWidth()) {
-                                    Text(if (launcherType == "EXTERNAL") "Application externe" else "JoiPlay")
+                                    Text(when (launcherType) { "EXTERNAL" -> "Application externe"; "ASTRA_WINDOWS" -> "Astra · Wolf intégré"; else -> "JoiPlay" })
                                     Spacer(Modifier.weight(1f)); Icon(Icons.Default.ArrowDropDown, null)
                                 }
                                 DropdownMenu(launcherMenu, { launcherMenu = false }) {
-                                    DropdownMenuItem({ Text("JoiPlay") }, { launcherType = "JOIPLAY"; launcherMenu = false })
+                                    if ((engineOverride ?: game.engine) == GameEngine.WOLF_RPG.name) {
+                                        DropdownMenuItem({ Text("Astra · Wolf intégré") }, { launcherType = "ASTRA_WINDOWS"; launcherMenu = false })
+                                    } else DropdownMenuItem({ Text("JoiPlay") }, { launcherType = "JOIPLAY"; launcherMenu = false })
                                     DropdownMenuItem({ Text("Application externe") }, { launcherType = "EXTERNAL"; launcherMenu = false })
                                 }
                             }
@@ -480,13 +485,13 @@ internal fun LaunchProfileDialog(
                                 }
                             }
                         }
-                        item { EditField(physicalPath, { physicalPath = it }, "Chemin du dossier") }
+                        if (launcherType != "ASTRA_WINDOWS") item { EditField(physicalPath, { physicalPath = it }, "Chemin du dossier") }
                         item { EditField(executable, { executable = it }, "Exécutable ou fichier d'entrée") }
                         if (launcherType == "EXTERNAL") {
                             item { EditField(packageName, { packageName = it }, "Package Android (facultatif)") }
                             item { EditField(customAction, { customAction = it }, "Action Android") }
                         }
-                        item { EditField(arguments, { arguments = it }, "Arguments personnalisés") }
+                        if (launcherType != "ASTRA_WINDOWS") item { EditField(arguments, { arguments = it }, "Arguments personnalisés") }
                     }
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

@@ -65,7 +65,7 @@ object LaunchProfileResolver {
 }
 
 class JoiPlayLauncher : GameLauncher {
-    override fun supports(game: GameEntity) = JoiPlayPayloadBuilder.typeFor(game.engine) != null
+    override fun supports(game: GameEntity) = game.engine == GameEngine.WOLF_RPG.name || JoiPlayPayloadBuilder.typeFor(game.engine) != null
 
     override suspend fun launch(context: Context, game: GameEntity): LaunchResult {
         return launch(context, game, null)
@@ -73,6 +73,10 @@ class JoiPlayLauncher : GameLauncher {
 
     suspend fun launch(context: Context, game: GameEntity, profile: LaunchProfileEntity?): LaunchResult {
         if (LaunchProfileResolver.launcherType(game, profile) == "EXTERNAL") return launchExternal(context, game, profile)
+        if (LaunchProfileResolver.engine(game, profile) == GameEngine.WOLF_RPG.name) {
+            return start(context, fr.astragames.app.windows.WolfRuntimeActivity.intent(context, game.id, game.documentUri,
+                LaunchProfileResolver.executable(game, profile) ?: "Game.exe", game.title).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        }
         val payload = JoiPlayPayloadBuilder.build(game, profile)
             ?: return LaunchResult.Failure("Le chemin physique du jeu n'est pas accessible à JoiPlay")
         val effectiveEngine = LaunchProfileResolver.engine(game, profile)

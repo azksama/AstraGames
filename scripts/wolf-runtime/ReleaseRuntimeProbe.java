@@ -1,0 +1,84 @@
+package fr.astragames.releaseprobe;
+
+import android.app.Activity;
+import android.app.Instrumentation;
+import android.content.Intent;
+import android.graphics.Bitmap;
+import android.os.Bundle;
+import android.view.View;
+import android.view.ViewGroup;
+import android.view.WindowManager;
+import android.widget.Button;
+import java.io.File;
+import java.io.FileOutputStream;
+
+/** Framework-only instrumentation: also works with the fully obfuscated release APK. */
+public class ReleaseRuntimeProbe extends Instrumentation {
+    private Activity activity;
+    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    @Override public void onStart() {
+        Bundle result = new Bundle();
+        try {
+            File sample = new File(getTargetContext().getFilesDir(), "wolf-probe/game3729");
+            if (!new File(sample, "Game.exe").isFile()) throw new Exception("Missing official fixture");
+            Intent intent = new Intent().setClassName(getTargetContext(), "fr.astragames.app.windows.WolfRuntimeActivity")
+                .putExtra("id", "official-wolf-test-game3729").putExtra("source", sample.toURI().toString())
+                .putExtra("executable", "Game.exe").putExtra("title", "Wolf release test")
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+            activity = startActivitySync(intent);
+            runOnMainSync(() -> activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE));
+            boolean[] ready = {false};
+            for (int i = 0; i < 240 && !ready[0]; i++) {
+                Thread.sleep(1000);
+                runOnMainSync(() -> { Button button = find(activity.getWindow().getDecorView(), "Valider"); ready[0] = button != null && button.isShown(); });
+            }
+            if (!ready[0]) throw new Exception("Runtime did not become ready");
+            Thread.sleep(10000);
+            runOnMainSync(() -> activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE));
+            waitForIdleSync();
+            Thread.sleep(500);
+            screenshot("release-title.png");
+            runOnMainSync(() -> find(activity.getWindow().getDecorView(), "Valider").performClick());
+            Thread.sleep(4000);
+            screenshot("release-game.png");
+            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
+            StringBuilder hash = new StringBuilder();
+            for (byte b : digest.digest("official-wolf-test-game3729".getBytes("UTF-8"))) hash.append(String.format("%02x", b));
+            File gameRoot = new File(getTargetContext().getFilesDir(), "wolf-games/" + hash);
+            for (String name : new String[]{"runtime.log", "game/Game.ini"}) {
+                java.nio.file.Files.copy(new File(gameRoot, name).toPath(),
+                    new File(getTargetContext().getExternalFilesDir(null), "release-" + new File(name).getName()).toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            }
+            runOnMainSync(() -> find(activity.getWindow().getDecorView(), "Quitter").performClick());
+            Thread.sleep(5000);
+            String log = new String(java.nio.file.Files.readAllBytes(new File(gameRoot, "runtime.log").toPath()), "UTF-8");
+            String ini = new String(java.nio.file.Files.readAllBytes(new File(gameRoot, "game/Game.ini").toPath()), "UTF-8");
+            result.putString("stream", "Release runtime started, accepted input and closed; inspect screenshots.\n" + ini + "\n" + log.substring(Math.max(0, log.length() - 3000)));
+            finish(Activity.RESULT_OK, result);
+        } catch (Throwable error) {
+            result.putString("stream", android.util.Log.getStackTraceString(error));
+            finish(Activity.RESULT_CANCELED, result);
+        }
+    }
+    private static Button find(View view, String label) {
+        if (view instanceof Button && ((Button)view).getText().toString().equals(label)) return (Button)view;
+        if (view instanceof ViewGroup) for (int i=0; i<((ViewGroup)view).getChildCount(); i++) {
+            Button found = find(((ViewGroup)view).getChildAt(i), label); if (found != null) return found;
+        }
+        return null;
+    }
+    private void screenshot(String name) throws Exception {
+        Bitmap bitmap = getUiAutomation().takeScreenshot();
+        if (bitmap == null) throw new Exception("Screenshot unavailable");
+        if (name.equals("release-game.png")) {
+            java.util.HashSet<Integer> colors = new java.util.HashSet<>();
+            for (int y = bitmap.getHeight()/4; y < bitmap.getHeight()*3/4; y += 4)
+                for (int x = bitmap.getWidth()/5; x < bitmap.getWidth()*4/5; x += 4) colors.add(bitmap.getPixel(x, y));
+            if (colors.size() < 128) throw new Exception("Official sample rendered a blank/incomplete game frame: " + colors.size() + " colors");
+        }
+        try (FileOutputStream output = new FileOutputStream(new File(getTargetContext().getExternalFilesDir(null), name))) {
+            bitmap.compress(Bitmap.CompressFormat.PNG, 100, output);
+        }
+        bitmap.recycle();
+    }
+}

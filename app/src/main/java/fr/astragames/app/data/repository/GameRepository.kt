@@ -96,6 +96,8 @@ class GameRepository(
     }
 
     suspend fun scanSource(id: String, onProgress: (ScanProgressUpdate) -> Unit = {}) = scanner.scan(id, onProgress)
+    suspend fun scanSubfolder(id: String, segments: List<String>, onProgress: (ScanProgressUpdate) -> Unit = {}) = scanner.scanSubfolder(id, segments, onProgress)
+    suspend fun listSourceSubfolders(id: String, segments: List<String>) = scanner.listSubfolders(id, segments)
     suspend fun scanAll(onProgress: (ScanProgressUpdate) -> Unit = {}) = dao.getEnabledSources().map { scanner.scan(it.id, onProgress) }
     suspend fun latestScanReport(sourceId: String): ScanReport? {
         val source = dao.getSource(sourceId) ?: return null

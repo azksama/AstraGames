@@ -11,6 +11,9 @@ object EngineSignatureDetector {
         fun firstExe() = names.firstOrNull { it.endsWith(".exe") }?.substringAfterLast('/')
 
         return when {
+            has("game.exe") && (has("data.wolf") || has("data/basicdata/game.dat")) -> DetectionResult(
+                GameEngine.WOLF_RPG, .99f, listOf("Exécutable et données WOLF RPG"), "Game.exe"
+            )
             has("www/js/rmmz_core.js") || has("js/rmmz_core.js") -> DetectionResult(
                 GameEngine.RPG_MAKER_MZ, .99f, listOf("rmmz_core.js"), firstExe() ?: "Game.exe"
             )

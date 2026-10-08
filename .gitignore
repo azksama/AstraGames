@@ -1,4 +1,6 @@
 .gradle/
+.cxx/
+**/.cxx/
 .kotlin/
 .idea/
 local.properties
