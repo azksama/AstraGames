@@ -84,8 +84,8 @@ internal fun WolfDiagnosticsDialog(initialReport: File? = null, recovered: Boole
                         }) { Text("Partager le rapport") }
                     }
                     SelectionContainer(Modifier.heightIn(min = 220.dp, max = 420.dp).fillMaxWidth().padding(horizontal = 16.dp).verticalScroll(rememberScrollState())) {
-                        // Display a bounded tail; the shared report includes all retained streams.
-                        MaterialText(if (content.length > 48_000) content.take(4000) + "\n[… Aperçu abrégé ; partagez le rapport complet …]\n" + content.takeLast(44_000) else content,
+                        // Keep every stream visible: Android noise must never crowd Wine out.
+                        MaterialText(fr.astragames.app.windows.wolfReportPreview(content),
                             fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
                     }
                 }

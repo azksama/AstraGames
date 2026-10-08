@@ -72,10 +72,13 @@ internal class WolfDiagnostics(private val context: Context) {
         val result = StringBuilder("ASTRA — DIAGNOSTIC WOLF RPG\n")
         result.append("Session : ${directory.name}\nDernière étape : ${metadata.optString("stage")}\n")
         result.append("État : ${if (unfinished) "Session interrompue sans résultat final. Ce constat seul ne prouve pas un crash." else metadata.optString("result", "En cours")}\n")
+        val runtimeTail = listOf("runtime.previous.log", "runtime.log").map { File(directory, it) }
+            .filter(File::isFile).joinToString("\n") { readTail(it, LOG_LIMIT) }
+        wolfRuntimeFailureHint(runtimeTail)?.let { result.append("Erreur identifiée dans Wine : $it\n") }
         if (unfinished) {
             result.append(androidExit(metadata))
         }
-        for (name in listOf("events", "runtime", "audio", "android")) {
+        for (name in listOf("events", "runtime", "server", "startup", "audio", "shutdown", "android")) {
             result.append("\n===== $name =====\n")
             for (suffix in listOf(".previous.log", ".log")) {
                 val file = File(directory, name + suffix)

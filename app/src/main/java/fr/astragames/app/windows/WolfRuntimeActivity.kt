@@ -55,7 +55,7 @@ class WolfRuntimeActivity : FragmentActivity() {
     private val pressed = mutableSetOf<XKeycode>()
     private lateinit var root: FrameLayout
     private lateinit var status: TextView
-    private lateinit var controls: LinearLayout
+    private lateinit var controls: WolfTouchControls
     private var closing = false
     private var gameStorage: WolfGameStorage? = null
     private var diagnostic: WolfDiagnosticSession? = null
@@ -179,7 +179,7 @@ class WolfRuntimeActivity : FragmentActivity() {
         server = XServer(this, ScreenInfo(800, 600))
         display = XServerView(this, server).also { view ->
             server!!.renderer = view.renderer
-            root.addView(view, 0, FrameLayout.LayoutParams(-1, -1).apply { bottomMargin = dp(120) })
+            root.addView(view, 0, FrameLayout.LayoutParams(-1, -1))
             view.setOnTouchListener { _, event ->
                 val transform = view.renderer.viewTransformation
                 val scale = transform.aspect.takeIf { it > 0 } ?: 1f
@@ -191,42 +191,25 @@ class WolfRuntimeActivity : FragmentActivity() {
                 true
             }
         }
-        controls = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; visibility = View.GONE }
-        val arrows = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        listOf("←" to XKeycode.KEY_LEFT, "↑" to XKeycode.KEY_UP, "↓" to XKeycode.KEY_DOWN, "→" to XKeycode.KEY_RIGHT).forEach { (label, key) -> arrows.addView(keyButton(label, key)) }
-        val actions = LinearLayout(this).apply { gravity = Gravity.CENTER }
-        listOf("Valider" to XKeycode.KEY_ENTER, "Retour" to XKeycode.KEY_ESC, "Shift" to XKeycode.KEY_SHIFT_L).forEach { (label, key) -> actions.addView(keyButton(label, key)) }
-        actions.addView(Button(this).apply { text = "Quitter"; styleControl(this); setOnClickListener { closeSession() } })
-        controls.addView(arrows); controls.addView(actions)
-        root.addView(controls, FrameLayout.LayoutParams(-1, dp(120), Gravity.BOTTOM))
+        controls = WolfTouchControls(this, { key, down ->
+            if (down) { focusGame(); pressed.add(key); server?.injectKeyPress(key) }
+            else { pressed.remove(key); server?.injectKeyRelease(key) }
+        }, ::closeSession).apply { visibility = View.GONE }
+        root.addView(controls, FrameLayout.LayoutParams(-1, -1))
+        updateControlLayout()
         lockOverlay?.bringToFront()
     }
-    private fun keyButton(label: String, key: XKeycode) = Button(this).apply {
-        text = label; contentDescription = label; isAllCaps = false
-        styleControl(this)
-        var touchClick = false
-        setOnClickListener {
-            if (!touchClick) {
-                focusGame()
-                server?.injectKeyPress(key)
-                postDelayed({ server?.injectKeyRelease(key) }, 200)
-            }
-        }
-        setOnTouchListener { view, event ->
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { focusGame(); pressed.add(key); server?.injectKeyPress(key); view.isPressed = true }
-                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> { pressed.remove(key); server?.injectKeyRelease(key); view.isPressed = false; if (event.actionMasked == MotionEvent.ACTION_UP) { touchClick = true; view.performClick(); touchClick = false } }
-            }; true
+    private fun updateControlLayout() {
+        val portrait = resources.configuration.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        (display?.layoutParams as? FrameLayout.LayoutParams)?.let {
+            it.bottomMargin = if (portrait) dp(184) else 0
+            display?.layoutParams = it
         }
     }
-    private fun styleControl(button: Button) {
-        button.isAllCaps = false
-        button.textSize = 14f
-        button.setTextColor(Color.rgb(236, 229, 249))
-        button.setPadding(0, 0, 0, 0)
-        button.layoutParams = LinearLayout.LayoutParams(0, dp(48), 1f).apply { setMargins(dp(3), dp(4), dp(3), dp(4)) }
-        val shape = android.graphics.drawable.GradientDrawable().apply { setColor(Color.rgb(42, 34, 56)); cornerRadius = dp(12).toFloat() }
-        button.background = android.graphics.drawable.RippleDrawable(android.content.res.ColorStateList.valueOf(Color.rgb(102, 80, 143)), shape, null)
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        releaseKeys()
+        updateControlLayout()
     }
     private fun focusGame() {
         val current = server ?: return
@@ -236,7 +219,7 @@ class WolfRuntimeActivity : FragmentActivity() {
         }
     }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
-    private fun releaseKeys() { pressed.forEach { server?.injectKeyRelease(it) }; pressed.clear() }
+    private fun releaseKeys() { if (::controls.isInitialized) controls.releaseAll(); pressed.forEach { server?.injectKeyRelease(it) }; pressed.clear() }
     private fun closeSession() {
         if (closing) return
         closing = true

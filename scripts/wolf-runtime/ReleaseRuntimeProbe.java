@@ -22,7 +22,7 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             File sample = new File(getTargetContext().getFilesDir(), "wolf-probe/game3729");
             if (!new File(sample, "Game.exe").isFile()) throw new Exception("Missing official fixture");
             Intent intent = new Intent().setClassName(getTargetContext(), "fr.astragames.app.windows.WolfRuntimeActivity")
-                .putExtra("id", "official-wolf-test-game3729").putExtra("source", sample.toURI().toString())
+                .putExtra("id", "official-wolf-test-game3729-beta5").putExtra("source", sample.toURI().toString())
                 .putExtra("executable", "Game.exe").putExtra("title", "Wolf release test")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             activity = startActivitySync(intent);
@@ -43,17 +43,25 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             screenshot("release-game.png");
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             StringBuilder hash = new StringBuilder();
-            for (byte b : digest.digest("official-wolf-test-game3729".getBytes("UTF-8"))) hash.append(String.format("%02x", b));
+            for (byte b : digest.digest("official-wolf-test-game3729-beta5".getBytes("UTF-8"))) hash.append(String.format("%02x", b));
             File gameRoot = new File(getTargetContext().getFilesDir(), "wolf-games/" + hash);
-            for (String name : new String[]{"runtime.log", "game/Game.ini"}) {
-                java.nio.file.Files.copy(new File(gameRoot, name).toPath(),
-                    new File(getTargetContext().getExternalFilesDir(null), "release-" + new File(name).getName()).toPath(), java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
+            File[] reports = new File(getTargetContext().getNoBackupFilesDir(), "wolf-diagnostics").listFiles(File::isDirectory);
+            if (reports == null || reports.length == 0) throw new Exception("No diagnostic report");
+            java.util.Arrays.sort(reports, java.util.Comparator.comparing(File::getName).reversed());
+            org.json.JSONObject state = null;
+            for (int attempt=0; attempt<30; attempt++) {
+                Thread.sleep(1000);
+                state = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(new File(reports[0], "session.json").toPath()), "UTF-8"));
+                if (state.optBoolean("finished")) break;
             }
-            runOnMainSync(() -> find(activity.getWindow().getDecorView(), "Quitter").performClick());
-            Thread.sleep(5000);
-            String log = new String(java.nio.file.Files.readAllBytes(new File(gameRoot, "runtime.log").toPath()), "UTF-8");
-            String ini = new String(java.nio.file.Files.readAllBytes(new File(gameRoot, "game/Game.ini").toPath()), "UTF-8");
-            result.putString("stream", "Release runtime started, accepted input and closed; inspect screenshots.\n" + ini + "\n" + log.substring(Math.max(0, log.length() - 3000)));
+            if (state == null || !state.optBoolean("finished") || !state.optString("result").equals("Fermeture demandée"))
+                throw new Exception("Session did not close cleanly: " + state);
+            String events = new String(java.nio.file.Files.readAllBytes(new File(reports[0], "events.log").toPath()), "UTF-8");
+            if (!events.contains("Serveur Windows supervisé") || !events.contains("Fin wineserver : code de sortie 0"))
+                throw new Exception("Missing supervised server lifecycle evidence");
+            result.putBoolean("debuggable", (getTargetContext().getApplicationInfo().flags & 2) != 0);
+            result.putString("stream", "PASS: Release game rendered, accepted input and closed with supervised wineserver.\n" + state);
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
             result.putString("stream", android.util.Log.getStackTraceString(error));

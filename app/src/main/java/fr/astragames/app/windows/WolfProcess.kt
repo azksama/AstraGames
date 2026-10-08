@@ -12,6 +12,7 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
     private val temporary = File(context.cacheDir, "wolf-tmp").apply { mkdirs() }
     private val pulseSocket = File(temporary, "pulse.sock")
     private var audio: Process? = null
+    private var wineServer: Process? = null
     private val fontConfig = File(storage.directory, "fonts.conf").apply {
         writeText("""<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>${runtime.path}/fonts</dir><dir>/system/fonts</dir><cachedir>${storage.directory.path}/font-cache</cachedir><alias binding="strong"><family>MS Gothic</family><prefer><family>IPAexGothic</family></prefer></alias></fontconfig>""")
     }
@@ -36,10 +37,11 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         "BOX64_DYNAREC" to "1",
         "BOX64_MMAP32" to "1",
         "BOX64_NOBANNER" to "0",
-        "BOX64_LOG" to if (diagnostics?.verbose == true) "2" else "1",
+        // LOG=2 traces every wrapped libc call and can rotate away the actual Wine error.
+        "BOX64_LOG" to "1",
         "BOX64_SHOWSEGV" to "1",
         "BOX64_SHOWBT" to "1",
-        "BOX64_DYNAREC_LOG" to if (diagnostics?.verbose == true) "1" else "0",
+        "BOX64_DYNAREC_LOG" to "0",
         "DISPLAY" to ":0",
         "LANG" to "ja_JP.UTF-8",
         "LC_ALL" to "ja_JP.UTF-8",
@@ -77,14 +79,16 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         error("Le moteur audio ne répond pas.")
     }
 
-    private fun start(executable: File, args: List<String>, append: Boolean = true): Process {
+    private fun start(executable: File, args: List<String>, append: Boolean = true,
+                      stream: String = "runtime", workingDirectory: File = storage.game): Process {
         val command = listOf("/system/bin/linker64") + (if (arm) listOf(box.path) else emptyList()) + executable.path + args
         diagnostics?.event("Commande : ${command.joinToString(" ")}")
+        diagnostics?.event("Dossier de travail : ${workingDirectory.path}; journal=$stream")
         return ProcessBuilder(command)
-            .directory(storage.game).redirectErrorStream(true)
+            .directory(workingDirectory).redirectErrorStream(true)
             .apply { if (diagnostics == null) redirectOutput(if (append) ProcessBuilder.Redirect.appendTo(log) else ProcessBuilder.Redirect.to(log)) }
             .apply { environment().putAll(environment) }.start()
-            .also { diagnostics?.capture(it, "runtime") }
+            .also { diagnostics?.capture(it, stream) }
     }
 
     fun initialize() {
@@ -97,7 +101,7 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
             diagnostics.stage("Test de démarrage de Box64 (-v), avant Wine")
             val probe = ProcessBuilder("/system/bin/linker64", box.path, "-v").directory(storage.game)
                 .redirectErrorStream(true).apply { environment().putAll(environment) }.start()
-            diagnostics.capture(probe, "runtime")
+            diagnostics.capture(probe, "startup")
             try {
                 check(probe.waitFor(15, TimeUnit.SECONDS)) { "Box64 ne répond pas au test de démarrage (15 secondes)." }
                 diagnostics.exited(probe, "Test Box64", probe.exitValue())
@@ -106,10 +110,17 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
             } finally { if (probe.isAlive) probe.destroyForcibly() }
         }
         startAudio()
-        if (File(storage.prefix, ".astra-ready").isFile) { diagnostics?.event("Préfixe Windows déjà initialisé"); return }
         storage.prefix.mkdirs()
+        diagnostics?.stage("Démarrage du serveur Windows")
+        // A previous daemon may still hold the prefix lock while refusing clients.
+        // Stop only this prefix and wait for its lock before owning a foreground server.
+        serverCommand("-k", "Nettoyage du serveur Windows", requireSuccess = false)
+        serverCommand("-w", "Attente du serveur Windows")
+        wineServer = start(File(wine.parentFile, "wineserver"), listOf("-f", "-p60"), stream = "server")
+        diagnostics?.event("Serveur Windows supervisé : premier plan, persistance 60 secondes sans client")
+        if (File(storage.prefix, ".astra-ready").isFile) { diagnostics?.event("Préfixe Windows déjà initialisé"); return }
         diagnostics?.stage(if (arm) "Initialisation Box64 / Wine (wineboot)" else "Initialisation Wine x86_64 (wineboot)")
-        val boot = start(wine, listOf("wineboot", "-u"), false)
+        val boot = start(wine, listOf("wineboot", "-u"), false, stream = "startup")
         try {
             check(boot.waitFor(150, TimeUnit.SECONDS)) { "Initialisation Windows interrompue après 150 secondes. Consultez le rapport de diagnostic." }
             diagnostics?.exited(boot, "wineboot", boot.exitValue())
@@ -120,16 +131,28 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
     }
 
     fun launch(executable: String): Process {
+        check(wineServer?.isAlive == true) { "Le serveur Windows s’est arrêté avant le jeu. Consultez le journal server." }
         diagnostics?.stage(if (arm) "Lancement du jeu via Box64 / Wine" else "Lancement du jeu via Wine x86_64")
         val file = safeFile(storage.game, executable)
         check(file.isFile && file.extension.equals("exe", true)) { "Exécutable Windows introuvable : $executable" }
-        return start(wine, listOf(file.path))
+        return start(wine, listOf(file.path), workingDirectory = requireNotNull(file.parentFile))
     }
     fun stop() {
         try {
-            val server = start(File(wine.parentFile, "wineserver"), listOf("-k"))
-            try { if (server.waitFor(8, TimeUnit.SECONDS)) diagnostics?.exited(server, "Arrêt wineserver", server.exitValue()) }
-            finally { if (server.isAlive) server.destroyForcibly() }
-        } finally { audio?.destroy(); audio = null }
+            serverCommand("-k", "Arrêt wineserver", requireSuccess = false)
+            serverCommand("-w", "Fin wineserver")
+        } finally {
+            wineServer?.let { if (it.isAlive) it.destroyForcibly() }
+            wineServer = null
+            audio?.destroy(); audio = null
+        }
+    }
+    private fun serverCommand(option: String, label: String, requireSuccess: Boolean = true) {
+        val command = start(File(wine.parentFile, "wineserver"), listOf(option), stream = "shutdown")
+        try {
+            check(command.waitFor(15, TimeUnit.SECONDS)) { "$label : délai de 15 secondes dépassé." }
+            diagnostics?.exited(command, label, command.exitValue())
+            check(!requireSuccess || command.exitValue() == 0) { "$label : code de sortie ${command.exitValue()}." }
+        } finally { if (command.isAlive) command.destroyForcibly() }
     }
 }

@@ -22,7 +22,7 @@ class WolfIntegratedRuntimeTest {
         val source = File(context.filesDir, "wolf-probe/$sample")
         assertTrue(File(source, "Game.exe").isFile)
         val intent = android.content.Intent().setClassName(context, "fr.astragames.app.windows.WolfRuntimeActivity")
-            .putExtra("id", "official-wolf-test-$sample").putExtra("source", source.toURI().toString())
+            .putExtra("id", "official-wolf-test-$sample-beta5").putExtra("source", source.toURI().toString())
             .putExtra("executable", "Game.exe").putExtra("title", "Wolf officiel")
         val diagnostics = WolfDiagnostics(context)
         val previousDebug = diagnostics.enabled
@@ -41,7 +41,14 @@ class WolfIntegratedRuntimeTest {
             scenario.onActivity { activity -> buttons(activity.window.decorView).first { it.text == "Valider" }.performClick() }
             Thread.sleep(4000)
             screenshot("integrated-game.png")
-            scenario.onActivity { activity -> buttons(activity.window.decorView).first { it.text == "Quitter" }.performClick() }
+            scenario.onActivity { it.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
+            Thread.sleep(1500)
+            screenshot("integrated-landscape.png")
+            scenario.onActivity { it.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
+            Thread.sleep(1500)
+            scenario.onActivity { activity -> buttons(activity.window.decorView).first { it.text == "Menu" }.performClick() }
+            androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText("Quitter"))
+                .perform(androidx.test.espresso.action.ViewActions.click())
             Thread.sleep(5000)
         }
             if (diagnostics.enabled) {
@@ -50,6 +57,8 @@ class WolfIntegratedRuntimeTest {
                 assertTrue(report.contains("WINEDEBUG=-all,err+all,warn+all"))
                 assertTrue(report.contains("Lancement du jeu via"))
                 assertTrue(report.contains("===== runtime ====="))
+                assertTrue(report.contains("Serveur Windows supervisé"))
+                assertFalse(report.contains("a wine server seems to be running, but I cannot connect"))
                 assertTrue("Normal close must finalize the diagnostic session", report.contains("État : Fermeture demandée"))
             }
         } finally { diagnostics.enabled = previousDebug }

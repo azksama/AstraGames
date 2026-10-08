@@ -1,6 +1,8 @@
 package fr.astragames.app.windows
 
 import android.content.Context
+import android.net.Uri
+import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import fr.astragames.app.data.saves.documentDir
@@ -29,19 +31,25 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
         val source = requireNotNull(documentDir(context, sourceUri.toUri())) { "Le dossier du jeu est inaccessible." }
         check(source.canRead()) { "Autorisation du dossier expirée." }
         var count = 0
-        suspend fun copy(folder: DocumentFile, relative: String, depth: Int) {
+        var lastProgress = android.os.SystemClock.elapsedRealtime()
+        progress("Préparation du jeu : copie privée des fichiers")
+        suspend fun copy(folder: Uri, relative: String, depth: Int) {
             check(depth <= 64) { "Arborescence du jeu trop profonde." }
-            for (child in folder.listFiles()) {
+            for (child in children(folder)) {
                 coroutineContext.ensureActive()
-                val name = child.name ?: continue
+                val name = child.name
                 require(name != "." && name != ".." && '/' !in name && '\\' !in name && '\u0000' !in name)
                 if (name.startsWith(".astra-")) continue
                 val path = if (relative.isEmpty()) name else "$relative/$name"
                 val target = safeFile(game, path)
-                if (child.isDirectory) { target.mkdirs(); copy(child, path, depth + 1) }
+                if (child.isDirectory) { target.mkdirs(); copy(child.uri, path, depth + 1) }
                 else if (child.isFile) {
                     check(++count <= 100_000) { "Trop de fichiers dans le jeu." }
-                    progress("Préparation du jeu : $count fichiers")
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastProgress >= 1000) {
+                        progress("Préparation du jeu : $count fichiers")
+                        lastProgress = now
+                    }
                     val localHash = if (target.isFile) WolfRuntimeInstaller.hash(target) else null
                     val previous = hashes.optString(path).takeIf(String::isNotEmpty)
                     // Preserve unsynchronized writes from a crash or revoked source permission.
@@ -52,13 +60,15 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
                         pending.outputStream().use { output -> input.copyTo(output) }
                     }
                     val incoming = WolfRuntimeInstaller.hash(pending)
-                    check(pending.renameTo(target)) { "Espace insuffisant pour préparer le jeu." }
+                    if (incoming == localHash) pending.delete()
+                    else check(pending.renameTo(target)) { "Espace insuffisant pour préparer le jeu." }
                     hashes.put(path, incoming)
+                    if (count % 2048 == 0) saveManifest()
                 }
             }
         }
-        copy(source, "", 0)
-        saveManifest()
+        try { copy(source.uri, "", 0) } finally { saveManifest() }
+        progress("Préparation terminée : $count fichiers")
         // Apply the software renderer only to the private copy. Game.ini stays local.
         val ini = game.listFiles()?.firstOrNull { it.name.equals("Game.ini", true) } ?: File(game, "Game.ini")
         if (!ini.exists()) ini.writeText("[DEFAULT]\r\nSoftModeFlag=1\r\nWindowModeFlag=1\r\n")
@@ -69,6 +79,30 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
             ini.writeText(text, charset)
         }
         game
+    }
+
+    private data class Entry(val uri: Uri, val name: String, val isDirectory: Boolean, val isFile: Boolean)
+
+    /** Fetch names and types in one provider query per folder, not several queries per file. */
+    private fun children(folder: Uri): List<Entry> {
+        if (folder.scheme == "file") return requireNotNull(File(requireNotNull(folder.path)).listFiles()) {
+            "Impossible de lire le dossier du jeu."
+        }.map { Entry(Uri.fromFile(it), it.name, it.isDirectory, it.isFile) }
+        val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID,
+            DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE)
+        val query = DocumentsContract.buildChildDocumentsUriUsingTree(folder, DocumentsContract.getDocumentId(folder))
+        return requireNotNull(context.contentResolver.query(query, columns, null, null, null)) {
+            "Impossible de lire le dossier du jeu."
+        }.use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val mime = cursor.getString(2)
+                    val directory = mime == DocumentsContract.Document.MIME_TYPE_DIR
+                    add(Entry(DocumentsContract.buildDocumentUriUsingTree(folder, cursor.getString(0)),
+                        requireNotNull(cursor.getString(1)), directory, !directory && !mime.isNullOrEmpty()))
+                }
+            }
+        }
     }
 
     /** Never overwrites a source edited since import. Conflicting saves remain local. */

@@ -187,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.4](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.4). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.5](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.5). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
@@ -212,6 +212,12 @@ Astra présente automatiquement le rapport à sa réouverture, après déverroui
 Fermer cet aperçu conserve le rapport dans les paramètres ; **Partager le rapport** permet son export.
 La bêta 4 corrige le crash natif Zstd pendant l’installation de Box64 dans l’APK optimisé et la reprise
 d’une extraction contenant des liens symboliques existants. Voir les [preuves de validation](docs/VALIDATION_1.12.0-beta.4.md).
+
+La bêta 5 supervise le serveur Wine, attend sa fermeture et conserve son journal séparément.
+La préparation regroupe les requêtes SAF par dossier et actualise sa progression une fois par seconde.
+Les commandes utilisent une croix à gauche et les actions à droite ; **Menu** permet de les masquer
+ou de quitter. Le rendu a été contrôlé en portrait et paysage sur émulateur.
+Voir les [preuves et limites de la bêta 5](docs/VALIDATION_1.12.0-beta.5.md).
 
 Les cinq dernières sessions sont conservées localement, avec rotation des logs (512 Kio × deux
 fichiers par flux). Aucun envoi automatique ; l’export texte peut contenir le nom du jeu et des

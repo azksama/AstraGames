@@ -8,6 +8,40 @@ import java.io.File
 import java.util.UUID
 
 class WolfGameStorageTest {
+    @Test fun importsNestedSafFilesWithBatchedDocumentMetadata() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val id = UUID.randomUUID().toString()
+        val provider = android.net.Uri.parse("content://${fr.astragames.app.data.local.FixtureDocumentsProvider.AUTHORITY}")
+        val fixture = requireNotNull(context.contentResolver.call(provider, "fixture", id, null))
+        val uri = requireNotNull(fixture.getString("uri"))
+        val source = requireNotNull(fr.astragames.app.data.saves.documentDir(context, android.net.Uri.parse(uri)))
+        val data = requireNotNull(source.createDirectory("Data 日本語"))
+        val file = requireNotNull(data.createFile("application/octet-stream", "asset.bin"))
+        context.contentResolver.openOutputStream(file.uri)!!.use { it.write("nested SAF asset".toByteArray()) }
+        val storage = WolfGameStorage(context, id, uri)
+        try {
+            storage.prepare { }
+            assertEquals("nested SAF asset", File(storage.game, "Data 日本語/asset.bin").readText())
+        } finally { context.contentResolver.call(provider, "removeFixture", id, null); storage.directory.deleteRecursively() }
+    }
+    @Test fun preparationBatchesProgressAndDoesNotRewriteIdenticalFiles() = runBlocking {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val source = File(context.cacheDir, "wolf-bulk-${UUID.randomUUID()}").apply { mkdirs() }
+        repeat(1000) { File(source, "data-$it.bin").writeText("asset-$it") }
+        val storage = WolfGameStorage(context, UUID.randomUUID().toString(), source.toURI().toString())
+        try {
+            val updates = mutableListOf<String>()
+            storage.prepare(updates::add)
+            assertTrue("Progress must not fsync once per file", updates.size < 100)
+            assertEquals("Préparation terminée : 1000 fichiers", updates.last())
+            val asset = File(storage.game, "data-0.bin")
+            assertTrue(asset.setLastModified(1_000_000))
+            File(source, "data-1.bin").writeText("updated source")
+            storage.prepare { }
+            assertEquals(1_000_000L, asset.lastModified())
+            assertEquals("updated source", File(storage.game, "data-1.bin").readText())
+        } finally { source.deleteRecursively(); storage.directory.deleteRecursively() }
+    }
     @Test fun importsWithoutChangingOriginalAndPreservesSaveConflicts() = runBlocking {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val id = UUID.randomUUID().toString()
