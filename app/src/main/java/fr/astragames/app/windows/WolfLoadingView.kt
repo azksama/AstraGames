@@ -10,10 +10,12 @@ import android.widget.TextView
 import android.os.SystemClock
 
 /** Phase counts and elapsed time are real; Wine does not provide a meaningful percentage. */
-internal class WolfLoadingView(context: Context, cancel: () -> Unit) : LinearLayout(context) {
+internal class WolfLoadingView(context: Context, cancel: () -> Unit, diagnostic: () -> Unit = {}) : LinearLayout(context) {
     private val started = SystemClock.elapsedRealtime()
     private var phaseStarted = started
     private var phase = 1
+    private var lastUpdate = started
+    private var delayReported = false
     private val steps = TextView(context).apply { setTextColor(0xFFC9B7FF.toInt()); textSize = 14f; gravity = Gravity.CENTER }
     val status = TextView(context).apply { setTextColor(Color.WHITE); textSize = 17f; gravity = Gravity.CENTER }
     private val elapsed = TextView(context).apply { setTextColor(0xFFCCC5D7.toInt()); textSize = 14f; gravity = Gravity.CENTER }
@@ -25,13 +27,20 @@ internal class WolfLoadingView(context: Context, cancel: () -> Unit) : LinearLay
         addView(status, LayoutParams(-1, -2))
         addView(elapsed, LayoutParams(-1, -2).apply { topMargin = 20; bottomMargin = 20 })
         addView(Button(context).apply { text = "Annuler le lancement"; setOnClickListener { cancel() } })
+        addView(Button(context).apply { text = "Diagnostic du lancement"; setOnClickListener { diagnostic() } })
         update(1, "Récupération de la session précédente…")
     }
     fun update(step: Int, message: String) {
+        if (step != phase || status.text != message) { lastUpdate = SystemClock.elapsedRealtime(); delayReported = false }
         if (step != phase) { phase = step; phaseStarted = SystemClock.elapsedRealtime() }
         steps.text = "Étape $phase / 8"
         status.text = message
         tick()
+    }
+    fun stalled(): Pair<Int, String>? {
+        if (delayReported || SystemClock.elapsedRealtime() - lastUpdate < 20_000) return null
+        delayReported = true
+        return phase to status.text.toString()
     }
     fun tick() {
         val now = SystemClock.elapsedRealtime()

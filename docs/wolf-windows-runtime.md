@@ -124,6 +124,19 @@ Le toucher bref à deux doigts utilise la touche **Retour** configurée pour le 
 agrandie. Les gestes déplacés ou annulés ne déclenchent pas Retour. Voir la
 [validation de la bêta 11](VALIDATION_1.12.0-beta.11.md).
 
+La bêta 12 distingue les sous-étapes de récupération de la configuration, de lecture du mode
+précédent, d’accès au dossier et de migration des sauvegardes. Une reprise en mode direct avec
+la même source évite entièrement les anciens index de copie et les requêtes SAF. Les migrations
+depuis une copie et leurs contrôles de conflits sont conservés. Les opérations de préparation et
+les écritures du diagnostic restent sur le dispatcher d’entrées/sorties ; l’interface est actualisée
+avant la persistance du libellé. La transition vers l’étape 3 précède la création du stockage.
+
+Le bouton **Diagnostic du lancement** ouvre le rapport courant pendant l’attente. Son état est
+lu depuis un instantané en mémoire afin de ne pas perturber une écriture atomique en cours.
+Après 20 secondes sans changement de message, un flux `loading` séparé conserve l’état des
+threads Astra, y compris les workers dans l’APK obfusqué. Ce délai n’est pas un diagnostic de crash.
+Les détails de cette livraison figurent dans la [validation de la bêta 12](VALIDATION_1.12.0-beta.12.md).
+
 ## Provenance et reconstruction
 
 Le code Winlator est épinglé à `3981d86efa4f333b2a34a7da8b6521476cd8c8b9` :

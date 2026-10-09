@@ -40,21 +40,34 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
 
     suspend fun prepare(executable: String? = null, progress: (String) -> Unit): File = withContext(Dispatchers.IO) {
         val started = android.os.SystemClock.elapsedRealtime()
+        game = copiedGame
+        progress("Récupération de la configuration du jeu…")
+        configuration.restore()
+        progress("Vérification du dernier dossier utilisé…")
+        val lastMode = readWorkingMode()
+        progress("Vérification de l’accès au dossier d’origine…")
+        val direct = if (preferDirect) directDirectory(executable) else null
+        val migrated = lastMode.optString("mode") == "DIRECT" && lastMode.optString("source") == sourceUri
+        if (direct != null && migrated) {
+            // An interrupted direct session does not depend on a legacy import index or SAF query.
+            progress("Configuration du dossier d’origine…")
+            configuration.apply(direct, executable)
+            game = direct
+            refresh.delete()
+            progress("Dossier d’origine prêt · aucun transfert du jeu")
+            return@withContext game
+        }
+        progress("Lecture de l’index de la copie privée…")
         hashes = if (manifest.isFile) JSONObject(manifest.readText()) else JSONObject()
         val state = if (cache.isFile) JSONObject(cache.readText()) else JSONObject()
         stamps = state.optJSONObject("stamps") ?: JSONObject()
-        game = copiedGame
-        configuration.restore()
-        val source = requireNotNull(documentDir(context, sourceUri.toUri())) { "Le dossier du jeu est inaccessible." }
-        check(source.canRead()) { "Autorisation du dossier expirée." }
-        val lastMode = readWorkingMode()
-        val direct = if (preferDirect) directDirectory(executable) else null
         if (direct != null) {
             // Migrate pending private writes once, before changing the working directory.
             // If both copies changed, keep the private version playable and exportable.
-            val migrated = lastMode.optString("mode") == "DIRECT" && lastMode.optString("source") == sourceUri
+            progress("Récupération des sauvegardes de l’ancienne copie…")
             val conflicts = if (!migrated && manifest.isFile && copiedGame.isDirectory) synchronize() else 0
             if (conflicts == 0) {
+                progress("Configuration du dossier d’origine…")
                 configuration.apply(direct, executable)
                 game = direct
                 writeWorkingMode("DIRECT")
@@ -64,6 +77,9 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
             }
             progress("$conflicts conflit(s) de sauvegarde · copie privée conservée")
         } else if (preferDirect) progress("Accès direct indisponible · copie privée utilisée")
+        progress("Vérification de l’autorisation du dossier source…")
+        val source = requireNotNull(documentDir(context, sourceUri.toUri())) { "Le dossier du jeu est inaccessible." }
+        check(source.canRead()) { "Autorisation du dossier expirée." }
         if (lastMode.optString("mode") == "DIRECT") requestRefresh()
         game.mkdirs()
         // Older releases already completed a full import before creating the Wine prefix.
@@ -165,7 +181,6 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
     private fun directDirectory(executable: String?): File? = runCatching {
         val root = File(requireNotNull(FileAccessResolver(context).physicalPath(sourceUri.toUri()))).canonicalFile
         check(root.isDirectory && root.canRead() && root.canWrite())
-        requireNotNull(root.list())
         if (executable != null) safeFile(root, executable).inputStream().use { it.read() }
         // Permission flags can be optimistic on Android's shared-storage filesystem.
         val probe = File(root, ".astra-wolf-access-${java.util.UUID.randomUUID()}")
@@ -189,8 +204,8 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
             game = path?.let(::File)?.takeIf { it.isDirectory && it.canRead() }
                 ?: error("Le dossier d’origine est inaccessible. Réautorisez-le pour retrouver les sauvegardes.")
         }
-        hashes = if (manifest.isFile) JSONObject(manifest.readText()) else JSONObject()
-        stamps = runCatching { JSONObject(cache.readText()).optJSONObject("stamps") }.getOrNull() ?: JSONObject()
+        hashes = if (!isDirect && manifest.isFile) JSONObject(manifest.readText()) else JSONObject()
+        stamps = if (!isDirect) runCatching { JSONObject(cache.readText()).optJSONObject("stamps") }.getOrNull() ?: JSONObject() else JSONObject()
     }
 
     internal fun restoreSourceConfiguration() = configuration.restore()

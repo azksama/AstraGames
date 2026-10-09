@@ -112,7 +112,7 @@ class WolfRuntimeActivity : FragmentActivity() {
         optionStore = WolfGameOptions(this, intent.getStringExtra("id").orEmpty())
         gameOptions = optionStore.read()
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-        loading = WolfLoadingView(this, ::closeSession)
+        loading = WolfLoadingView(this, ::closeSession, ::showDiagnostic)
         root.addView(loading, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
@@ -124,19 +124,26 @@ class WolfRuntimeActivity : FragmentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { closeSession() }
         })
-        heartbeat = lifecycleScope.launch { while (true) { delay(1000); loading.tick() } }
+        heartbeat = lifecycleScope.launch {
+            while (true) {
+                delay(1000); loading.tick()
+                if (!playable && !closing) loading.stalled()?.let { (phase, message) ->
+                    launch(Dispatchers.IO) { diagnostic?.loadingDelay(phase, message) }
+                }
+            }
+        }
         begin()
     }
 
     private fun progress(message: String) {
-        diagnostic?.stage(message)
         val phase = loadingPhase
         runOnUiThread { if (!isDestroyed) loading.update(phase, message) }
+        diagnostic?.stage(message)
     }
     private fun progress(phase: Int, message: String) { loadingPhase = phase; progress(message) }
     private fun begin() {
         session = lifecycleScope.launch {
-            if (sessionMutex.isLocked) progress(1, "Attente de la fermeture de la session précédente…")
+            if (sessionMutex.isLocked) withContext(Dispatchers.IO) { progress(1, "Attente de la fermeture de la session précédente…") }
             try { sessionMutex.withLock { runGame() } }
             catch (cancelled: CancellationException) {
                 if (closing && !isDestroyed) { heartbeat?.cancel(); finish() }
@@ -144,7 +151,7 @@ class WolfRuntimeActivity : FragmentActivity() {
             }
         }
     }
-    private suspend fun runGame() {
+    private suspend fun runGame() = withContext(Dispatchers.IO) {
             var runner: WolfProcess? = null
             var storage: WolfGameStorage? = null
             var failure: String? = null
@@ -163,16 +170,16 @@ class WolfRuntimeActivity : FragmentActivity() {
                 diagnostic?.event("Récupération : $stopped ancien(s) processus arrêté(s) ; sauvegardes conservées")
                 progress(2, "Vérification du moteur Wolf…")
                 val runtime = WolfRuntimeInstaller(this@WolfRuntimeActivity).install(::progress)
+                progress(3, "Vérification du dossier et récupération de sa configuration…")
                 storage = WolfGameStorage(this@WolfRuntimeActivity, id, uri, preferDirect = gameOptions.storageMode == WolfStorageMode.AUTO)
                 gameStorage = storage
-                progress(3, "Vérification du dossier et récupération de sa configuration…")
                 storage.prepare(executable, ::progress)
                 diagnostic?.event("Stockage du jeu : ${if (storage.isDirect) "dossier d’origine" else "copie privée"}; dossier=${storage.game.path}; préfixe=${storage.prefix.path}")
                 val sockets = File(cacheDir, "wolf-sockets").apply { mkdirs() }
                 val xSocket = UnixSocketConfig.create(sockets.path, "/x/X0")
                 val shmSocket = UnixSocketConfig.create(sockets.path, "/shm/SM0")
                 progress(4, "Initialisation de l’affichage X11 et de la mémoire partagée…")
-                setupDisplay()
+                withContext(Dispatchers.Main) { setupDisplay() }
                 x11 = XServerComponent(server, xSocket).also { it.start() }
                 shm = SysVSharedMemoryComponent(server, shmSocket).also { it.start() }
                 diagnostic?.event("Options : profil=${gameOptions.performance}; écran=${server!!.screenInfo.width}x${server!!.screenInfo.height}; cadrage=${gameOptions.imageMode}; lissage=${gameOptions.smooth}; limite=${gameOptions.maxFps}")
@@ -191,11 +198,13 @@ class WolfRuntimeActivity : FragmentActivity() {
                 } ?: false
                 check(visible) { "Le jeu n’a affiché aucune image après 180 secondes. Consultez le rapport de diagnostic." }
                 diagnostic?.stage("Première image du jeu affichée · commandes activées")
-                playable = true
-                loading.visibility = View.GONE
-                heartbeat?.cancel()
-                controls.visibility = View.VISIBLE
-                startFpsCounter()
+                withContext(Dispatchers.Main) {
+                    playable = true
+                    loading.visibility = View.GONE
+                    heartbeat?.cancel()
+                    controls.visibility = View.VISIBLE
+                    startFpsCounter()
+                }
                 val result = runInterruptible(Dispatchers.IO) {
                     process!!.waitFor().also { diagnostic?.exited(process!!, "Jeu", it) }
                 }
@@ -207,12 +216,15 @@ class WolfRuntimeActivity : FragmentActivity() {
             }
             finally {
                 withContext(NonCancellable) {
-                playable = false
-                heartbeat?.cancel(); heartbeat = null
-                if (::controls.isInitialized) controls.visibility = View.GONE
-                fpsLabel?.visibility = View.GONE
-                fpsJob?.cancel(); fpsJob = null
-                releaseKeys()
+                if (closing) progress("Fermeture du jeu et synchronisation des sauvegardes…")
+                withContext(Dispatchers.Main) {
+                    playable = false
+                    heartbeat?.cancel(); heartbeat = null
+                    if (::controls.isInitialized) controls.visibility = View.GONE
+                    fpsLabel?.visibility = View.GONE
+                    fpsJob?.cancel(); fpsJob = null
+                    releaseKeys()
+                }
                 withContext(Dispatchers.IO) {
                     runCatching { runner?.stop() }.onFailure { diagnostic?.failure("Échec de l’arrêt du runtime", it) }
                     process?.let { if (it.isAlive) it.destroyForcibly() }
@@ -241,9 +253,11 @@ class WolfRuntimeActivity : FragmentActivity() {
                 withContext(Dispatchers.IO) {
                     runCatching { diagnostic?.finish(failure ?: if (closing) "Fermeture demandée" else "Partie terminée") }
                 }
-                if (!isDestroyed) {
-                    if (closing && failure == null) finish()
-                    else showResult(failure ?: if (synchronized) "Partie terminée. Sauvegardes synchronisées." else "Partie terminée.")
+                withContext(Dispatchers.Main) {
+                    if (!isDestroyed) {
+                        if (closing && failure == null) finish()
+                        else showResult(failure ?: if (synchronized) "Partie terminée. Sauvegardes synchronisées." else "Partie terminée.")
+                    }
                 }
                 }
             }
@@ -367,7 +381,7 @@ class WolfRuntimeActivity : FragmentActivity() {
         if (::controls.isInitialized) controls.visibility = View.GONE
         fpsLabel?.visibility = View.GONE
         loading.visibility = View.VISIBLE
-        progress("Fermeture du jeu et synchronisation des sauvegardes…")
+        loading.update(loadingPhase, "Fermeture du jeu et synchronisation des sauvegardes…")
         process?.destroy()
         session?.cancel()
     }

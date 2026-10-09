@@ -20,6 +20,44 @@ class WolfDiagnosticsTest {
     }
     @After fun cleanup() { root.deleteRecursively(); app.deleteSharedPreferences("wolf-test-$id") }
 
+    @Test fun liveReportDoesNotDeleteAnInFlightMetadataWrite() {
+        val store = WolfDiagnostics(context)
+        val session = store.begin("Live metadata fixture", "Game.exe")
+        val metadata = android.util.AtomicFile(File(session.directory, "session.json"))
+        val output = metadata.startWrite()
+        try {
+            output.write(session.metadataSnapshot().toByteArray())
+            output.fd.sync()
+            assertTrue(store.report(session.directory).contains("Live metadata fixture"))
+            assertTrue("Reading an active report must not remove the writer's staging file",
+                File(session.directory, "session.json.new").isFile)
+            metadata.finishWrite(output)
+        } catch (error: Throwable) { metadata.failWrite(output); throw error }
+        finally { session.finish("done") }
+        assertTrue(store.report(session.directory).contains("État : done"))
+    }
+
+    @Test fun loadingTraceRemainsAvailableWhileSessionMetadataIsBusy() {
+        val store = WolfDiagnostics(context)
+        val session = store.begin("Stalled loading fixture", "Game.exe")
+        val locked = java.util.concurrent.CountDownLatch(1)
+        val release = java.util.concurrent.CountDownLatch(1)
+        val holder = kotlin.concurrent.thread {
+            synchronized(session) { locked.countDown(); release.await(10, java.util.concurrent.TimeUnit.SECONDS) }
+        }
+        val executor = java.util.concurrent.Executors.newSingleThreadExecutor()
+        try {
+            assertTrue(locked.await(5, java.util.concurrent.TimeUnit.SECONDS))
+            executor.submit { session.loadingDelay(2, "Moteur Wolf déjà installé") }
+                .get(5, java.util.concurrent.TimeUnit.SECONDS)
+            val trace = File(session.directory, "loading.log").readText()
+            assertTrue(trace.contains("étape 2 / 8 : Moteur Wolf déjà installé"))
+            assertTrue(trace.contains("main"))
+            assertTrue(trace.contains("ne prouve pas un blocage"))
+        } finally { release.countDown(); holder.join(1000); executor.shutdownNow(); session.finish("done") }
+        assertTrue(store.report(session.directory).contains("===== loading ====="))
+    }
+
     @Test fun gameErrorLogDistinguishesHistoricalAndCurrentMessagesAndDecodesJapanese() {
         val store = WolfDiagnostics(context)
         val game = File(root, "game").apply { mkdirs() }

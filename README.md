@@ -187,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.11](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.11). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.12](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.12). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
@@ -227,6 +227,14 @@ Un toucher bref de l’image avec deux doigts envoie **Retour**, en respectant s
 déplacement de l’image agrandie avec deux doigts. Ce réglage est désactivé par défaut, mémorisé
 par jeu et immédiat ; le désactiver restaure le cadrage. Le pincement ne déclenche pas Retour.
 Voir les [tests de reprise, de chargement et de gestes](docs/VALIDATION_1.12.0-beta.11.md).
+
+La bêta 12 reprend un jeu déjà lancé depuis son dossier d’origine sans relire les anciens index
+d’import ni interroger son fournisseur SAF. La récupération de la configuration, la vérification
+du dossier et une éventuelle migration des sauvegardes affichent chacune leur détail. La préparation
+et les écritures du diagnostic s’effectuent hors du fil d’affichage. **Diagnostic du lancement**
+reste accessible sur l’écran de chargement ; une attente de plus de 20 secondes sans changement
+de sous-étape ajoute un état des threads Astra au rapport, sans conclure automatiquement à un crash.
+Voir les [preuves et limites de la bêta 12](docs/VALIDATION_1.12.0-beta.12.md).
 
 Si le lancement s’arrête, ouvrir **Paramètres → Diagnostic Wolf RPG**, activer **Mode debug Wolf RPG**,
 puis relancer le jeu. Le rapport indique la dernière étape, le code de sortie, les exceptions et les

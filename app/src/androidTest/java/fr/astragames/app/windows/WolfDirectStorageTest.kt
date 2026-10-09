@@ -12,6 +12,36 @@ import java.util.zip.ZipInputStream
 class WolfDirectStorageTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun interruptedDirectSessionIgnoresObsoleteImportIndicesAndKeepsSaves() = runBlocking {
+        val id = UUID.randomUUID().toString()
+        val source = File(context.cacheDir, "direct-recovery-$id").apply { mkdirs() }
+        val previous = WolfGameStorage(context, id, source.toURI().toString())
+        try {
+            File(source, "Game.exe").writeText("fixture")
+            val originalIni = "SoftModeFlag=0\r\nWindowModeFlag=0\r\n".toByteArray()
+            File(source, "Game.ini").writeBytes(originalIni)
+            previous.prepare("Game.exe") { }
+            // Simulate process death: keep the configuration journal and direct working mode.
+            File(source, "SaveData").mkdirs()
+            val save = File(source, "SaveData/Save01.sav").apply { writeText("saved before interruption") }
+            val manifest = File(previous.directory, "source-hashes.json").apply { writeText("obsolete broken import index") }
+            val cache = File(previous.directory, "import-state.json").apply { writeText("obsolete broken import state") }
+            val stages = mutableListOf<String>()
+            val resumed = WolfGameStorage(context, id, source.toURI().toString())
+            resumed.prepare("Game.exe", stages::add)
+            assertTrue(resumed.isDirect)
+            assertEquals(source.canonicalFile, resumed.game)
+            assertFalse(File(resumed.directory, "game").exists())
+            assertEquals("saved before interruption", save.readText())
+            assertEquals(listOf("SaveData/Save01.sav"), resumed.saveFiles().map { it.path })
+            assertFalse(stages.any { it.contains("Lecture de l’index") })
+            assertEquals("obsolete broken import index", manifest.readText())
+            assertEquals("obsolete broken import state", cache.readText())
+            resumed.restoreSourceConfiguration()
+            assertArrayEquals(originalIni, File(source, "Game.ini").readBytes())
+        } finally { previous.restoreSourceConfiguration(); source.deleteRecursively(); previous.directory.deleteRecursively() }
+    }
+
     @Test fun firstLaunchUsesSeventyThousandOriginalAssetsWithoutImporting() = runBlocking {
         val id = "direct-${UUID.randomUUID()}"
         val source = File(context.cacheDir, id).apply { mkdirs() }

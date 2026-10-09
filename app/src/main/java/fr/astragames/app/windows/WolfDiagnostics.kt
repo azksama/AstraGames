@@ -67,7 +67,8 @@ internal class WolfDiagnostics(private val context: Context) {
 
     fun report(directory: File): String {
         require(directory.canonicalFile.parentFile == root.canonicalFile)
-        val metadata = JSONObject(AtomicFile(File(directory, "session.json")).readFully().toString(Charsets.UTF_8))
+        val metadata = JSONObject(active[directory.name]?.metadataSnapshot()
+            ?: AtomicFile(File(directory, "session.json")).readFully().toString(Charsets.UTF_8))
         val unfinished = !metadata.optBoolean("finished") && !active.containsKey(directory.name)
         val result = StringBuilder("ASTRA — DIAGNOSTIC WOLF RPG\n")
         result.append("Session : ${directory.name}\nDernière étape : ${metadata.optString("stage")}\n")
@@ -78,7 +79,7 @@ internal class WolfDiagnostics(private val context: Context) {
         if (unfinished) {
             result.append(androidExit(metadata))
         }
-        for (name in listOf("events", "runtime", "game", "server", "startup", "audio", "shutdown", "android")) {
+        for (name in listOf("events", "loading", "runtime", "game", "server", "startup", "audio", "shutdown", "android")) {
             result.append("\n===== $name =====\n")
             for (suffix in listOf(".head.log", ".previous.log", ".log")) {
                 val file = File(directory, name + suffix)
@@ -138,9 +139,27 @@ internal class WolfDiagnosticSession(val directory: File, val verbose: Boolean) 
     private val sinks = ConcurrentHashMap<String, WolfLogSink>()
     private val readers = ConcurrentHashMap<Process, Thread>()
     private val metadata = JSONObject().put("pid", android.os.Process.myPid()).put("started", System.currentTimeMillis()).put("finished", false)
+    @Volatile private var snapshot = metadata.toString()
+    fun metadataSnapshot(): String = snapshot
     var logcat: Process? = null
     private fun sink(name: String) = sinks.getOrPut(name) { WolfLogSink(File(directory, "$name.log")) }
     fun event(message: String) { sink("events").write("${java.time.Instant.now()} $message\n".toByteArray()) }
+    /** Separate sink: a stalled metadata/event write must not block the loading trace itself. */
+    fun loadingDelay(phase: Int, message: String) {
+        val trace = buildString {
+            append("${java.time.Instant.now()} Attente de plus de 20 s à l’étape $phase / 8 : $message\n")
+            append("Ce délai seul ne prouve pas un blocage ; état des threads Astra :\n")
+            Thread.getAllStackTraces().entries
+                .filter { it.key.name == "main" || it.key.name.startsWith("DefaultDispatcher") || it.key.name.startsWith("wolf-") ||
+                    it.value.any { frame -> frame.className.startsWith("fr.astragames.app.windows.") } }
+                .sortedBy { if (it.key.name == "main") 0 else 1 }.take(32)
+                .forEach { (thread, stack) ->
+                    append("\n${thread.name} · ${thread.state}\n")
+                    stack.take(40).forEach { append("    at $it\n") }
+                }
+        }
+        sink("loading").write(trace.take(64_000).toByteArray())
+    }
     private var initialGameError: String? = null
     private var gameLaunched = false
     fun gameErrorLog(game: File, beforeLaunch: Boolean = false) {
@@ -167,9 +186,10 @@ internal class WolfDiagnosticSession(val directory: File, val verbose: Boolean) 
         metadata.put("stage", value); persist(); event("Étape : $value")
     }
     private fun persist() {
+        snapshot = metadata.toString()
         val file = AtomicFile(File(directory, "session.json"))
         val out = file.startWrite()
-        try { out.write(metadata.toString().toByteArray()); file.finishWrite(out) }
+        try { out.write(snapshot.toByteArray()); file.finishWrite(out) }
         catch (error: Exception) { file.failWrite(out); throw error }
     }
     fun failure(label: String, error: Throwable) { event("$label\n${error.stackTraceToString().take(32_000)}") }
