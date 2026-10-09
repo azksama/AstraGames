@@ -42,11 +42,16 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.runInterruptible
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 
 /** Astra-owned display, input and session lifecycle. No exported entry point. */
 class WolfRuntimeActivity : FragmentActivity() {
     companion object {
+        private val sessionMutex = Mutex()
         fun intent(context: Context, id: String, uri: String, executable: String, title: String) =
             Intent(context, WolfRuntimeActivity::class.java).putExtra("id", id).putExtra("source", uri)
                 .putExtra("executable", executable).putExtra("title", title)
@@ -65,7 +70,10 @@ class WolfRuntimeActivity : FragmentActivity() {
     private var fpsJob: Job? = null
     private var fpsLabel: TextView? = null
     private lateinit var root: FrameLayout
-    private lateinit var status: TextView
+    private lateinit var loading: WolfLoadingView
+    @Volatile private var loadingPhase = 1
+    private var heartbeat: Job? = null
+    private var playable = false
     private lateinit var controls: WolfTouchControls
     private var resultLayout: LinearLayout? = null
     private var safeArea = androidx.core.graphics.Insets.NONE
@@ -104,11 +112,8 @@ class WolfRuntimeActivity : FragmentActivity() {
         optionStore = WolfGameOptions(this, intent.getStringExtra("id").orEmpty())
         gameOptions = optionStore.read()
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-        status = TextView(this).apply {
-            setTextColor(Color.WHITE); textSize = 17f; gravity = Gravity.CENTER; setPadding(24, 24, 24, 24)
-            text = "Préparation du moteur Wolf…"
-        }
-        root.addView(status, FrameLayout.LayoutParams(-1, -1))
+        loading = WolfLoadingView(this, ::closeSession)
+        root.addView(loading, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             safeArea = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
@@ -119,18 +124,27 @@ class WolfRuntimeActivity : FragmentActivity() {
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { closeSession() }
         })
-        lifecycleScope.launch {
-            settings = settingsRepository.settings.first()
-            begin()
-        }
+        heartbeat = lifecycleScope.launch { while (true) { delay(1000); loading.tick() } }
+        begin()
     }
 
     private fun progress(message: String) {
         diagnostic?.stage(message)
-        runOnUiThread { if (!isDestroyed) status.text = message }
+        val phase = loadingPhase
+        runOnUiThread { if (!isDestroyed) loading.update(phase, message) }
     }
+    private fun progress(phase: Int, message: String) { loadingPhase = phase; progress(message) }
     private fun begin() {
         session = lifecycleScope.launch {
+            if (sessionMutex.isLocked) progress(1, "Attente de la fermeture de la session précédente…")
+            try { sessionMutex.withLock { runGame() } }
+            catch (cancelled: CancellationException) {
+                if (closing && !isDestroyed) { heartbeat?.cancel(); finish() }
+                throw cancelled
+            }
+        }
+    }
+    private suspend fun runGame() {
             var runner: WolfProcess? = null
             var storage: WolfGameStorage? = null
             var failure: String? = null
@@ -142,28 +156,47 @@ class WolfRuntimeActivity : FragmentActivity() {
                 val id = requireNotNull(intent.getStringExtra("id"))
                 val uri = requireNotNull(intent.getStringExtra("source"))
                 val executable = requireNotNull(intent.getStringExtra("executable"))
+                progress(1, "Lecture des réglages et récupération de la session précédente…")
+                settings = withTimeoutOrNull(8000) { settingsRepository.settings.first() }
+                    ?: error("La lecture des réglages ne répond pas. Fermez puis relancez Astra.")
+                val stopped = runInterruptible(Dispatchers.IO) { WolfProcessRecovery(this@WolfRuntimeActivity).recover(::progress) }
+                diagnostic?.event("Récupération : $stopped ancien(s) processus arrêté(s) ; sauvegardes conservées")
+                progress(2, "Vérification du moteur Wolf…")
                 val runtime = WolfRuntimeInstaller(this@WolfRuntimeActivity).install(::progress)
                 storage = WolfGameStorage(this@WolfRuntimeActivity, id, uri, preferDirect = gameOptions.storageMode == WolfStorageMode.AUTO)
                 gameStorage = storage
+                progress(3, "Vérification du dossier et récupération de sa configuration…")
                 storage.prepare(executable, ::progress)
                 diagnostic?.event("Stockage du jeu : ${if (storage.isDirect) "dossier d’origine" else "copie privée"}; dossier=${storage.game.path}; préfixe=${storage.prefix.path}")
                 val sockets = File(cacheDir, "wolf-sockets").apply { mkdirs() }
                 val xSocket = UnixSocketConfig.create(sockets.path, "/x/X0")
                 val shmSocket = UnixSocketConfig.create(sockets.path, "/shm/SM0")
-                diagnostic?.stage("Initialisation de l’affichage X11 et de la mémoire partagée")
+                progress(4, "Initialisation de l’affichage X11 et de la mémoire partagée…")
                 setupDisplay()
                 x11 = XServerComponent(server, xSocket).also { it.start() }
                 shm = SysVSharedMemoryComponent(server, shmSocket).also { it.start() }
                 diagnostic?.event("Options : profil=${gameOptions.performance}; écran=${server!!.screenInfo.width}x${server!!.screenInfo.height}; cadrage=${gameOptions.imageMode}; lissage=${gameOptions.smooth}; limite=${gameOptions.maxFps}")
-                runner = WolfProcess(this@WolfRuntimeActivity, runtime, storage, xSocket.path, shmSocket.path, diagnostic, gameOptions)
-                progress("Initialisation de Windows… Le premier lancement peut prendre quelques minutes.")
+                runner = WolfProcess(this@WolfRuntimeActivity, runtime, storage, xSocket.path, shmSocket.path, diagnostic, gameOptions, ::progress)
                 runInterruptible(Dispatchers.IO) { runner.initialize() }
                 storage.captureWindowsSaveBaseline()
-                status.visibility = View.GONE
+                display!!.renderer.awaitGameFrame(File(executable).name)
+                process = runInterruptible(Dispatchers.IO) { runner.launch(executable) }
+                progress(8, "Chargement du jeu · attente de sa première image…")
+                val visible = withTimeoutOrNull(180_000) {
+                    while (!display!!.renderer.hasPresentedGameFrame()) {
+                        check(process!!.isAlive) { "Le jeu s’est arrêté avant sa première image : ${WolfDiagnosticSession.exitDescription(process!!.exitValue())}. Consultez le rapport de diagnostic." }
+                        delay(100)
+                    }
+                    true
+                } ?: false
+                check(visible) { "Le jeu n’a affiché aucune image après 180 secondes. Consultez le rapport de diagnostic." }
+                diagnostic?.stage("Première image du jeu affichée · commandes activées")
+                playable = true
+                loading.visibility = View.GONE
+                heartbeat?.cancel()
                 controls.visibility = View.VISIBLE
                 startFpsCounter()
                 val result = runInterruptible(Dispatchers.IO) {
-                    process = runner.launch(executable)
                     process!!.waitFor().also { diagnostic?.exited(process!!, "Jeu", it) }
                 }
                 if (result != 0 && !closing) failure = "Le jeu s’est arrêté : ${WolfDiagnosticSession.exitDescription(result)}. Consultez le rapport de diagnostic."
@@ -174,6 +207,10 @@ class WolfRuntimeActivity : FragmentActivity() {
             }
             finally {
                 withContext(NonCancellable) {
+                playable = false
+                heartbeat?.cancel(); heartbeat = null
+                if (::controls.isInitialized) controls.visibility = View.GONE
+                fpsLabel?.visibility = View.GONE
                 fpsJob?.cancel(); fpsJob = null
                 releaseKeys()
                 withContext(Dispatchers.IO) {
@@ -210,7 +247,6 @@ class WolfRuntimeActivity : FragmentActivity() {
                 }
                 }
             }
-        }
     }
 
     private fun setupDisplay() {
@@ -226,13 +262,18 @@ class WolfRuntimeActivity : FragmentActivity() {
             touchInput = WolfTouchInput({ x, y -> server?.injectPointerMove(x, y) }, { down ->
                 if (down) server?.injectPointerButtonPress(Pointer.Button.BUTTON_LEFT)
                 else server?.injectPointerButtonRelease(Pointer.Button.BUTTON_LEFT)
-            }, { updateKeys("touch", it) }, ::focusGame)
+            }, { updateKeys("touch", it) }, ::focusGame, {
+                val code = optionStore.binding("back", XKeycode.KEY_ESC)
+                updateKeys("gesture", setOf(code))
+                root.postDelayed({ updateKeys("gesture", emptySet()) }, 100)
+            }, { factor, x, y, dx, dy -> view.renderer.zoomImage(factor, x, y, dx, dy) },
+                android.view.ViewConfiguration.get(this).scaledTouchSlop.toFloat())
             view.setOnTouchListener { _, event ->
                 val transform = view.renderer.viewTransformation
-                if ((::controls.isInitialized && controls.editing) || lockOverlay != null) { touchInput?.cancel(); true }
+                if (!playable || (::controls.isInitialized && controls.editing) || lockOverlay != null) { touchInput?.cancel(); true }
                 else touchInput?.touch(event, WolfViewport(transform.viewOffsetX, transform.viewOffsetY,
                     transform.viewWidth, transform.viewHeight, server!!.screenInfo.width.toInt(), server!!.screenInfo.height.toInt(),
-                    view.width, view.height), gameOptions.directionalTouch) ?: true
+                    view.width, view.height), gameOptions.directionalTouch, gameOptions.pinchZoom) ?: true
             }
         }
         controls = WolfTouchControls(this, { key, down ->
@@ -242,14 +283,16 @@ class WolfRuntimeActivity : FragmentActivity() {
         }, ::closeSession, optionStore, {
             releaseKeys()
             showWolfOptions(this, optionStore) {
+                val previousMode = gameOptions.imageMode
                 gameOptions = optionStore.read(); controls.reload()
                 display?.renderer?.setSmoothScaling(gameOptions.smooth); display?.setMaxFps(gameOptions.maxFps)
-                display?.renderer?.setImageScaleMode(gameOptions.imageMode.ordinal)
+                if (previousMode != gameOptions.imageMode) display?.renderer?.setImageScaleMode(gameOptions.imageMode.ordinal)
+                if (!gameOptions.pinchZoom) display?.renderer?.resetImageZoom()
                 diagnostic?.event("Cadrage modifié : ${gameOptions.imageMode}")
             }
         }, ::releaseKeys).apply { visibility = View.GONE }
         root.addView(controls, FrameLayout.LayoutParams(-1, -1))
-        fpsLabel = TextView(this).apply { setTextColor(Color.WHITE); setBackgroundColor(0xAA17121E.toInt()); textSize = 12f; setPadding(dp(8), dp(4), dp(8), dp(4)) }
+        fpsLabel = TextView(this).apply { visibility = View.GONE; setTextColor(Color.WHITE); setBackgroundColor(0xAA17121E.toInt()); textSize = 12f; setPadding(dp(8), dp(4), dp(8), dp(4)) }
         root.addView(fpsLabel, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { leftMargin = dp(8); topMargin = dp(8) })
         applySafeArea()
         lockOverlay?.bringToFront()
@@ -259,7 +302,7 @@ class WolfRuntimeActivity : FragmentActivity() {
         fpsLabel?.let { label -> (label.layoutParams as? FrameLayout.LayoutParams)?.let {
             it.leftMargin = safeArea.left + dp(8); it.topMargin = safeArea.top + dp(8); label.layoutParams = it
         } }
-        status.setPadding(safeArea.left + dp(12), safeArea.top + dp(12), safeArea.right + dp(12), safeArea.bottom + dp(12))
+        loading.setPadding(safeArea.left + dp(24), safeArea.top + dp(24), safeArea.right + dp(24), safeArea.bottom + dp(24))
         resultLayout?.setPadding(safeArea.left + dp(12), safeArea.top + dp(12), safeArea.right + dp(12), safeArea.bottom + dp(12))
         // Compose overlays already consume their own safe drawing/IME insets.
     }
@@ -320,7 +363,10 @@ class WolfRuntimeActivity : FragmentActivity() {
         if (closing) return
         closing = true
         if (session?.isActive != true) { finish(); return }
-        status.visibility = View.VISIBLE
+        playable = false
+        if (::controls.isInitialized) controls.visibility = View.GONE
+        fpsLabel?.visibility = View.GONE
+        loading.visibility = View.VISIBLE
         progress("Fermeture du jeu et synchronisation des sauvegardes…")
         process?.destroy()
         session?.cancel()
@@ -352,7 +398,7 @@ class WolfRuntimeActivity : FragmentActivity() {
         }.also { root.addView(it, FrameLayout.LayoutParams(-1, -1)); applySafeArea() }
     }
     private fun hardwareKey(event: KeyEvent): Boolean {
-        if (lockOverlay == null && event.keyCode != KeyEvent.KEYCODE_BACK) {
+        if (playable && lockOverlay == null && event.keyCode != KeyEvent.KEYCODE_BACK) {
             if (event.action == KeyEvent.ACTION_DOWN) focusGame()
             val gamepad = when (event.keyCode) {
                 KeyEvent.KEYCODE_BUTTON_A -> XKeycode.KEY_ENTER

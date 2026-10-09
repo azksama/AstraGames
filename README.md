@@ -187,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.10](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.10). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.11](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.11). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
@@ -213,6 +213,20 @@ Les archives du catalogue Astra n'incluent pas cette copie des jeux ni leurs pr�
 Les notices sont accessibles dans **Paramètres → Moteur Wolf · licences**.
 Les essais du lancement direct et de la récupération des sauvegardes sont détaillés dans la
 [validation de la bêta 10](docs/VALIDATION_1.12.0-beta.10.md).
+
+La bêta 11 récupère les anciens processus Windows et audio appartenant à Astra après un arrêt
+forcé, puis reprend le lancement sans réinitialiser les sauvegardes. Une nouvelle session attend
+la fermeture de la précédente. L’écran de chargement indique huit étapes, les sous-étapes,
+le temps écoulé, ainsi que les octets téléchargés ou les fichiers extraits lorsqu’ils sont disponibles.
+Les commandes et le compteur restent masqués pendant la préparation, les consoles Windows
+et les images noires ; ils apparaissent avec la première image du jeu. Une attente trop longue
+ou un arrêt du jeu avant cette image fournit une erreur avec le diagnostic.
+
+Un toucher bref de l’image avec deux doigts envoie **Retour**, en respectant sa touche configurée.
+**Outils → Réglages Wolf RPG → Zoom à deux doigts** permet le pincement de 1× à 4× et le
+déplacement de l’image agrandie avec deux doigts. Ce réglage est désactivé par défaut, mémorisé
+par jeu et immédiat ; le désactiver restaure le cadrage. Le pincement ne déclenche pas Retour.
+Voir les [tests de reprise, de chargement et de gestes](docs/VALIDATION_1.12.0-beta.11.md).
 
 Si le lancement s’arrête, ouvrir **Paramètres → Diagnostic Wolf RPG**, activer **Mode debug Wolf RPG**,
 puis relancer le jeu. Le rapport indique la dernière étape, le code de sortie, les exceptions et les

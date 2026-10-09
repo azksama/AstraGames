@@ -26,6 +26,10 @@ public class ReleaseRuntimeProbe extends Instrumentation {
                 : arguments.getString("wolfGameId", "official-wolf-test-game3729-beta5");
             File ini = new File(sample, "Game.ini");
             byte[] originalIni = ini.isFile() ? java.nio.file.Files.readAllBytes(ini.toPath()) : null;
+            if (arguments != null && "true".equals(arguments.getString("wolfRequireRecoveredSave"))) {
+                File original = new File(getTargetContext().getExternalFilesDir(null), "forced-original-Game.ini.bin");
+                originalIni = original.isFile() ? java.nio.file.Files.readAllBytes(original.toPath()) : null;
+            }
             if (!new File(sample, "Game.exe").isFile()) throw new Exception("Missing official fixture");
             Intent intent = new Intent().setClassName(getTargetContext(), "fr.astragames.app.windows.WolfRuntimeActivity")
                 .putExtra("id", gameId).putExtra("source", sample.toURI().toString())
@@ -34,6 +38,8 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             long launchStarted = android.os.SystemClock.elapsedRealtime();
             activity = startActivitySync(intent);
             runOnMainSync(() -> activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE));
+            Thread.sleep(100);
+            screenshot("release-loading.png");
             boolean[] ready = {false};
             for (int i = 0; i < 240 && !ready[0]; i++) {
                 Thread.sleep(1000);
@@ -56,6 +62,21 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             StringBuilder hash = new StringBuilder();
             for (byte b : digest.digest(gameId.getBytes("UTF-8"))) hash.append(String.format("%02x", b));
             File gameRoot = new File(getTargetContext().getFilesDir(), "wolf-games/" + hash);
+            if (arguments != null && "true".equals(arguments.getString("wolfKillAfterRendered"))) {
+                File sentinel = new File(sample, "SaveData/astra-interruption-probe.sav");
+                sentinel.getParentFile().mkdirs();
+                java.nio.file.Files.write(sentinel.toPath(), "ASTRA_INTERRUPTION_TEST".getBytes("UTF-8"));
+                File evidence = new File(getTargetContext().getExternalFilesDir(null), "forced-interruption.txt");
+                java.nio.file.Files.write(evidence.toPath(), ("Rendered; force-killing Android process pid=" + android.os.Process.myPid() + "; gameId=" + gameId).getBytes("UTF-8"));
+                File original = new File(getTargetContext().getExternalFilesDir(null), "forced-original-Game.ini.bin");
+                if (originalIni != null) java.nio.file.Files.write(original.toPath(), originalIni); else original.delete();
+                android.os.Process.killProcess(android.os.Process.myPid());
+                throw new Exception("Force-kill did not terminate the process");
+            }
+            if (arguments != null && "true".equals(arguments.getString("wolfRequireRecoveredSave"))) {
+                String sentinel = new String(java.nio.file.Files.readAllBytes(new File(sample, "SaveData/astra-interruption-probe.sav").toPath()), "UTF-8");
+                if (!sentinel.equals("ASTRA_INTERRUPTION_TEST")) throw new Exception("Interrupted save fixture was lost");
+            }
             sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
             File[] reports = new File(getTargetContext().getNoBackupFilesDir(), "wolf-diagnostics").listFiles(File::isDirectory);
             if (reports == null || reports.length == 0) throw new Exception("No diagnostic report");

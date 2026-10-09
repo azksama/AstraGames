@@ -8,6 +8,7 @@ import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.runInterruptible
 import java.io.File
 import java.net.HttpURLConnection
 import java.net.URI
@@ -31,9 +32,13 @@ class WolfRuntimeInstaller(private val context: Context) {
     val root = File(context.noBackupFilesDir, "wolf-runtime/$REVISION")
     val arm = Build.SUPPORTED_ABIS.first() == "arm64-v8a"
 
-    suspend fun install(progress: (String) -> Unit): File = withContext(Dispatchers.IO) { lock.withLock {
+    suspend fun install(progress: (String) -> Unit): File = withContext(Dispatchers.IO) {
+      progress(if (lock.isLocked) "Attente de la fin de la préparation précédente…" else "Vérification du moteur Wolf…")
+      lock.withLock {
         check(supportedAbi()) { "Le moteur Wolf nécessite Android 64 bits (ARM64 ou x86_64)." }
-        if (File(root, "ready").readTextOrNull() == REVISION && File(root, "audio-ready").isFile) return@withLock root
+        if (File(root, "ready").readTextOrNull() == REVISION && File(root, "audio-ready").isFile) {
+            progress("Moteur Wolf déjà installé"); return@withLock root
+        }
         root.mkdirs()
         val components = mutableListOf(Component("Wine", "https://downloads.gamenative.app/proton-9.0-x86_64.txz",
             "922155d4a096730390029f72f074d7074f0a5edc7abb13b55a7b10092b0f3a2a", "proton", false))
@@ -61,7 +66,7 @@ class WolfRuntimeInstaller(private val context: Context) {
         for ((index, component) in components.withIndex()) {
             coroutineContext.ensureActive()
             val marker = File(root, ".component-$index")
-            if (marker.readTextOrNull() == component.sha) continue
+            if (marker.readTextOrNull() == component.sha) { progress("${component.name} · composant ${index + 1}/${components.size} déjà installé"); continue }
             val archive = File(context.cacheDir, "wolf-${component.sha}.archive")
             if (!archive.exists() || hash(archive) != component.sha) {
                 progress("Téléchargement : ${component.name}")
@@ -72,7 +77,16 @@ class WolfRuntimeInstaller(private val context: Context) {
             if (component.raw) {
                 val destination = File(root, component.destination).apply { parentFile!!.mkdirs() }
                 archive.copyTo(destination, overwrite = true)
-            } else RuntimeArchive.extract(archive, File(root, component.destination), component.url.endsWith(".tzst"), component.librariesOnly)
+            } else runInterruptible {
+                var lastProgress = 0L
+                RuntimeArchive.extract(archive, File(root, component.destination), component.url.endsWith(".tzst"), component.librariesOnly) { files, bytes, total ->
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    if (now - lastProgress >= 500) {
+                        lastProgress = now
+                        progress("Installation : ${component.name} · composant ${index + 1}/${components.size}\n$files fichiers · archive lue : ${bytes * 100 / total.coerceAtLeast(1)} %")
+                    }
+                }
+            }
             marker.writeText(component.sha)
             archive.delete()
         }

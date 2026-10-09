@@ -6,7 +6,9 @@ import java.util.concurrent.TimeUnit
 
 internal class WolfProcess(private val context: Context, private val runtime: File, private val storage: WolfGameStorage,
                   socket: String, sharedMemorySocket: String, private val diagnostics: WolfDiagnosticSession? = null,
-                  private val options: WolfOptions = WolfOptions()) {
+                  private val options: WolfOptions = WolfOptions(),
+                  private val progress: (Int, String) -> Unit = { _, _ -> }) {
+    private fun stage(step: Int, message: String) { diagnostics?.stage(message); progress(step, message) }
     private val arm = android.os.Build.SUPPORTED_ABIS.first() == "arm64-v8a"
     private val wine = File(runtime, "proton/bin/wine")
     private val box = File(runtime, "box64/usr/bin/box64")
@@ -54,7 +56,7 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
     ) + options.performance.environment() + mapOf("PULSE_SERVER" to "unix:${pulseSocket.path}", "PULSE_LATENCY_MSEC" to "80")
 
     private fun startAudio() {
-        diagnostics?.stage("Démarrage audio")
+        stage(5, "Démarrage audio…")
         pulseSocket.delete()
         val directory = File(runtime, "pulse")
         val config = File(directory, "astra.pa").apply { writeText("""
@@ -100,7 +102,7 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
             check(file.isFile && file.canRead()) { "Binaire runtime manquant ou illisible : ${file.name}" }
         }
         if (arm && diagnostics?.verbose == true) {
-            diagnostics.stage("Test de démarrage de Box64 (-v), avant Wine")
+            stage(5, "Vérification de Box64 avant Wine…")
             val probe = ProcessBuilder("/system/bin/linker64", box.path, "-v").directory(storage.game)
                 .redirectErrorStream(true).apply { environment().putAll(environment) }.start()
             diagnostics.capture(probe, "startup")
@@ -113,18 +115,26 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         }
         startAudio()
         storage.prefix.mkdirs()
-        diagnostics?.stage("Démarrage du serveur Windows")
+        stage(6, "Récupération et démarrage du serveur Windows…")
         // A previous daemon may still hold the prefix lock while refusing clients.
         // Stop only this prefix and wait for its lock before owning a foreground server.
         serverCommand("-k", "Nettoyage du serveur Windows", requireSuccess = false)
         serverCommand("-w", "Attente du serveur Windows")
         wineServer = start(File(wine.parentFile, "wineserver"), listOf("-f", "-p60"), stream = "server")
         diagnostics?.event("Serveur Windows supervisé : premier plan, persistance 60 secondes sans client")
-        if (File(storage.prefix, ".astra-ready").isFile) { diagnostics?.event("Préfixe Windows déjà initialisé"); return }
-        diagnostics?.stage(if (arm) "Initialisation Box64 / Wine (wineboot)" else "Initialisation Wine x86_64 (wineboot)")
+        val marker = File(storage.prefix, ".astra-ready")
+        val kernel = File(storage.prefix, "drive_c/windows/syswow64/kernel32.dll")
+        if (marker.isFile && marker.readText() == WolfRuntimeInstaller.REVISION && kernel.isFile && File(storage.prefix, "system.reg").isFile && File(storage.prefix, "user.reg").isFile) {
+            stage(6, "Windows déjà initialisé · lancement imminent"); return
+        }
+        stage(6, "Initialisation de Windows · récupération d’une préparation interrompue si nécessaire…")
         val boot = start(wine, listOf("wineboot", "-u"), false, stream = "startup")
         try {
-            check(boot.waitFor(150, TimeUnit.SECONDS)) { "Initialisation Windows interrompue après 150 secondes. Consultez le rapport de diagnostic." }
+            var waited = 0
+            while (!boot.waitFor(1, TimeUnit.SECONDS)) {
+                stage(6, "Initialisation de Windows · ${++waited} s\nLe premier lancement peut prendre quelques minutes.")
+                check(waited < 150) { "Initialisation Windows interrompue après 150 secondes. Consultez le rapport de diagnostic." }
+            }
             diagnostics?.exited(boot, "wineboot", boot.exitValue())
             check(boot.exitValue() == 0) { "Échec de l’initialisation Box64 / Wine : ${WolfDiagnosticSession.exitDescription(boot.exitValue())}." }
         } finally { if (boot.isAlive) boot.destroyForcibly() }
@@ -134,7 +144,7 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
 
     fun launch(executable: String): Process {
         check(wineServer?.isAlive == true) { "Le serveur Windows s’est arrêté avant le jeu. Consultez le journal server." }
-        diagnostics?.stage(if (arm) "Lancement du jeu via Box64 / Wine" else "Lancement du jeu via Wine x86_64")
+        stage(7, if (arm) "Lancement du jeu via Box64 / Wine" else "Lancement du jeu via Wine x86_64")
         val file = safeFile(storage.game, executable)
         check(file.isFile && file.extension.equals("exe", true)) { "Exécutable Windows introuvable : $executable" }
         diagnostics?.event("Espace disponible avant le jeu : ${storage.directory.usableSpace} octets")

@@ -72,12 +72,36 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     private volatile boolean smoothScaling = false;
     private final RenderStatistics statistics = new RenderStatistics();
     private long frameUploadBytes, frameFullUploads, framePartialUploads, frameDrawableLockNanos;
+    private volatile boolean gameFramePresented;
+    private volatile boolean awaitGameFrame;
+    private boolean candidateFrame;
+    private final java.util.concurrent.atomic.AtomicBoolean readinessPollPending = new java.util.concurrent.atomic.AtomicBoolean();
+    private String expectedGame = "";
+    private long lastGameProbe;
+    public boolean hasPresentedGameFrame() { return gameFramePresented; }
+    public void awaitGameFrame(String executable) {
+        gameFramePresented = false;
+        xServerView.queueEvent(() -> {
+            expectedGame = executable; awaitGameFrame = true; lastGameProbe = 0;
+            updateScene();
+        });
+        xServerView.requestRender();
+    }
+    public void zoomImage(float factor, float x, float y, float dx, float dy) {
+        xServerView.queueEvent(() -> { viewTransformation.zoomBy(factor, x, y, dx, dy); updateViewport(); });
+        xServerView.requestRender();
+    }
+    public void resetImageZoom() {
+        xServerView.queueEvent(() -> { viewTransformation.resetZoom(); updateViewport(); });
+        xServerView.requestRender();
+    }
     public long getContentFrameCount() { return contentFrames.get(); }
     public String getPerformanceSnapshot() { return statistics.snapshotAndReset(); }
     public void setSmoothScaling(boolean value) { smoothScaling = value; xServerView.requestRender(); }
     public void setImageScaleMode(int mode) {
         xServerView.queueEvent(() -> {
             fitGameImage = true; imageScaleMode = mode >= 0 && mode <= 2 ? mode : 0;
+            viewTransformation.resetZoom();
             updateScene(); updateViewport();
         });
         xServerView.requestRender();
@@ -136,6 +160,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         long frameStart = System.nanoTime();
         frameUploadBytes = frameFullUploads = framePartialUploads = frameDrawableLockNanos = 0;
         boolean receivedContent = contentPending.getAndSet(false);
+        candidateFrame = false;
         if (toggleFullscreen) {
             fullscreen = !fullscreen;
             toggleFullscreen = false;
@@ -146,6 +171,10 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
             effectComposer.render();
         }
         else drawFrame();
+        if (awaitGameFrame && candidateFrame) { gameFramePresented = true; awaitGameFrame = false; }
+        if (awaitGameFrame && readinessPollPending.compareAndSet(false, true)) {
+            xServerView.postDelayed(() -> { readinessPollPending.set(false); if (awaitGameFrame) xServerView.requestRender(); }, 200);
+        }
         if (receivedContent) contentFrames.incrementAndGet();
         long frameEnd = System.nanoTime();
         statistics.frame(receivedContent, frameEnd, frameEnd - frameStart, frameUploadBytes, frameFullUploads, framePartialUploads, frameDrawableLockNanos);
@@ -156,7 +185,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
             if (fullscreen) {
                 GLES20.glViewport(0, 0, surfaceWidth, surfaceHeight);
             }
-            else GLES20.glViewport(viewTransformation.viewOffsetX, viewTransformation.viewOffsetY, viewTransformation.viewWidth, viewTransformation.viewHeight);
+            else GLES20.glViewport(viewTransformation.viewOffsetX, surfaceHeight - viewTransformation.viewOffsetY - viewTransformation.viewHeight, viewTransformation.viewWidth, viewTransformation.viewHeight);
             viewportNeedsUpdate = false;
         }
 
@@ -248,7 +277,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         }
     }
 
-    private void renderWindowDrawable(Drawable drawable, Texture texture, int x, int y, boolean transparent, FullscreenTransformation fullscreenTransformation, boolean captured) {
+    private void renderWindowDrawable(Drawable drawable, Texture texture, int x, int y, boolean transparent, FullscreenTransformation fullscreenTransformation, boolean captured, boolean gameCandidate) {
         synchronized (drawable.renderLock) {
             long bytes = texture.getUploadedBytes(), full = texture.getFullUploads(), partial = texture.getPartialUploads();
             if (captured) texture.uploadCapturedUpdate();
@@ -272,6 +301,16 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
             windowMaterial.setUniformBool(windowMaterial.uniforms.smooth, smoothScaling);
 
             GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, quadVertices.count());
+            if (awaitGameFrame && gameCandidate && android.os.SystemClock.uptimeMillis() - lastGameProbe >= 200) {
+                lastGameProbe = android.os.SystemClock.uptimeMillis();
+                if (!(texture instanceof GPUImage)) candidateFrame |= GameFrameReadiness.hasVisiblePixels(drawable.getData(), drawable.width, drawable.height, drawable.width);
+                else {
+                    // Only during startup, and before the cursor: bounded GPU readback for shared textures.
+                    ByteBuffer sample = ByteBuffer.allocateDirect(8 * 8 * 4);
+                    GLES20.glReadPixels(surfaceWidth / 2 - 4, surfaceHeight / 2 - 4, 8, 8, GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, sample);
+                    candidateFrame |= GameFrameReadiness.hasVisiblePixels(sample, 8, 8, 8);
+                }
+            }
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
         }
     }
@@ -293,7 +332,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
                 beginWindowRendering();
                 for (RenderableWindow window : renderableWindows) {
                     if (!window.content.isOffscreenStorage()) renderWindowDrawable(window.content, window.content.getTexture(),
-                        window.rootX, window.rootY, window.transparent, window.fullscreenTransformation, false);
+                        window.rootX, window.rootY, window.transparent, window.fullscreenTransformation, false, window.gameCandidate);
                 }
                 quadVertices.disable();
                 frameDrawableLockNanos += System.nanoTime() - lockStart;
@@ -317,7 +356,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
             RenderableWindow window = renderableWindows.get(i);
             Texture texture = capturedTextures.get(i);
             if (texture != null) renderWindowDrawable(window.content, texture, window.rootX,
-                window.rootY, window.transparent, window.fullscreenTransformation, true);
+                window.rootY, window.transparent, window.fullscreenTransformation, true, window.gameCandidate);
         }
         quadVertices.disable();
     }
@@ -408,7 +447,8 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
                 }
                 else window.setFullscreenTransformation(null);
 
-                renderableWindows.add(new RenderableWindow(window.getContent(), x, y, transparent, fullscreenTransformation));
+                renderableWindows.add(new RenderableWindow(window.getContent(), x, y, transparent, fullscreenTransformation,
+                    inBounds && gameWindow && GameFrameReadiness.isGameWindow(window.getClassName(), expectedGame)));
             }
             else renderableWindows.add(new RenderableWindow(window.getContent(), x, y, transparent, null));
         }

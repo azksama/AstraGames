@@ -1,6 +1,6 @@
 # Wolf RPG Windows dans Astra
 
-État du 8 octobre 2026 : moteur intégré expérimental fonctionnel sur l'émulateur Android
+État du 9 octobre 2026 : moteur intégré expérimental fonctionnel sur l'émulateur Android
 API 36.1 x86_64. Les exemples officiels Wolf **2.2961 et 3.729** atteignent la partie,
 affichent personnages et dialogues japonais, et répondent au bouton Valider d'Astra.
 Le test ne couvre pas une partie complète, tous les jeux, ni un téléphone ARM64.
@@ -27,7 +27,13 @@ en naviguant dans un parent déjà autorisé. Il ne marque pas les jeux des autr
 - `windows-runtime` : sous-ensemble LGPL de Winlator pour X11, rendu OpenGL ES, entrées,
   sockets et mémoire partagée. Aucune installation externe Winlator/GameNative/JoiPlay.
 - `WolfRuntimeActivity` : affichage dans Astra, pavé tactile, clavier, D-pad et boutons A/B,
-  fermeture de session, verrouillage Astra au retour de l'arrière-plan et protection des captures.
+  fermeture sérialisée des sessions, verrouillage Astra au retour de l'arrière-plan et protection des captures.
+- `WolfProcessRecovery` : arrêt des anciens enfants Windows/audio identifiés par l’UID, leurs
+  chemins privés et leur environnement ; contrôle de l’identité du processus avant le signal.
+- `WolfLoadingView` : étapes réelles et durée, commandes masquées jusqu’à la première image
+  non noire du jeu dans le renderer. Les fenêtres de préparation et les consoles sont exclues.
+- `WolfTouchInput` et `ViewTransformation` : Retour à deux doigts, zoom optionnel de 1× à 4×,
+  déplacement à deux doigts et conversion des coordonnées tactiles dans le même cadrage.
 - PulseAudio Bionic et sortie Android AAudio ; IPAexGothic pour les caractères japonais.
 - `WolfGameStorage` : dossier d’origine accessible ou copie SAF/file, détection des écritures locales non synchronisées,
   synchronisation avec comparaison de l'original, sauvegarde de l'ancienne version et export ZIP.
@@ -92,6 +98,32 @@ un arrêt du processus, le lancement suivant reprend la restauration. Les autres
 écrites par le jeu sont conservées. Une modification concurrente des modes bloque la restauration
 et conserve le journal original, au lieu d’écraser le fichier source.
 
+## Chargement et fermeture interrompue
+
+Depuis la bêta 11, le lancement affiche huit phases : récupération, composants du moteur,
+dossier du jeu, affichage X11, audio et Box64, Windows, lancement, puis première image du jeu.
+Le téléchargement affiche son volume ; l’extraction affiche le nombre de fichiers et la part
+de l’archive compressée lue. Windows et le jeu ne fournissent pas de pourcentage fiable :
+ces phases affichent le temps réellement écoulé et un indicateur d’activité. Le lancement peut
+être annulé pendant la préparation. L’extraction vérifie aussi l’interruption dans les fichiers.
+
+Une nouvelle session attend la fermeture et la synchronisation de l’ancienne avant de réutiliser
+les sockets. Après la disparition du processus Android, Astra repère et arrête uniquement les
+anciens processus de son runtime avant de reprendre le dossier et sa configuration journalisée.
+Le préfixe et les sauvegardes ne sont pas supprimés. Le marqueur Windows prêt doit correspondre
+à la révision du runtime et aux fichiers essentiels du préfixe, sinon son initialisation est reprise.
+Une fermeture brutale ne sauvegarde pas la progression qui n’a pas été écrite par le jeu.
+
+La première image du jeu active les commandes ; ni la présence d’une fenêtre ni un framebuffer
+noir ne suffisent. Si le jeu termine avant d’afficher une image, ou n’en affiche aucune en trois
+minutes après son lancement, un message renvoie vers le diagnostic. Le contrôle des pixels est
+limité au démarrage et cesse après cette première image.
+
+Le toucher bref à deux doigts utilise la touche **Retour** configurée pour le jeu. Activer
+**Outils → Réglages Wolf RPG → Zoom à deux doigts** permet de pincer et de déplacer l’image
+agrandie. Les gestes déplacés ou annulés ne déclenchent pas Retour. Voir la
+[validation de la bêta 11](VALIDATION_1.12.0-beta.11.md).
+
 ## Provenance et reconstruction
 
 Le code Winlator est épinglé à `3981d86efa4f333b2a34a7da8b6521476cd8c8b9` :
@@ -149,7 +181,7 @@ diagnostic opt-in ; ils ne remplacent pas le test du parcours complet.
   autonome du runtime. L'installation suivante réutilise les composants vérifiés.
 
 
-## Bilan de validation de cette livraison
+## Bilan de validation initiale du moteur
 
 - 210 tests JVM : réussis ; lint application et module : aucune erreur (avertissements conservés).
 - 14 tests Android : stockage SAF, scan de sous-dossier, interface de sélection,

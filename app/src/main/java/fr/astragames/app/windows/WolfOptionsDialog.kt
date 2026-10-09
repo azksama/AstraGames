@@ -65,6 +65,9 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
     label("Un compteur bas est normal sur une image immobile : les images identiques sont réutilisées.")
     val touch = choice("Tactile", listOf("Clic à la position touchée", "Direction au toucher (maintenir)"), if (original.directionalTouch) 1 else 0)
     label("Le clic déplace le personnage si le jeu le prévoit. Sinon, maintenez un côté de l’image pour avancer dans cette direction.")
+    label("Touchez brièvement l’image avec deux doigts pour envoyer Retour, selon la touche configurée.")
+    val zoom = toggle("Zoom à deux doigts · immédiat", original.pinchZoom)
+    label("Écartez ou rapprochez deux doigts pour zoomer de 1× à 4×. Déplacez les deux doigts pour parcourir l’image agrandie. Désactiver le zoom rétablit le cadrage initial.")
     val opacity = slider("Opacité des touches", 15, 100, original.opacity)
     val size = slider("Taille des touches", 70, 150, original.size)
     label("Menu → Modifier les touches : faites glisser chaque touche ; touchez-la pour changer son action. Positions séparées en portrait et paysage.")
@@ -75,7 +78,7 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
             store.save(WolfOptions(WolfPerformance.entries[performance.selectedItemPosition], WolfOptions.resolutions[resolution.selectedItemPosition],
                 smooth.isChecked, if (fps.selectedItemPosition == 0) 30 else 60, counter.isChecked, touch.selectedItemPosition == 1,
                 opacity.progress + 15, size.progress + 70, WolfImageMode.entries[imageMode.selectedItemPosition],
-                WolfStorageMode.entries[storage.selectedItemPosition])); changed()
+                WolfStorageMode.entries[storage.selectedItemPosition], zoom.isChecked)); changed()
         }.create()
     dialog.setOnShowListener {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(accent)

@@ -12,12 +12,18 @@ import java.nio.file.LinkOption;
 
 /** Extracts a verified runtime archive into a fresh application-owned directory. */
 public final class RuntimeArchive {
+    public interface ProgressListener { void onProgress(long files, long bytes, long total); }
     public static void extract(File archive, File destination, boolean zstd, boolean librariesOnly) throws Exception {
+        extract(archive, destination, zstd, librariesOnly, (files, bytes, total) -> {});
+    }
+    public static void extract(File archive, File destination, boolean zstd, boolean librariesOnly, ProgressListener progress) throws Exception {
         destination.mkdirs();
         String root = destination.getCanonicalPath() + File.separator;
         List<String[]> links = new ArrayList<>();
         long total = 0;
-        try (InputStream file = new BufferedInputStream(new FileInputStream(archive));
+        long files = 0;
+        try (FileInputStream raw = new FileInputStream(archive);
+             InputStream file = new BufferedInputStream(raw);
              InputStream decoder = zstd ? new ZstdInputStream(file) : new XZInputStream(file);
              TarArchiveInputStream tar = new TarArchiveInputStream(decoder)) {
             TarArchiveEntry entry;
@@ -43,9 +49,13 @@ public final class RuntimeArchive {
                     out.getParentFile().mkdirs();
                     try (OutputStream sink = new FileOutputStream(out)) {
                         int read;
-                        while ((read = tar.read(buffer)) != -1) sink.write(buffer, 0, read);
+                        while ((read = tar.read(buffer)) != -1) {
+                            if (Thread.currentThread().isInterrupted()) throw new InterruptedIOException();
+                            sink.write(buffer, 0, read);
+                        }
                     }
                     Os.chmod(out.getPath(), (entry.getMode() & 0111) != 0 ? 0700 : 0600);
+                    progress.onProgress(++files, raw.getChannel().position(), archive.length());
                 }
             }
         }
