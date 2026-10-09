@@ -143,9 +143,10 @@ class WolfRuntimeActivity : FragmentActivity() {
                 val uri = requireNotNull(intent.getStringExtra("source"))
                 val executable = requireNotNull(intent.getStringExtra("executable"))
                 val runtime = WolfRuntimeInstaller(this@WolfRuntimeActivity).install(::progress)
-                storage = WolfGameStorage(this@WolfRuntimeActivity, id, uri)
+                storage = WolfGameStorage(this@WolfRuntimeActivity, id, uri, preferDirect = gameOptions.storageMode == WolfStorageMode.AUTO)
                 gameStorage = storage
                 storage.prepare(executable, ::progress)
+                diagnostic?.event("Stockage du jeu : ${if (storage.isDirect) "dossier d’origine" else "copie privée"}; dossier=${storage.game.path}; préfixe=${storage.prefix.path}")
                 val sockets = File(cacheDir, "wolf-sockets").apply { mkdirs() }
                 val xSocket = UnixSocketConfig.create(sockets.path, "/x/X0")
                 val shmSocket = UnixSocketConfig.create(sockets.path, "/shm/SM0")
@@ -157,6 +158,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                 runner = WolfProcess(this@WolfRuntimeActivity, runtime, storage, xSocket.path, shmSocket.path, diagnostic, gameOptions)
                 progress("Initialisation de Windows… Le premier lancement peut prendre quelques minutes.")
                 runInterruptible(Dispatchers.IO) { runner.initialize() }
+                storage.captureWindowsSaveBaseline()
                 status.visibility = View.GONE
                 controls.visibility = View.VISIBLE
                 startFpsCounter()
@@ -188,6 +190,13 @@ class WolfRuntimeActivity : FragmentActivity() {
                             failure = listOfNotNull(failure, it.message).joinToString("\n")
                         }
                         diagnostic?.event("Synchronisation terminée en ${android.os.SystemClock.elapsedRealtime() - syncStarted} ms")
+                        runCatching { storage.saveFiles() }.onSuccess { files ->
+                            diagnostic?.event("Sauvegardes repérées : ${files.size}\n${files.take(100).joinToString("\n") { it.file.path }}")
+                        }.onFailure { diagnostic?.failure("Repérage des sauvegardes", it) }
+                    }
+                    runCatching { storage?.restoreSourceConfiguration() }.onFailure {
+                        diagnostic?.failure("Restauration de la configuration du jeu", it)
+                        failure = listOfNotNull(failure, it.message).joinToString("\n")
                     }
                 }
                 runCatching { x11?.stop() }.onFailure { diagnostic?.failure("Arrêt X11", it) }; x11 = null

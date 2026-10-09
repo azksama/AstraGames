@@ -15,14 +15,20 @@ import java.io.FileOutputStream;
 /** Framework-only instrumentation: also works with the fully obfuscated release APK. */
 public class ReleaseRuntimeProbe extends Instrumentation {
     private Activity activity;
-    @Override public void onCreate(Bundle arguments) { super.onCreate(arguments); start(); }
+    private Bundle arguments;
+    @Override public void onCreate(Bundle arguments) { this.arguments = arguments; super.onCreate(arguments); start(); }
     @Override public void onStart() {
         Bundle result = new Bundle();
         try {
-            File sample = new File(getTargetContext().getFilesDir(), "wolf-probe/game3729");
+            File sample = arguments != null && arguments.containsKey("wolfSource") ? new File(arguments.getString("wolfSource"))
+                : new File(getTargetContext().getFilesDir(), "wolf-probe/game3729");
+            String gameId = arguments == null ? "official-wolf-test-game3729-beta5"
+                : arguments.getString("wolfGameId", "official-wolf-test-game3729-beta5");
+            File ini = new File(sample, "Game.ini");
+            byte[] originalIni = ini.isFile() ? java.nio.file.Files.readAllBytes(ini.toPath()) : null;
             if (!new File(sample, "Game.exe").isFile()) throw new Exception("Missing official fixture");
             Intent intent = new Intent().setClassName(getTargetContext(), "fr.astragames.app.windows.WolfRuntimeActivity")
-                .putExtra("id", "official-wolf-test-game3729-beta5").putExtra("source", sample.toURI().toString())
+                .putExtra("id", gameId).putExtra("source", sample.toURI().toString())
                 .putExtra("executable", "Game.exe").putExtra("title", "Wolf release test")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             long launchStarted = android.os.SystemClock.elapsedRealtime();
@@ -44,10 +50,11 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             Thread.sleep(4000);
             screenshot("release-game.png");
             long renderedMs = android.os.SystemClock.elapsedRealtime() - launchStarted;
-            if (renderedMs >= 60000) throw new Exception("Prepared official sample exceeded 60 seconds: " + renderedMs);
+            boolean coldPrefix = arguments != null && "true".equals(arguments.getString("wolfColdPrefix"));
+            if (!coldPrefix && renderedMs >= 60000) throw new Exception("Prepared official sample exceeded 60 seconds: " + renderedMs);
             java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
             StringBuilder hash = new StringBuilder();
-            for (byte b : digest.digest("official-wolf-test-game3729-beta5".getBytes("UTF-8"))) hash.append(String.format("%02x", b));
+            for (byte b : digest.digest(gameId.getBytes("UTF-8"))) hash.append(String.format("%02x", b));
             File gameRoot = new File(getTargetContext().getFilesDir(), "wolf-games/" + hash);
             sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
             File[] reports = new File(getTargetContext().getNoBackupFilesDir(), "wolf-diagnostics").listFiles(File::isDirectory);
@@ -64,6 +71,13 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             String events = new String(java.nio.file.Files.readAllBytes(new File(reports[0], "events.log").toPath()), "UTF-8");
             if (!events.contains("Serveur Windows supervisé") || !events.contains("Fin wineserver : code de sortie 0"))
                 throw new Exception("Missing supervised server lifecycle evidence");
+            if (arguments != null && "true".equals(arguments.getString("wolfRequireDirect"))) {
+                org.json.JSONObject mode = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(new File(gameRoot, "working-mode.json").toPath()), "UTF-8"));
+                if (!mode.optString("mode").equals("DIRECT")) throw new Exception("Original directory was not used: " + mode);
+                if (new File(gameRoot, "game").exists()) throw new Exception("Unexpected game import");
+                if (originalIni == null ? ini.exists() : !java.util.Arrays.equals(originalIni, java.nio.file.Files.readAllBytes(ini.toPath())))
+                    throw new Exception("Original configuration was not restored");
+            }
             result.putBoolean("debuggable", (getTargetContext().getApplicationInfo().flags & 2) != 0);
             result.putString("stream", "PASS: Release game rendered, accepted input and closed with supervised wineserver. readyMs=" + readyMs + " renderedMs=" + renderedMs + "\n" + state);
             finish(Activity.RESULT_OK, result);

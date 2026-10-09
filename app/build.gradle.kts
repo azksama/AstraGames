@@ -18,8 +18,8 @@ android {
         applicationId = "fr.astragames.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 37
-        versionName = "1.12.0-beta.9"
+        versionCode = 38
+        versionName = "1.12.0-beta.10"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }

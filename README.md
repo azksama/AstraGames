@@ -187,21 +187,32 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.9](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.9). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.10](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.10). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
 le profil **Astra · Wolf intégré** utilise le jeu original sans conversion ni application externe.
-Au premier lancement, Astra télécharge et vérifie les composants, copie le jeu dans son stockage
-privé et prépare Windows. Prévoir plusieurs centaines de Mo pour le moteur, puis la taille du
-jeu et de son préfixe Windows. Les lancements suivants réutilisent cette installation.
+Au premier lancement, Astra télécharge et vérifie les composants et prépare Windows.
+Depuis la bêta 10, **Outils → Réglages Wolf RPG → Fichiers du jeu** utilise le dossier d’origine
+si son accès direct est possible. Pour un dossier local sur Android 11+, le bouton **Accès à tous
+les fichiers · réglages Android** permet d’accorder l’autorisation facultative nécessaire.
+Les ressources ne sont alors pas importées et le jeu écrit directement dans son dossier.
+La copie privée reste disponible pour les fournisseurs cloud, les accès refusés ou les conflits
+de sauvegarde. Chaque jeu conserve son propre préfixe Windows ; son premier démarrage peut
+encore demander une initialisation, même sans import. Les composants sont partagés entre jeux.
 
 Les flèches, Valider, Retour et Shift sont disponibles à l'écran ; clavier et boutons de manette
 sont également routés au jeu. **Quitter** ferme le moteur et synchronise les fichiers modifiés.
 En cas de conflit ou de dossier non accessible, Astra conserve la sauvegarde privée et propose
-son export ZIP. Les réglages de rendu sont appliqués uniquement à la copie privée de `Game.ini`.
+son export ZIP. **Outils → Dossier des sauvegardes** affiche les chemins réels et permet l’export
+des sauvegardes du jeu ainsi que des données utilisateur de son préfixe Windows, sous `Windows/`.
+Le dossier peut s’appeler `SaveData` ou `Saves`, sans être nécessairement `Save`.
+Les réglages logiciels de `Game.ini` sont privés en mode copie et temporaires en mode direct :
+la configuration d’origine est conservée et restaurée sans effacer les préférences écrites par le jeu.
 Les archives du catalogue Astra n'incluent pas cette copie des jeux ni leurs préfixes Windows.
 Les notices sont accessibles dans **Paramètres → Moteur Wolf · licences**.
+Les essais du lancement direct et de la récupération des sauvegardes sont détaillés dans la
+[validation de la bêta 10](docs/VALIDATION_1.12.0-beta.10.md).
 
 Si le lancement s’arrête, ouvrir **Paramètres → Diagnostic Wolf RPG**, activer **Mode debug Wolf RPG**,
 puis relancer le jeu. Le rapport indique la dernière étape, le code de sortie, les exceptions et les

@@ -6,6 +6,7 @@ import android.provider.DocumentsContract
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import fr.astragames.app.data.saves.documentDir
+import fr.astragames.app.core.filesystem.FileAccessResolver
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
@@ -18,13 +19,19 @@ import java.util.zip.ZipOutputStream
 import kotlin.coroutines.coroutineContext
 
 /** Persistent working copy. A interrupted game never loses its locally written saves. */
-class WolfGameStorage(private val context: Context, gameId: String, private val sourceUri: String) {
+class WolfGameStorage(private val context: Context, gameId: String, private val sourceUri: String,
+                      private val preferDirect: Boolean = true) {
     val directory = File(context.filesDir, "wolf-games/${MessageDigest.getInstance("SHA-256").digest(gameId.toByteArray()).joinToString("") { "%02x".format(it) }}")
-    val game = File(directory, "game")
+    private val copiedGame = File(directory, "game")
+    var game: File = copiedGame
+        private set
+    val isDirect get() = game != copiedGame
     val prefix = File(directory, "prefix")
     private val manifest = File(directory, "source-hashes.json")
     private val cache = File(directory, "import-state.json")
     private val refresh = File(directory, "refresh-requested")
+    private val workingMode = File(directory, "working-mode.json")
+    private val configuration = WolfDirectConfiguration(directory)
     private var hashes = JSONObject()
     private var stamps = JSONObject()
 
@@ -36,9 +43,29 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
         hashes = if (manifest.isFile) JSONObject(manifest.readText()) else JSONObject()
         val state = if (cache.isFile) JSONObject(cache.readText()) else JSONObject()
         stamps = state.optJSONObject("stamps") ?: JSONObject()
-        game.mkdirs()
+        game = copiedGame
+        configuration.restore()
         val source = requireNotNull(documentDir(context, sourceUri.toUri())) { "Le dossier du jeu est inaccessible." }
         check(source.canRead()) { "Autorisation du dossier expirée." }
+        val lastMode = readWorkingMode()
+        val direct = if (preferDirect) directDirectory(executable) else null
+        if (direct != null) {
+            // Migrate pending private writes once, before changing the working directory.
+            // If both copies changed, keep the private version playable and exportable.
+            val migrated = lastMode.optString("mode") == "DIRECT" && lastMode.optString("source") == sourceUri
+            val conflicts = if (!migrated && manifest.isFile && copiedGame.isDirectory) synchronize() else 0
+            if (conflicts == 0) {
+                configuration.apply(direct, executable)
+                game = direct
+                writeWorkingMode("DIRECT")
+                refresh.delete()
+                progress("Dossier d’origine · aucun transfert du jeu")
+                return@withContext game
+            }
+            progress("$conflicts conflit(s) de sauvegarde · copie privée conservée")
+        } else if (preferDirect) progress("Accès direct indisponible · copie privée utilisée")
+        if (lastMode.optString("mode") == "DIRECT") requestRefresh()
+        game.mkdirs()
         // Older releases already completed a full import before creating the Wine prefix.
         // Reuse that copy; missing stamps are checked by hash on the first synchronization.
         val legacyReady = !cache.exists() && manifest.isFile && File(prefix, ".astra-ready").isFile
@@ -59,7 +86,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
                 val path = if (relative.isEmpty()) name else "$relative/$name"
                 val target = safeFile(game, path)
                 if (child.isDirectory) {
-                    val saveDirectory = name.equals("Save", true) || name.equals("Saves", true)
+                    val saveDirectory = isSaveFolder(name)
                     if (!savesOnly || saveDirectory || saveFolders.any { it == path || it.startsWith("$path/") }) {
                         target.mkdirs(); copy(child.uri, path, depth + 1, savesOnly && !saveDirectory)
                     }
@@ -126,11 +153,105 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
         val original = if (ini.exists()) ini.readText(Charsets.ISO_8859_1) else ""
         val configured = wolfSoftwareConfiguration(original)
         if (configured != original) ini.writeText(configured, Charsets.ISO_8859_1)
+        writeWorkingMode("COPY")
         game
     }
 
-    private fun isSave(path: String) = path.split('/').dropLast(1).any { it.equals("Save", true) || it.equals("Saves", true) } ||
+    private fun isSave(path: String) = path.split('/').dropLast(1).any { isSaveFolder(it) } ||
         path.substringAfterLast('.').lowercase() in setOf("sav", "save")
+
+    private fun isSaveFolder(name: String) = name.lowercase() in setOf("save", "saves", "savedata", "savefiles")
+
+    private fun directDirectory(executable: String?): File? = runCatching {
+        val root = File(requireNotNull(FileAccessResolver(context).physicalPath(sourceUri.toUri()))).canonicalFile
+        check(root.isDirectory && root.canRead() && root.canWrite())
+        requireNotNull(root.list())
+        if (executable != null) safeFile(root, executable).inputStream().use { it.read() }
+        // Permission flags can be optimistic on Android's shared-storage filesystem.
+        val probe = File(root, ".astra-wolf-access-${java.util.UUID.randomUUID()}")
+        try { probe.outputStream().use { it.write(1) } } finally { probe.delete() }
+        root
+    }.getOrNull()
+
+    private fun readWorkingMode() = runCatching { JSONObject(workingMode.readText()) }.getOrDefault(JSONObject())
+    private fun writeWorkingMode(mode: String) {
+        directory.mkdirs()
+        val pending = File(directory, "working-mode.new").apply {
+            writeText(JSONObject().put("source", sourceUri).put("mode", mode).toString())
+        }
+        check(pending.renameTo(workingMode))
+    }
+
+    internal fun restoreLastLocation() {
+        val last = readWorkingMode()
+        if (last.optString("mode") == "DIRECT" && last.optString("source") == sourceUri) {
+            val path = FileAccessResolver(context).physicalPath(sourceUri.toUri())
+            game = path?.let(::File)?.takeIf { it.isDirectory && it.canRead() }
+                ?: error("Le dossier d’origine est inaccessible. Réautorisez-le pour retrouver les sauvegardes.")
+        }
+        hashes = if (manifest.isFile) JSONObject(manifest.readText()) else JSONObject()
+        stamps = runCatching { JSONObject(cache.readText()).optJSONObject("stamps") }.getOrNull() ?: JSONObject()
+    }
+
+    internal fun restoreSourceConfiguration() = configuration.restore()
+
+    internal suspend fun captureWindowsSaveBaseline() = withContext(Dispatchers.IO) {
+        windowsSaveFiles() // Retain writes from an interrupted earlier session before resetting the baseline.
+        val data = JSONObject()
+        windowsUserFiles().forEach { data.put(it.relativeTo(prefix).invariantSeparatorsPath, stamp(it)) }
+        directory.mkdirs()
+        File(directory, "windows-save-baseline.json").writeText(data.toString())
+    }
+
+    private fun windowsUserFiles(): Sequence<File> {
+        val users = File(prefix, "drive_c/users")
+        return users.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+            .filter { it.isFile && !java.nio.file.Files.isSymbolicLink(it.toPath()) }
+    }
+
+    internal data class SaveFile(val file: File, val path: String)
+
+    internal suspend fun saveFiles(): List<SaveFile> = withContext(Dispatchers.IO) {
+        restoreLastLocation()
+        val saves = mutableListOf<SaveFile>()
+        for (file in game.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }.filter { it.isFile }) {
+            coroutineContext.ensureActive()
+            val path = file.relativeTo(game).invariantSeparatorsPath
+            if (path.split('/').any { it.startsWith(".astra-") } || file.name.equals("Game.ini", true) ||
+                file.extension.lowercase() in setOf("exe", "dll") || java.nio.file.Files.isSymbolicLink(file.toPath())) continue
+            val known = isSave(path)
+            val changed = !isDirect && stamps.optString(path) != stamp(file) &&
+                WolfRuntimeInstaller.hash(file) != hashes.optString(path)
+            if (known || changed) saves += SaveFile(safeFile(game, path), path)
+        }
+        saves += windowsSaveFiles()
+        saves.sortedBy { it.path }
+    }
+
+    private fun windowsSaveFiles(): List<SaveFile> {
+        val saves = mutableListOf<SaveFile>()
+        val baselineFile = File(directory, "windows-save-baseline.json")
+        val baseline = runCatching { JSONObject(baselineFile.readText()) }.getOrDefault(JSONObject())
+        val trackedFile = File(directory, "windows-save-paths.json")
+        val tracked = runCatching { JSONObject(trackedFile.readText()) }.getOrDefault(JSONObject())
+        for (file in windowsUserFiles()) {
+            val path = file.relativeTo(prefix).invariantSeparatorsPath
+            // An older app version may never have observed a save outside the game folder.
+            // Each prefix belongs to one game, so retain its existing user data as well.
+            val userData = !file.name.equals("desktop.ini", true) &&
+                !path.lowercase().contains("/microsoft/windows/") && file.extension.lowercase() !in setOf("lnk", "url", "tmp", "log")
+            if (isSave(path) || userData || tracked.has(path) || (baselineFile.isFile && baseline.optString(path) != stamp(file))) {
+                tracked.put(path, true)
+                saves += SaveFile(safeFile(prefix, path), "Windows/$path")
+            }
+        }
+        if (tracked.length() > 0) {
+            directory.mkdirs()
+            val pending = File(directory, "windows-save-paths.new").apply { writeText(tracked.toString()) }
+            check(pending.renameTo(trackedFile))
+        }
+        return saves
+    }
     private fun stamp(file: File) = "${file.length()}:${file.lastModified()}"
     private fun saveState(complete: Boolean) {
         val state = JSONObject().put("source", sourceUri).put("complete", complete).put("stamps", stamps)
@@ -164,6 +285,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
 
     /** Never overwrites a source edited since import. Conflicting saves remain local. */
     suspend fun synchronize(): Int = withContext(Dispatchers.IO) {
+        if (isDirect) return@withContext 0 // The game already writes into its original folder.
         val source = documentDir(context, sourceUri.toUri()) ?: error("Dossier source inaccessible ; sauvegardes conservées dans Astra.")
         check(source.canWrite()) { "Dossier source en lecture seule ; sauvegardes conservées dans Astra." }
         var conflicts = 0
@@ -216,14 +338,11 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
         check(temporary.renameTo(manifest))
     }
     suspend fun exportSaves(output: OutputStream) = withContext(Dispatchers.IO) {
+        val files = saveFiles()
+        check(files.isNotEmpty()) { "Aucune sauvegarde repérée pour ce jeu. Faites une sauvegarde dans le jeu puis fermez la partie." }
         ZipOutputStream(output).use { zip ->
-            for (file in game.walkTopDown().filter { it.isFile }) {
+            for ((file, path) in files) {
                 coroutineContext.ensureActive()
-                val path = file.relativeTo(game).invariantSeparatorsPath
-                safeFile(game, path)
-                if (file.name.equals("Game.ini", true) || path.endsWith(".exe", true) || path.endsWith(".dll", true)) continue
-                val likelySave = path.startsWith("Save/", true) || file.extension.lowercase() in setOf("sav", "save")
-                if (!likelySave && WolfRuntimeInstaller.hash(file) == hashes.optString(path)) continue
                 zip.putNextEntry(ZipEntry(path)); file.inputStream().use { it.copyTo(zip) }; zip.closeEntry()
             }
         }

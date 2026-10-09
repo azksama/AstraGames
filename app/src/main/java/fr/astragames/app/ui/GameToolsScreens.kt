@@ -39,12 +39,13 @@ private val gameSaveSaver = listSaver<GameSave?, Any>(
 internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () -> Unit) {
     val context = androidx.compose.ui.platform.LocalContext.current
     var showSaves by rememberSaveable(game.id) { mutableStateOf(false) }
+    var showWolfSaves by rememberSaveable(game.id) { mutableStateOf(false) }
     var showBackups by rememberSaveable(game.id) { mutableStateOf(false) }
     var showTranslation by rememberSaveable(game.id) { mutableStateOf(false) }
     var showMods by rememberSaveable(game.id) { mutableStateOf(false) }
     var editing by rememberSaveable(game.id, stateSaver = gameSaveSaver) { mutableStateOf<GameSave?>(null) }
     val sections = remember(game) { GameToolsRegistry.sectionsFor(game) }
-    if (!showSaves && !showBackups && !showMods && !showTranslation && editing == null) ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+    if (!showSaves && !showWolfSaves && !showBackups && !showMods && !showTranslation && editing == null) ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         LazyColumn(contentPadding = PaddingValues(bottom = 24.dp)) {
         item {
         Text("Outils", Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.titleLarge)
@@ -56,11 +57,13 @@ internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () 
             items(tools, key = { it.id }) { tool ->
                 ListItem(
                     headlineContent = { Text(tool.title) },
-                    supportingContent = tool.description?.let { desc -> { Text(desc) } },
+                    supportingContent = tool.description?.let { desc -> {
+                        Text(if (game.engine == "WOLF_RPG" && tool.id == "save_folder") "Voir les emplacements réels et exporter les sauvegardes" else desc)
+                    } },
                     leadingContent = { Icon(tool.icon, null) },
                     modifier = Modifier.clickable(role = Role.Button) {
                         when (tool.id) {
-                            "save_folder" -> vm.openGameSaveFolder(game.id)
+                            "save_folder" -> if (game.engine == "WOLF_RPG") showWolfSaves = true else vm.openGameSaveFolder(game.id)
                             "save_editor" -> showSaves = true
                             "save_backups" -> showBackups = true
                             "mods" -> showMods = true
@@ -77,6 +80,7 @@ internal fun GameToolsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: () 
         }
     }
     if (showSaves) SaveListSheet(game, vm, { editing = it; showSaves = false }, { showSaves = false })
+    if (showWolfSaves) WolfSavesSheet(game) { showWolfSaves = false }
     if (showBackups) SaveBackupsSheet(game, vm) { showBackups = false }
     if (showTranslation) GameTranslationScreen(game, vm.translation) { showTranslation = false }
     if (showMods) ModsSheet(game, vm) { showMods = false }

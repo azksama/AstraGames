@@ -20,6 +20,22 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
             setSelection(selected); layout.addView(this)
         }
     }
+    val storage = choice("Fichiers du jeu · au prochain lancement", WolfStorageMode.entries.map { it.label }, original.storageMode.ordinal)
+    label("Le dossier d’origine évite l’import et reçoit directement les sauvegardes. Une copie privée reste disponible si le dossier est inaccessible ou si des sauvegardes sont en conflit.")
+    if (android.os.Build.VERSION.SDK_INT >= 30) {
+        label(if (android.os.Environment.isExternalStorageManager()) "Accès direct au stockage local autorisé."
+            else "Android demande l’accès à tous les fichiers pour lancer un jeu local sans copie. Cette autorisation est facultative : sans elle, Astra utilise une copie privée.")
+        layout.addView(Button(context).apply {
+            text = "Accès à tous les fichiers · réglages Android"
+            setOnClickListener {
+                val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
+                    android.net.Uri.parse("package:${host.packageName}"))
+                runCatching { host.startActivity(intent) }.onFailure {
+                    Toast.makeText(host, "Ouvrez les réglages Android → Astra → Accès à tous les fichiers.", Toast.LENGTH_LONG).show()
+                }
+            }
+        })
+    }
     fun toggle(title: String, selected: Boolean) = Switch(context).apply {
         text = title; isChecked = selected; thumbTintList = accent; minHeight = dp(48); layout.addView(this)
     }
@@ -58,7 +74,8 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
         .setPositiveButton("Enregistrer") { _, _ ->
             store.save(WolfOptions(WolfPerformance.entries[performance.selectedItemPosition], WolfOptions.resolutions[resolution.selectedItemPosition],
                 smooth.isChecked, if (fps.selectedItemPosition == 0) 30 else 60, counter.isChecked, touch.selectedItemPosition == 1,
-                opacity.progress + 15, size.progress + 70, WolfImageMode.entries[imageMode.selectedItemPosition])); changed()
+                opacity.progress + 15, size.progress + 70, WolfImageMode.entries[imageMode.selectedItemPosition],
+                WolfStorageMode.entries[storage.selectedItemPosition])); changed()
         }.create()
     dialog.setOnShowListener {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(accent)

@@ -12,7 +12,8 @@ est Astra · Wolf intégré. Les profils externes explicitement choisis restent 
 Les composants sont téléchargés au premier usage par HTTPS et vérifiés avec un SHA-256 épinglé.
 Le runtime reste dans `noBackupFilesDir/wolf-runtime/wine9-astra-2` ; les jeux importés et leurs
 préfixes restent dans `files/wolf-games/<SHA-256 de l'identifiant du jeu>`.
-La taille nécessaire comprend le runtime, une copie du jeu et un préfixe Windows par jeu.
+La taille nécessaire comprend le runtime partagé et un préfixe Windows par jeu. Une copie du jeu
+est ajoutée uniquement lorsque le mode copie est choisi ou que l’accès direct est impossible.
 
 Le scan d'un sous-dossier s'effectue depuis Paramètres → Sources et scan → Sous-dossier…,
 en naviguant dans un parent déjà autorisé. Il ne marque pas les jeux des autres branches absents.
@@ -28,7 +29,7 @@ en naviguant dans un parent déjà autorisé. Il ne marque pas les jeux des autr
 - `WolfRuntimeActivity` : affichage dans Astra, pavé tactile, clavier, D-pad et boutons A/B,
   fermeture de session, verrouillage Astra au retour de l'arrière-plan et protection des captures.
 - PulseAudio Bionic et sortie Android AAudio ; IPAexGothic pour les caractères japonais.
-- `WolfGameStorage` : copie SAF/file, détection des écritures locales non synchronisées,
+- `WolfGameStorage` : dossier d’origine accessible ou copie SAF/file, détection des écritures locales non synchronisées,
   synchronisation avec comparaison de l'original, sauvegarde de l'ancienne version et export ZIP.
 
 Wine et les jeux s'exécutent sous l'UID d'Astra. Le moteur **n'est pas un bac à sable de sécurité**
@@ -52,7 +53,7 @@ Le hash attendu après correction est
 `d927858a6db35029e13f943067098fafe247e2f955de074719d69b48ce1a0d22`.
 `WINE_DISABLE_FULLSCREEN_HACK=1` évite une récursion du pilote sans RandR.
 
-Le mode logiciel Wolf et le mode fenêtré sont imposés dans la **copie privée** de `Game.ini`,
+En mode copie, le mode logiciel Wolf et le mode fenêtré sont imposés dans la **copie privée** de `Game.ini`,
 créée si elle n'existe pas. Les sources utilisateur ne sont pas modifiées pour cela.
 Les événements FocusIn/FocusOut et SetInputFocus du serveur X11 ont été corrigés pour que
 les commandes tactiles atteignent réellement le jeu.
@@ -61,6 +62,9 @@ les commandes tactiles atteignent réellement le jeu.
 
 Après une fermeture normale, les fichiers changés sont réécrits vers la source si leur version
 source correspond à celle importée. Une ancienne version est gardée sous `.astra-wolf-backup-*`.
+En mode direct, le jeu écrit immédiatement dans son dossier d’origine. Avant de passer d’une
+ancienne copie au mode direct, les modifications privées sont synchronisées avec comparaison
+de la version source. Un conflit maintient le lancement depuis la copie privée.
 En cas de conflit, les deux versions restent disponibles ; le bilan propose Exporter les sauvegardes.
 Une fermeture forcée conserve la copie privée pour la prochaine ouverture. Ne pas effacer les
 données d'Astra ou désinstaller avant d'avoir synchronisé/exporté les sauvegardes.
@@ -68,6 +72,25 @@ données d'Astra ou désinstaller avant d'avoir synchronisé/exporté les sauveg
 `Game.ini`, les EXE et les DLL sont exclus de la synchronisation. Les fichiers supprimés dans le
 jeu ne sont pas supprimés automatiquement de la source. Les exports du catalogue `.astra`
 ne contiennent pas les copies privées Wolf ni les préfixes Windows.
+
+Depuis la bêta 10, la fiche du jeu propose **Outils → Dossier des sauvegardes** : repérage de
+`Save`, `Saves`, `SaveData`, `SaveFiles`, `.sav`, `.save`, et des écritures de la copie privée.
+Les données utilisateur Windows du préfixe sont aussi repérées et incluses dans le ZIP sous
+`Windows/drive_c/users/…`, y compris les fichiers d’une version ancienne. Les liens symboliques
+ne sont pas suivis par cet inventaire. Les sauvegardes Windows ne sont pas réécrites dans la source.
+
+Le mode direct résout uniquement les chemins locaux pris en charge par `FileAccessResolver`,
+vérifie la lecture de l’exécutable et la création d’un fichier temporaire dans le dossier choisi.
+Sur Android 11+, l’autorisation facultative `MANAGE_EXTERNAL_STORAGE` permet les lectures natives
+de Wine/Box64 dans le stockage partagé. Le sélecteur SAF reste utilisé pour le catalogue et le
+mode copie ; les fournisseurs sans chemin local restent compatibles avec cette copie.
+Voir la [documentation Android](https://developer.android.com/training/data-storage/manage-all-files).
+
+En mode direct, `WolfDirectConfiguration` conserve l’original de `Game.ini` dans un journal privé
+avant d’activer temporairement les deux modes. Une fermeture normale restaure l’original ; après
+un arrêt du processus, le lancement suivant reprend la restauration. Les autres préférences
+écrites par le jeu sont conservées. Une modification concurrente des modes bloque la restauration
+et conserve le journal original, au lieu d’écraser le fichier source.
 
 ## Provenance et reconstruction
 

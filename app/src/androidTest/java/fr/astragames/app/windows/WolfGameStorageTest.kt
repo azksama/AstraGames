@@ -12,7 +12,7 @@ class WolfGameStorageTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val id = UUID.randomUUID().toString()
         val source = File(context.cacheDir, "wolf-refresh-$id").apply { mkdirs() }
-        val storage = WolfGameStorage(context, id, source.toURI().toString())
+        val storage = WolfGameStorage(context, id, source.toURI().toString(), preferDirect = false)
         try {
             for (name in listOf("mod.dat", "local.dat", "save.sav")) File(source, name).writeText("original")
             storage.prepare { }
@@ -30,7 +30,7 @@ class WolfGameStorageTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val id = UUID.randomUUID().toString()
         val source = File(context.cacheDir, "wolf-70k-$id").apply { mkdirs() }
-        val storage = WolfGameStorage(context, id, source.toURI().toString())
+        val storage = WolfGameStorage(context, id, source.toURI().toString(), preferDirect = false)
         try {
             File(source, "Game.exe").writeText("fixture")
             File(source, "Save").mkdirs()
@@ -48,7 +48,7 @@ class WolfGameStorageTest {
             assertTrue(protectedAsset.setReadable(false, false))
             val progress = mutableListOf<String>()
             val start = android.os.SystemClock.elapsedRealtime()
-            val reopened = WolfGameStorage(context, id, source.toURI().toString())
+            val reopened = WolfGameStorage(context, id, source.toURI().toString(), preferDirect = false)
             reopened.prepare("Game.exe", progress::add)
             val warmMs = android.os.SystemClock.elapsedRealtime() - start
             assertEquals("external newer save", File(storage.game, "Save/slot.sav").readText())
@@ -69,7 +69,7 @@ class WolfGameStorageTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val id = UUID.randomUUID().toString()
         val source = File(context.cacheDir, "wolf-migration-$id").apply { mkdirs() }
-        val storage = WolfGameStorage(context, id, source.toURI().toString())
+        val storage = WolfGameStorage(context, id, source.toURI().toString(), preferDirect = false)
         try {
             File(source, "Game.exe").writeText("old exe")
             File(source, "progress.dat").writeText("before")
@@ -78,7 +78,7 @@ class WolfGameStorageTest {
             storage.prefix.mkdirs(); File(storage.prefix, ".astra-ready").writeText("wine9-astra-2")
             File(storage.game, "progress.dat").writeText("pending local save")
             File(source, "Game.exe").writeText("new exe")
-            val reopened = WolfGameStorage(context, id, source.toURI().toString())
+            val reopened = WolfGameStorage(context, id, source.toURI().toString(), preferDirect = false)
             reopened.prepare("Game.exe") { }
             assertEquals("old exe", File(storage.game, "Game.exe").readText())
             assertEquals(0, reopened.synchronize())
@@ -93,7 +93,7 @@ class WolfGameStorageTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val id = UUID.randomUUID().toString()
         val source = File(context.cacheDir, "wolf-partial-$id").apply { mkdirs() }
-        val storage = WolfGameStorage(context, id, source.toURI().toString())
+        val storage = WolfGameStorage(context, id, source.toURI().toString(), preferDirect = false)
         try {
             File(source, "Game.exe").writeText("game")
             storage.prepare("Game.exe") { }
@@ -102,7 +102,7 @@ class WolfGameStorageTest {
             assertTrue(runCatching { storage.prepare("Game.exe") { } }.isFailure)
             assertFalse(org.json.JSONObject(File(storage.directory, "import-state.json").readText()).getBoolean("complete"))
             assertTrue(unreadable.setReadable(true, true))
-            WolfGameStorage(context, id, source.toURI().toString()).prepare("Game.exe") { }
+            WolfGameStorage(context, id, source.toURI().toString(), preferDirect = false).prepare("Game.exe") { }
             assertEquals("new", File(storage.game, "new.bin").readText())
         } finally { source.deleteRecursively(); storage.directory.deleteRecursively() }
     }
@@ -127,7 +127,7 @@ class WolfGameStorageTest {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
         val source = File(context.cacheDir, "wolf-bulk-${UUID.randomUUID()}").apply { mkdirs() }
         repeat(1000) { File(source, "data-$it.bin").writeText("asset-$it") }
-        val storage = WolfGameStorage(context, UUID.randomUUID().toString(), source.toURI().toString())
+        val storage = WolfGameStorage(context, UUID.randomUUID().toString(), source.toURI().toString(), preferDirect = false)
         try {
             val updates = mutableListOf<String>()
             storage.prepare(progress = updates::add)
@@ -153,7 +153,7 @@ class WolfGameStorageTest {
         File(source, "Game.exe").writeText("fixture")
         File(source, "Save").mkdirs()
         val sourceSave = File(source, "Save/Save01.sav").apply { writeText("old") }
-        val storage = WolfGameStorage(context, id, source.toURI().toString())
+        val storage = WolfGameStorage(context, id, source.toURI().toString(), preferDirect = false)
         try {
             storage.prepare { }
             assertEquals(originalIni, File(source, "Game.ini").readText())
@@ -164,7 +164,7 @@ class WolfGameStorageTest {
             assertTrue(File(source, "Save").listFiles()!!.any { it.name.startsWith(".astra-wolf-backup-") && it.readText() == "old" })
             File(storage.game, "Save/Save01.sav").writeText("unsynchronized progress")
             sourceSave.writeText("external progress")
-            WolfGameStorage(context, id, source.toURI().toString()).prepare { }
+            WolfGameStorage(context, id, source.toURI().toString(), preferDirect = false).prepare { }
             assertEquals("unsynchronized progress", File(storage.game, "Save/Save01.sav").readText())
             val exported = java.io.ByteArrayOutputStream()
             storage.exportSaves(exported)
@@ -183,7 +183,7 @@ class WolfGameStorageTest {
         val id = UUID.randomUUID().toString()
         val source = File(context.cacheDir, "wolf-fixture-$id").apply { mkdirs() }
         File(source, "Game.exe").writeText("fixture")
-        val storage = WolfGameStorage(context, id, source.toURI().toString())
+        val storage = WolfGameStorage(context, id, source.toURI().toString(), preferDirect = false)
         try {
             storage.prepare { }
             assertTrue(File(storage.game, "Game.ini").readText().contains("SoftModeFlag=1"))
