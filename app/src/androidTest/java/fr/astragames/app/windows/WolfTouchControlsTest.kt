@@ -15,12 +15,14 @@ class WolfTouchControlsTest {
         ActivityScenario.launch(MainActivity::class.java).use { scenario -> scenario.onActivity { activity ->
             val store = WolfGameOptions(activity, "drag-controls-${System.nanoTime()}")
             val controls = WolfTouchControls(activity, { _, _ -> }, {}, store)
+            controls.setPadding(45, 80, 35, 110)
             activity.setContentView(controls)
             controls.measure(View.MeasureSpec.makeMeasureSpec(1000, View.MeasureSpec.EXACTLY), View.MeasureSpec.makeMeasureSpec(1800, View.MeasureSpec.EXACTLY))
             controls.layout(0, 0, 1000, 1800)
             controls.setEditing(true)
             val left = buttons(controls).first { it.contentDescription == "Gauche" }
             val beforeX = left.x
+            assertTrue(left.x >= 45 && left.y >= 80)
             fun drag(action: Int, x: Float, y: Float) {
                 MotionEvent.obtain(0, 0, action, x, y, 0).let { left.dispatchTouchEvent(it); it.recycle() }
             }
@@ -37,7 +39,8 @@ class WolfTouchControlsTest {
             val saved = requireNotNull(store.position("left", landscape))
             controls.reload()
             controls.layout(0, 0, 1000, 1800)
-            assertEquals(saved.first * (1000 - left.width), left.x, .1f)
+            assertEquals(45 + saved.first * (1000 - 45 - 35 - left.width), left.x, .1f)
+            assertTrue(left.y + left.height <= 1800 - 110)
         } }
     }
     @Test fun sharedRemappingDoesNotReleaseAnotherHeldButton() {

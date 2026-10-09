@@ -187,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.8](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.8). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.9](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.9). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
@@ -233,7 +233,7 @@ pendant la partie, et préserve le début des logs. Voir les [mesures et limites
 
 La bêta 7 ajoute **Outils → Réglages Wolf RPG**, également accessibles dans **Menu → Réglages du jeu** :
 profils Équilibré/Rapide/Stable, affichage de 800×600 à 1920×1080, lissage, limite de 30/60 images/s
-et compteur des images reçues. Le bureau est à 1280×960 par défaut ; l’image du jeu est agrandie
+et compteur des images reçues. Dans cette version, le bureau était à 1280×960 par défaut ; l’image du jeu est agrandie
 en conservant ses proportions. La définition interne reste celle du jeu. Les profils Box64 et
 la résolution prennent effet au prochain lancement ; les autres réglages sont immédiats.
 Les notifications de dessin sont regroupées et le debug n’active plus la trace de chaque exception.
@@ -254,6 +254,22 @@ et ce compteur ne mesure pas la cadence interne de Wolf. Le diagnostic ajoute le
 soumission du rendu, le volume des transferts et leurs tailles. Les mesures sur émulateur
 réduisent environ de moitié le coût d’un transfert de texte ; un minimum permanent de 30–60 FPS
 sur téléphone n’est pas établi. Voir les [mesures de la bêta 8](docs/VALIDATION_1.12.0-beta.8.md).
+
+La bêta 9 utilise toute la surface de l’écran et cadre directement l’image du jeu, indépendamment
+du format du bureau Windows. **Menu → Réglages du jeu → Cadrage** propose trois choix immédiats,
+mémorisés par jeu : **Image entière** (défaut, agrandissement maximal sans déformation),
+**Remplir** (recadrage sans déformation) et **Étirer** (plein écran avec déformation).
+Les marges nécessaires au format du jeu restent en mode Image entière ; les deux autres modes
+remplissent l’écran. Les commandes restent accessibles autour des encoches et des barres système.
+L’affichage Windows automatique utilise 1280×960 lors d’un lancement en portrait et 1280×720
+en paysage. Une définition choisie manuellement reste conservée. Ce bureau ne modifie pas
+la définition interne du jeu : seuls les jeux qui dessinent en 16:9 fournissent une image 16:9 complète.
+
+Les transferts des fenêtres logicielles utilisent un instantané réutilisé de la zone modifiée :
+Wine peut préparer les images suivantes pendant les transferts du pilote graphique.
+Les buffers partagés et les images GPU gardent leur synchronisation complète.
+Le diagnostic mesure aussi le temps du verrou des images. Voir les
+[mesures et limites de la bêta 9](docs/VALIDATION_1.12.0-beta.9.md).
 
 Les cinq dernières sessions sont conservées localement, avec rotation des logs (512 Kio × deux
 fichiers et 64 Kio de début par flux). Aucun envoi automatique ; l’export texte peut contenir le nom du jeu et des

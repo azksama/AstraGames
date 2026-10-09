@@ -20,6 +20,11 @@ import androidx.biometric.BiometricPrompt
 import androidx.biometric.BiometricManager
 import androidx.core.content.ContextCompat
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.SystemBarStyle
+import androidx.activity.enableEdgeToEdge
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
+import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.lifecycleScope
 import com.winlator.widget.XServerView
 import com.winlator.xconnector.UnixSocketConfig
@@ -62,6 +67,8 @@ class WolfRuntimeActivity : FragmentActivity() {
     private lateinit var root: FrameLayout
     private lateinit var status: TextView
     private lateinit var controls: WolfTouchControls
+    private var resultLayout: LinearLayout? = null
+    private var safeArea = androidx.core.graphics.Insets.NONE
     private var closing = false
     private var gameStorage: WolfGameStorage? = null
     private var diagnostic: WolfDiagnosticSession? = null
@@ -78,6 +85,12 @@ class WolfRuntimeActivity : FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT), navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT))
+        if (android.os.Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
+        if (android.os.Build.VERSION.SDK_INT >= 28) window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode = if (android.os.Build.VERSION.SDK_INT >= 30) WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+                else WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
         // A restored activity must not automatically rerun the game that just killed the process.
         // MainActivity recovers the original report after the app has been unlocked.
         if (savedInstanceState != null) {
@@ -87,7 +100,8 @@ class WolfRuntimeActivity : FragmentActivity() {
             return
         }
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_SECURE)
-        optionStore = WolfGameOptions(this, requireNotNull(intent.getStringExtra("id")))
+        // Invalid internal arguments must reach begin()'s durable diagnostic handler.
+        optionStore = WolfGameOptions(this, intent.getStringExtra("id").orEmpty())
         gameOptions = optionStore.read()
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         status = TextView(this).apply {
@@ -96,11 +110,12 @@ class WolfRuntimeActivity : FragmentActivity() {
         }
         root.addView(status, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
-        androidx.core.view.ViewCompat.setOnApplyWindowInsetsListener(root) { view, insets ->
-            val bars = insets.getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars())
-            view.setPadding(bars.left, bars.top, bars.right, bars.bottom)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            safeArea = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
+            applySafeArea()
             insets
         }
+        immerse()
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() { closeSession() }
         })
@@ -138,7 +153,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                 setupDisplay()
                 x11 = XServerComponent(server, xSocket).also { it.start() }
                 shm = SysVSharedMemoryComponent(server, shmSocket).also { it.start() }
-                diagnostic?.event("Options : profil=${gameOptions.performance}; écran=${gameOptions.resolution}; lissage=${gameOptions.smooth}; limite=${gameOptions.maxFps}")
+                diagnostic?.event("Options : profil=${gameOptions.performance}; écran=${server!!.screenInfo.width}x${server!!.screenInfo.height}; cadrage=${gameOptions.imageMode}; lissage=${gameOptions.smooth}; limite=${gameOptions.maxFps}")
                 runner = WolfProcess(this@WolfRuntimeActivity, runtime, storage, xSocket.path, shmSocket.path, diagnostic, gameOptions)
                 progress("Initialisation de Windows… Le premier lancement peut prendre quelques minutes.")
                 runInterruptible(Dispatchers.IO) { runner.initialize() }
@@ -190,11 +205,13 @@ class WolfRuntimeActivity : FragmentActivity() {
     }
 
     private fun setupDisplay() {
-        server = XServer(this, ScreenInfo(gameOptions.resolution))
+        val landscape = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        server = XServer(this, ScreenInfo(gameOptions.windowsResolution(landscape)))
         display = XServerView(this, server).also { view ->
             server!!.renderer = view.renderer
             view.renderer.setForceWindowsFullscreen(true)
             view.renderer.setSmoothScaling(gameOptions.smooth)
+            view.renderer.setImageScaleMode(gameOptions.imageMode.ordinal)
             view.setMaxFps(gameOptions.maxFps)
             root.addView(view, 0, FrameLayout.LayoutParams(-1, -1))
             touchInput = WolfTouchInput({ x, y -> server?.injectPointerMove(x, y) }, { down ->
@@ -205,7 +222,8 @@ class WolfRuntimeActivity : FragmentActivity() {
                 val transform = view.renderer.viewTransformation
                 if ((::controls.isInitialized && controls.editing) || lockOverlay != null) { touchInput?.cancel(); true }
                 else touchInput?.touch(event, WolfViewport(transform.viewOffsetX, transform.viewOffsetY,
-                    transform.viewWidth, transform.viewHeight, server!!.screenInfo.width.toInt(), server!!.screenInfo.height.toInt()), gameOptions.directionalTouch) ?: true
+                    transform.viewWidth, transform.viewHeight, server!!.screenInfo.width.toInt(), server!!.screenInfo.height.toInt(),
+                    view.width, view.height), gameOptions.directionalTouch) ?: true
             }
         }
         controls = WolfTouchControls(this, { key, down ->
@@ -215,27 +233,38 @@ class WolfRuntimeActivity : FragmentActivity() {
         }, ::closeSession, optionStore, {
             releaseKeys()
             showWolfOptions(this, optionStore) {
-                gameOptions = optionStore.read(); controls.reload(); updateControlLayout()
+                gameOptions = optionStore.read(); controls.reload()
                 display?.renderer?.setSmoothScaling(gameOptions.smooth); display?.setMaxFps(gameOptions.maxFps)
+                display?.renderer?.setImageScaleMode(gameOptions.imageMode.ordinal)
+                diagnostic?.event("Cadrage modifié : ${gameOptions.imageMode}")
             }
         }, ::releaseKeys).apply { visibility = View.GONE }
         root.addView(controls, FrameLayout.LayoutParams(-1, -1))
         fpsLabel = TextView(this).apply { setTextColor(Color.WHITE); setBackgroundColor(0xAA17121E.toInt()); textSize = 12f; setPadding(dp(8), dp(4), dp(8), dp(4)) }
         root.addView(fpsLabel, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { leftMargin = dp(8); topMargin = dp(8) })
-        updateControlLayout()
+        applySafeArea()
         lockOverlay?.bringToFront()
     }
-    private fun updateControlLayout() {
-        val portrait = resources.configuration.orientation != android.content.res.Configuration.ORIENTATION_LANDSCAPE
-        (display?.layoutParams as? FrameLayout.LayoutParams)?.let {
-            it.bottomMargin = if (portrait) dp(maxOf(144, 156 * gameOptions.size / 100) + 28) else 0
-            display?.layoutParams = it
+    private fun applySafeArea() {
+        if (::controls.isInitialized) controls.setPadding(safeArea.left, safeArea.top, safeArea.right, safeArea.bottom)
+        fpsLabel?.let { label -> (label.layoutParams as? FrameLayout.LayoutParams)?.let {
+            it.leftMargin = safeArea.left + dp(8); it.topMargin = safeArea.top + dp(8); label.layoutParams = it
+        } }
+        status.setPadding(safeArea.left + dp(12), safeArea.top + dp(12), safeArea.right + dp(12), safeArea.bottom + dp(12))
+        resultLayout?.setPadding(safeArea.left + dp(12), safeArea.top + dp(12), safeArea.right + dp(12), safeArea.bottom + dp(12))
+        // Compose overlays already consume their own safe drawing/IME insets.
+    }
+    private fun immerse() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            hide(WindowInsetsCompat.Type.systemBars())
         }
     }
+    override fun onWindowFocusChanged(hasFocus: Boolean) { super.onWindowFocusChanged(hasFocus); if (hasFocus) immerse() }
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
         releaseKeys()
-        updateControlLayout()
+        if (::controls.isInitialized) controls.requestLayout()
     }
     private fun focusGame() {
         val current = server ?: return
@@ -290,11 +319,13 @@ class WolfRuntimeActivity : FragmentActivity() {
     private fun showResult(message: String) {
         root.removeAllViews()
         val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(24, 24, 24, 24) }
+        resultLayout = layout
         layout.addView(TextView(this).apply { text = message; textSize = 17f; setTextColor(Color.WHITE); gravity = Gravity.CENTER })
         layout.addView(Button(this).apply { text = "Retour à Astra"; setOnClickListener { finish() } })
         if (diagnostic != null) layout.addView(Button(this).apply { text = "Voir le rapport de diagnostic"; setOnClickListener { showDiagnostic() } })
         if (gameStorage != null) layout.addView(Button(this).apply { text = "Exporter les sauvegardes"; setOnClickListener { exportPicker.launch("Astra-Wolf-sauvegardes.zip") } })
         root.addView(layout, FrameLayout.LayoutParams(-1, -1))
+        applySafeArea()
         lockOverlay?.let { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }
     }
     private fun showDiagnostic() {
@@ -309,7 +340,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                     }
                 }
             }
-        }.also { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }
+        }.also { root.addView(it, FrameLayout.LayoutParams(-1, -1)); applySafeArea() }
     }
     private fun hardwareKey(event: KeyEvent): Boolean {
         if (lockOverlay == null && event.keyCode != KeyEvent.KEYCODE_BACK) {
@@ -357,7 +388,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                     } }
                 }
             }
-        }.also { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }
+        }.also { root.addView(it, FrameLayout.LayoutParams(-1, -1)); applySafeArea() }
     }
     override fun onStop() { if (!isChangingConfigurations && settings?.lockOnBackground == true) lockRuntime(); super.onStop() }
     override fun onPause() { releaseKeys(); display?.onPause(); super.onPause() }

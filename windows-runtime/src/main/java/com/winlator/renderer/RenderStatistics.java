@@ -8,11 +8,13 @@ public final class RenderStatistics {
     private final long[] gaps = new long[600];
     private long epoch = System.nanoTime(), lastContent, frames, updates, submitNanos, maxSubmit;
     private long uploadBytes, fullUploads, partialUploads;
+    private long drawableLockNanos, maxDrawableLock;
     private int gapCount;
 
     public synchronized void updated() { updates++; }
-    public synchronized void frame(boolean content, long now, long submission, long bytes, long full, long partial) {
+    public synchronized void frame(boolean content, long now, long submission, long bytes, long full, long partial, long drawableLock) {
         submitNanos += submission; maxSubmit = Math.max(maxSubmit, submission);
+        drawableLockNanos += drawableLock; maxDrawableLock = Math.max(maxDrawableLock, drawableLock);
         uploadBytes += bytes; fullUploads += full; partialUploads += partial;
         frames++;
         if (content) {
@@ -29,11 +31,13 @@ public final class RenderStatistics {
         double p95 = sorted.length == 0 ? 0 : sorted[(sorted.length - 1) * 95 / 100] / 1e6;
         String result = String.format(Locale.ROOT,
             "Rendu Android : intervalle=%.1fs, notifications=%d, dessins=%d, soumission moyenne=%.2fms/max=%.2fms, " +
-            "écart images p95=%.2fms, transferts=%.2fMio/s, complets=%d, partiels=%d. " +
+            "verrou images moyenne=%.2fms/max=%.2fms, écart images p95=%.2fms, transferts=%.2fMio/s, complets=%d, partiels=%d. " +
             "Soumission CPU/pilote, hors exécution GPU asynchrone ; un écart peut aussi être une image statique.",
-            seconds, updates, frames, frames == 0 ? 0 : submitNanos / 1e6 / frames, maxSubmit / 1e6, p95,
+            seconds, updates, frames, frames == 0 ? 0 : submitNanos / 1e6 / frames, maxSubmit / 1e6,
+            frames == 0 ? 0 : drawableLockNanos / 1e6 / frames, maxDrawableLock / 1e6, p95,
             uploadBytes / seconds / (1024 * 1024), fullUploads, partialUploads);
         epoch = now; frames = updates = submitNanos = maxSubmit = uploadBytes = fullUploads = partialUploads = 0;
+        drawableLockNanos = maxDrawableLock = 0;
         gapCount = 0;
         return result;
     }

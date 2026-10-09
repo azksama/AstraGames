@@ -29,9 +29,9 @@ class WolfTextureTransferTest {
         }
     }
 
-    private fun verify(drawable: Drawable) {
+    private fun verify(drawable: Drawable, expected: ByteBuffer = requireNotNull(drawable.data), update: Boolean = true) {
         val texture = drawable.texture
-        texture.updateFromDrawable()
+        if (update) texture.updateFromDrawable()
         val framebuffer = IntArray(1)
         GLES20.glGenFramebuffers(1, framebuffer, 0)
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, framebuffer[0])
@@ -39,7 +39,7 @@ class WolfTextureTransferTest {
         assertEquals(GLES20.GL_FRAMEBUFFER_COMPLETE, GLES20.glCheckFramebufferStatus(GLES20.GL_FRAMEBUFFER))
         val pixels = ByteBuffer.allocateDirect(drawable.width * drawable.height * 4)
         GLES20.glReadPixels(0, 0, drawable.width.toInt(), drawable.height.toInt(), GLES20.GL_RGBA, GLES20.GL_UNSIGNED_BYTE, pixels)
-        val data = requireNotNull(drawable.data)
+        val data = expected
         for (i in 0 until pixels.capacity() step 4) {
             assertEquals("red at $i", data.get(i + 2), pixels.get(i))
             assertEquals("green at $i", data.get(i + 1), pixels.get(i + 1))
@@ -49,6 +49,76 @@ class WolfTextureTransferTest {
         GLES20.glBindFramebuffer(GLES20.GL_FRAMEBUFFER, 0)
         GLES20.glDeleteFramebuffers(1, framebuffer, 0)
         assertEquals(GLES20.GL_NO_ERROR, GLES20.glGetError())
+    }
+
+    @Test fun capturedPixelsStayConsistentWhileWinePreparesTheNextFrame() = withGl {
+        val drawable = Drawable(9010, 63, 47, null)
+        fun snapshot(): ByteBuffer = ByteBuffer.allocateDirect(63 * 47 * 4).apply {
+            put(requireNotNull(drawable.data).duplicate().apply { rewind() }); rewind()
+        }
+        val texture = drawable.texture
+        try {
+            drawable.fillColor(0x102030)
+            var expected = snapshot()
+            texture.captureUpdate()
+            drawable.fillRect(7, 11, 8, 6, 0xE01020)
+            assertTrue(texture.isNeedsUpdate)
+            texture.uploadCapturedUpdate()
+            verify(drawable, expected, update = false)
+            assertTrue("A newer update must survive the old frame upload", texture.isNeedsUpdate)
+            val bytes = texture.uploadedBytes
+            expected = snapshot()
+            texture.captureUpdate()
+            drawable.fillRect(41, 35, 6, 5, 0x1234AB)
+            texture.uploadCapturedUpdate()
+            verify(drawable, expected, update = false)
+            assertEquals(8L * 6 * 4, texture.uploadedBytes - bytes)
+            texture.captureUpdate(); texture.uploadCapturedUpdate()
+            verify(drawable, update = false)
+            val unchanged = texture.uploadedBytes
+            texture.captureUpdate(); texture.uploadCapturedUpdate()
+            assertEquals(unchanged, texture.uploadedBytes)
+            drawable.fillRect(2, 3, 2, 3, 0x456789)
+            drawable.fillRect(60, 44, 30, 30, 0xFFAA22)
+            texture.captureUpdate(); texture.uploadCapturedUpdate()
+            verify(drawable, update = false)
+            texture.destroy()
+            texture.captureUpdate(); texture.uploadCapturedUpdate()
+            verify(drawable, update = false)
+        } finally { texture.destroy() }
+    }
+
+    @Test fun measureSynchronizedCopyCostAgainstDriverWaits() = withGl {
+        val drawable = Drawable(9011, 1280, 960, null)
+        try {
+            drawable.fillColor(0); drawable.texture.updateFromDrawable(); GLES20.glFinish()
+            val output = StringBuilder("Android Emulator x86_64; 200 frames per case; critical section excludes lock acquisition\n")
+            for ((width, height) in listOf(256 to 32, 1280 to 960)) {
+                for (capture in listOf(false, true)) {
+                    val locked = mutableListOf<Long>(); val totals = mutableListOf<Long>()
+                    val bytes = drawable.texture.uploadedBytes
+                    repeat(200) { i ->
+                        drawable.fillRect(0, 0, width, height, (i + 1) * 837)
+                        val start = System.nanoTime()
+                        if (capture) {
+                            drawable.texture.captureUpdate()
+                            locked += System.nanoTime() - start
+                            drawable.texture.uploadCapturedUpdate()
+                        } else {
+                            drawable.texture.updateFromDrawable()
+                            locked += System.nanoTime() - start
+                        }
+                        GLES20.glFinish()
+                        totals += System.nanoTime() - start
+                    }
+                    locked.sort(); totals.sort()
+                    assertEquals(width.toLong() * height * 4 * 200, drawable.texture.uploadedBytes - bytes)
+                    output.append("${width}x$height capture=$capture: lock p50Ms=${locked[100] / 1e6}, p95Ms=${locked[190] / 1e6}; total p50Ms=${totals[100] / 1e6}, p95Ms=${totals[190] / 1e6}\n")
+                    verify(drawable, update = false)
+                }
+            }
+            File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "wolf-lock-benchmark.txt").writeText(output.toString())
+        } finally { drawable.texture.destroy() }
     }
 
     @Test fun updatesPreserveEveryPixelAcrossClippingCoalescingAndCopies() = withGl {

@@ -50,7 +50,11 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     public final ViewTransformation viewTransformation = new ViewTransformation();
     private final Drawable rootCursorDrawable;
     private final ArrayList<RenderableWindow> renderableWindows = new ArrayList<>();
+    private final ArrayList<Texture> capturedTextures = new ArrayList<>();
     private boolean forceWindowsFullscreen;
+    private boolean fitGameImage;
+    private int imageScaleMode;
+    private int imageWidth, imageHeight;
     private boolean fullscreen = false;
     private boolean toggleFullscreen = false;
     protected boolean viewportNeedsUpdate = true;
@@ -67,10 +71,17 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     private final java.util.concurrent.atomic.AtomicLong contentFrames = new java.util.concurrent.atomic.AtomicLong();
     private volatile boolean smoothScaling = false;
     private final RenderStatistics statistics = new RenderStatistics();
-    private long frameUploadBytes, frameFullUploads, framePartialUploads;
+    private long frameUploadBytes, frameFullUploads, framePartialUploads, frameDrawableLockNanos;
     public long getContentFrameCount() { return contentFrames.get(); }
     public String getPerformanceSnapshot() { return statistics.snapshotAndReset(); }
     public void setSmoothScaling(boolean value) { smoothScaling = value; xServerView.requestRender(); }
+    public void setImageScaleMode(int mode) {
+        xServerView.queueEvent(() -> {
+            fitGameImage = true; imageScaleMode = mode >= 0 && mode <= 2 ? mode : 0;
+            updateScene(); updateViewport();
+        });
+        xServerView.requestRender();
+    }
 
     public GLRenderer(XServerView xServerView, XServer xServer) {
         this.xServerView = xServerView;
@@ -109,14 +120,21 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     public void onSurfaceChanged(GL10 gl, int width, int height) {
         surfaceWidth = (short)width;
         surfaceHeight = (short)height;
-        viewTransformation.update(width, height, xServer.screenInfo.width, xServer.screenInfo.height);
+        updateViewport();
+        viewportNeedsUpdate = true;
+    }
+
+    private void updateViewport() {
+        viewTransformation.update(surfaceWidth, surfaceHeight, xServer.screenInfo.width, xServer.screenInfo.height,
+            imageWidth > 0 ? imageWidth : xServer.screenInfo.width, imageHeight > 0 ? imageHeight : xServer.screenInfo.height,
+            imageScaleMode);
         viewportNeedsUpdate = true;
     }
 
     @Override
     public void onDrawFrame(GL10 gl) {
         long frameStart = System.nanoTime();
-        frameUploadBytes = frameFullUploads = framePartialUploads = 0;
+        frameUploadBytes = frameFullUploads = framePartialUploads = frameDrawableLockNanos = 0;
         boolean receivedContent = contentPending.getAndSet(false);
         if (toggleFullscreen) {
             fullscreen = !fullscreen;
@@ -130,7 +148,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         else drawFrame();
         if (receivedContent) contentFrames.incrementAndGet();
         long frameEnd = System.nanoTime();
-        statistics.frame(receivedContent, frameEnd, frameEnd - frameStart, frameUploadBytes, frameFullUploads, framePartialUploads);
+        statistics.frame(receivedContent, frameEnd, frameEnd - frameStart, frameUploadBytes, frameFullUploads, framePartialUploads, frameDrawableLockNanos);
     }
 
     protected void drawFrame() {
@@ -230,11 +248,11 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         }
     }
 
-    private void renderWindowDrawable(Drawable drawable, int x, int y, boolean transparent, FullscreenTransformation fullscreenTransformation) {
+    private void renderWindowDrawable(Drawable drawable, Texture texture, int x, int y, boolean transparent, FullscreenTransformation fullscreenTransformation, boolean captured) {
         synchronized (drawable.renderLock) {
-            Texture texture = drawable.getTexture();
             long bytes = texture.getUploadedBytes(), full = texture.getFullUploads(), partial = texture.getPartialUploads();
-            texture.updateFromDrawable();
+            if (captured) texture.uploadCapturedUpdate();
+            else texture.updateFromDrawable();
             frameUploadBytes += texture.getUploadedBytes() - bytes;
             frameFullUploads += texture.getFullUploads() - full;
             framePartialUploads += texture.getPartialUploads() - partial;
@@ -259,19 +277,55 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     }
 
     private void renderWindows() {
+        capturedTextures.clear();
+        try (XLock lock = xServer.lock(XServer.Lockable.DRAWABLE_MANAGER)) {
+            long lockStart = System.nanoTime();
+            boolean shared = false;
+            for (RenderableWindow window : renderableWindows) {
+                if (!window.content.isOffscreenStorage() && (window.content.getTexture() instanceof GPUImage ||
+                    window.content.isUseSharedData() || window.content.getData() == null)) {
+                    shared = true;
+                    break;
+                }
+            }
+            if (shared) {
+                // External writers and GPU images retain the complete synchronized path, including draw order.
+                beginWindowRendering();
+                for (RenderableWindow window : renderableWindows) {
+                    if (!window.content.isOffscreenStorage()) renderWindowDrawable(window.content, window.content.getTexture(),
+                        window.rootX, window.rootY, window.transparent, window.fullscreenTransformation, false);
+                }
+                quadVertices.disable();
+                frameDrawableLockNanos += System.nanoTime() - lockStart;
+                return;
+            }
+            for (RenderableWindow window : renderableWindows) {
+                Texture texture = null;
+                if (!window.content.isOffscreenStorage()) {
+                    texture = window.content.getTexture();
+                    synchronized (window.content.renderLock) {
+                        texture.captureUpdate();
+                    }
+                }
+                capturedTextures.add(texture);
+            }
+            frameDrawableLockNanos += System.nanoTime() - lockStart;
+        }
+        // Driver upload/draw waits must not stop Wine's next frame, input or asset requests.
+        beginWindowRendering();
+        for (int i = 0; i < renderableWindows.size(); i++) {
+            RenderableWindow window = renderableWindows.get(i);
+            Texture texture = capturedTextures.get(i);
+            if (texture != null) renderWindowDrawable(window.content, texture, window.rootX,
+                window.rootY, window.transparent, window.fullscreenTransformation, true);
+        }
+        quadVertices.disable();
+    }
+
+    private void beginWindowRendering() {
         windowMaterial.use();
         windowMaterial.setUniformVec2(windowMaterial.uniforms.viewSize, xServer.screenInfo.width, xServer.screenInfo.height);
         quadVertices.bind(windowMaterial.programId);
-
-        try (XLock lock = xServer.lock(XServer.Lockable.DRAWABLE_MANAGER)) {
-            for (RenderableWindow window : renderableWindows) {
-                if (!window.content.isOffscreenStorage()) {
-                    renderWindowDrawable(window.content, window.rootX, window.rootY, window.transparent, window.fullscreenTransformation);
-                }
-            }
-        }
-
-        quadVertices.disable();
     }
 
     private void renderCursor() {
@@ -310,8 +364,10 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     private void updateScene() {
         try (XLock lock = xServer.lock(XServer.Lockable.WINDOW_MANAGER, XServer.Lockable.DRAWABLE_MANAGER)) {
             renderableWindows.clear();
+            imageWidth = imageHeight = 0;
             collectRenderableWindows(xServer.windowManager.rootWindow, xServer.windowManager.rootWindow.getX(), xServer.windowManager.rootWindow.getY());
         }
+        updateViewport();
     }
 
     private void collectRenderableWindows(Window window, int x, int y) {
@@ -326,7 +382,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
                 FullscreenTransformation fullscreenTransformation = null;
 
                 boolean inBounds = width >= ScreenInfo.MIN_WIDTH && height >= ScreenInfo.MIN_HEIGHT &&
-                    width <= xServer.screenInfo.width && height <= xServer.screenInfo.height;
+                    (fitGameImage || (width <= xServer.screenInfo.width && height <= xServer.screenInfo.height));
                 // Wine's software Wolf window advertises decorations even though no WM draws them.
                 // Fit its top-level client area too, while leaving dialogs and the desktop alone.
                 boolean gameWindow = window.hasNoDecorations() || (parent == xServer.windowManager.rootWindow &&
@@ -334,12 +390,17 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
                 if (window.getType() == Window.Type.NORMAL && inBounds && gameWindow) {
                     fullscreenTransformation = window.getFullscreenTransformation();
                     if (fullscreenTransformation == null) window.setFullscreenTransformation(fullscreenTransformation = new FullscreenTransformation(window));
-                    fullscreenTransformation.update(xServer.screenInfo, window.getWidth(), window.getHeight());
+                    if (fitGameImage) {
+                        fullscreenTransformation.useEntireDesktop(xServer.screenInfo);
+                        if ((long)width * height > (long)imageWidth * imageHeight) { imageWidth = width; imageHeight = height; }
+                    }
+                    else fullscreenTransformation.update(xServer.screenInfo, window.getWidth(), window.getHeight());
 
                     if (parent != xServer.windowManager.rootWindow && parent.getChildCount() == 1 && parent.hasDecoration(Decoration.BORDER) && parent.hasDecoration(Decoration.TITLE)) {
                         FullscreenTransformation parentFullscreenTransformation = parent.getFullscreenTransformation();
                         if (parentFullscreenTransformation == null) parent.setFullscreenTransformation(parentFullscreenTransformation = new FullscreenTransformation(parent));
-                        parentFullscreenTransformation.update(xServer.screenInfo, parent.getWidth(), parent.getHeight());
+                        if (fitGameImage) parentFullscreenTransformation.useEntireDesktop(xServer.screenInfo);
+                        else parentFullscreenTransformation.update(xServer.screenInfo, parent.getWidth(), parent.getHeight());
 
                         removeRenderableWindow(parent);
                     }

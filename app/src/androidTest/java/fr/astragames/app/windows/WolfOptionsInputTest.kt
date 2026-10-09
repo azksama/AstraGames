@@ -12,7 +12,7 @@ class WolfOptionsInputTest {
     @Test fun preferencesRemainPerGameAndResetOnlyControls() {
         val id = "options-test-${System.nanoTime()}"
         val store = WolfGameOptions(context, id)
-        store.save(WolfOptions(performance = WolfPerformance.FAST, resolution = "1920x1080", opacity = 31, size = 140))
+        store.save(WolfOptions(performance = WolfPerformance.FAST, resolution = "1920x1080", opacity = 31, size = 140, imageMode = WolfImageMode.FILL))
         store.bind("accept", XKeycode.KEY_Z)
         store.position("accept", false, .25f, .8f)
         store.position("accept", true, .6f, .3f)
@@ -31,12 +31,13 @@ class WolfOptionsInputTest {
         assertEquals(WolfPerformance.FAST, restored.read().performance)
         assertEquals("1920x1080", restored.read().resolution)
         assertFalse(restored.read().smooth)
+        assertEquals(WolfImageMode.FILL, restored.read().imageMode)
     }
 
     @Test fun invalidPreferencesAreBounded() {
         val store = WolfGameOptions(context, "invalid-options-${System.nanoTime()}")
         store.save(WolfOptions(resolution = "broken", opacity = -20, size = 500, maxFps = 999))
-        assertEquals("1280x960", store.read().resolution)
+        assertEquals("auto", store.read().resolution)
         assertEquals(15, store.read().opacity)
         assertEquals(150, store.read().size)
         assertEquals(60, store.read().maxFps)
@@ -44,6 +45,19 @@ class WolfOptionsInputTest {
         assertEquals(0f to 1f, store.position("left", false))
         store.position("left", false, Float.NaN, 0f)
         assertEquals(0f to 1f, store.position("left", false))
+    }
+
+    @Test fun croppedViewportMapsVisibleClicksAndRejectsHiddenEdges() {
+        val viewport = WolfViewport(0, -180, 1920, 1440, 1280, 960, 1920, 1080)
+        assertEquals(640 to 480, viewport.point(960f, 540f))
+        assertEquals(0 to 120, viewport.point(0f, 0f))
+        assertNull(viewport.point(500f, -1f))
+        assertNull(viewport.point(500f, 1080f))
+        val portrait = WolfViewport(-1060, 0, 3200, 2400, 1280, 960, 1080, 2400)
+        assertEquals(424 to 0, portrait.point(0f, 0f))
+        assertEquals(640 to 480, portrait.point(540f, 1200f))
+        assertNull(portrait.point(-1f, 1200f))
+        assertNull(portrait.point(1080f, 1200f))
     }
 
     @Test fun clicksMapToGameAndCancelOutsideViewport() {

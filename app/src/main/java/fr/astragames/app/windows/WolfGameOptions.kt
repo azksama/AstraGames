@@ -13,17 +13,27 @@ internal enum class WolfPerformance(val label: String, val strongMemory: String,
         "BOX64_DYNAREC_X87DOUBLE" to "1")
 }
 
+internal enum class WolfImageMode(val label: String) {
+    FIT("Image entière · proportions conservées"),
+    FILL("Remplir · recadrer sans déformer"),
+    STRETCH("Étirer · utiliser tout l’écran")
+}
+
 internal data class WolfOptions(
     val performance: WolfPerformance = WolfPerformance.BALANCED,
-    val resolution: String = "1280x960",
+    val resolution: String = "auto",
     val smooth: Boolean = true,
     val maxFps: Int = 60,
     val showFps: Boolean = true,
     val directionalTouch: Boolean = false,
     val opacity: Int = 75,
-    val size: Int = 100
+    val size: Int = 100,
+    val imageMode: WolfImageMode = WolfImageMode.FIT
 ) {
-    companion object { val resolutions = listOf("800x600", "1280x720", "1280x960", "1920x1080") }
+    fun windowsResolution(landscape: Boolean) = if (resolution == "auto") {
+        if (landscape) "1280x720" else "1280x960"
+    } else resolution
+    companion object { val resolutions = listOf("auto", "800x600", "1280x720", "1280x960", "1920x1080") }
 }
 
 /** One preference record per game; no mutation of source game files. */
@@ -34,15 +44,17 @@ internal class WolfGameOptions(context: Context, id: String) {
     fun read(): WolfOptions = json().let {
         WolfOptions(
             performance = runCatching { WolfPerformance.valueOf(it.optString("performance", "BALANCED")) }.getOrDefault(WolfPerformance.BALANCED),
-            resolution = it.optString("resolution", "1280x960").takeIf(WolfOptions.resolutions::contains) ?: "1280x960",
+            resolution = it.optString("resolution", "auto").takeIf(WolfOptions.resolutions::contains) ?: "auto",
             smooth = it.optBoolean("smooth", true), maxFps = if (it.optInt("maxFps", 60) == 30) 30 else 60,
             showFps = it.optBoolean("showFps", true), directionalTouch = it.optBoolean("directionalTouch"),
-            opacity = it.optInt("opacity", 75).coerceIn(15, 100), size = it.optInt("size", 100).coerceIn(70, 150))
+            opacity = it.optInt("opacity", 75).coerceIn(15, 100), size = it.optInt("size", 100).coerceIn(70, 150),
+            imageMode = runCatching { WolfImageMode.valueOf(it.optString("imageMode", "FIT")) }.getOrDefault(WolfImageMode.FIT))
     }
     fun save(options: WolfOptions) {
         val data = json().put("performance", options.performance.name).put("resolution", options.resolution)
             .put("smooth", options.smooth).put("maxFps", options.maxFps).put("showFps", options.showFps)
             .put("directionalTouch", options.directionalTouch).put("opacity", options.opacity).put("size", options.size)
+            .put("imageMode", options.imageMode.name)
         prefs.edit().putString(key, data.toString()).apply()
     }
     fun binding(id: String, fallback: XKeycode): XKeycode = runCatching {

@@ -4,10 +4,11 @@ import android.view.MotionEvent
 import com.winlator.xserver.XKeycode
 import kotlin.math.abs
 
-internal data class WolfViewport(val left: Int, val top: Int, val width: Int, val height: Int, val screenWidth: Int, val screenHeight: Int) {
+internal data class WolfViewport(val left: Int, val top: Int, val width: Int, val height: Int, val screenWidth: Int, val screenHeight: Int,
+    val visibleWidth: Int = Int.MAX_VALUE, val visibleHeight: Int = Int.MAX_VALUE) {
     fun point(x: Float, y: Float): Pair<Int, Int>? {
         if (width <= 0 || height <= 0 || screenWidth <= 0 || screenHeight <= 0 || !x.isFinite() || !y.isFinite() ||
-            x < left || y < top || x >= left + width || y >= top + height) return null
+            x < maxOf(0, left) || y < maxOf(0, top) || x >= minOf(visibleWidth, left + width) || y >= minOf(visibleHeight, top + height)) return null
         return ((x - left) * screenWidth / width).toInt().coerceIn(0, screenWidth - 1) to
             ((y - top) * screenHeight / height).toInt().coerceIn(0, screenHeight - 1)
     }

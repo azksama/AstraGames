@@ -79,6 +79,7 @@
         <activity
             android:name=".windows.WolfRuntimeActivity"
             android:exported="false"
+            android:windowSoftInputMode="adjustResize"
             android:launchMode="singleTask"
             android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|density|uiMode" />
         <activity

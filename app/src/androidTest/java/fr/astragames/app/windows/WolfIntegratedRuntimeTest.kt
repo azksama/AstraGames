@@ -27,6 +27,9 @@ class WolfIntegratedRuntimeTest {
             .putExtra("executable", "Game.exe").putExtra("title", "Wolf officiel")
         val diagnostics = WolfDiagnostics(context)
         val previousDebug = diagnostics.enabled
+        val store = WolfGameOptions(context, "official-wolf-test-$sample-beta5")
+        val previousOptions = store.read()
+        store.save(previousOptions.copy(resolution = "auto", imageMode = WolfImageMode.FIT))
         if (InstrumentationRegistry.getArguments().getString("wolfDebug") == "true") diagnostics.enabled = true
         try { ActivityScenario.launch<android.app.Activity>(intent).use { scenario ->
             scenario.onActivity { it.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
@@ -115,6 +118,47 @@ class WolfIntegratedRuntimeTest {
                 descendants(activity.window.decorView).filterIsInstance<com.winlator.widget.XServerView>().first().setMaxFps(60)
                 renderer!!.setSmoothScaling(true)
             }
+            fun checkModes(landscape: Boolean) {
+                for (mode in WolfImageMode.entries) {
+                    scenario.onActivity { activity -> buttons(activity.window.decorView).first { it.text == "Menu" }.performClick() }
+                    androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText("Réglages du jeu"))
+                        .perform(androidx.test.espresso.action.ViewActions.click())
+                    androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withContentDescription("Cadrage · immédiat"))
+                        .perform(androidx.test.espresso.action.ViewActions.scrollTo(), androidx.test.espresso.action.ViewActions.click())
+                    screenshot("integrated-mode-choices.png")
+                    androidx.test.espresso.Espresso.onData(org.hamcrest.Matchers.equalTo(mode.label))
+                        .inRoot(androidx.test.espresso.matcher.RootMatchers.isPlatformPopup())
+                        .perform(androidx.test.espresso.action.ViewActions.click())
+                    androidx.test.espresso.Espresso.onView(androidx.test.espresso.matcher.ViewMatchers.withText("Enregistrer"))
+                        .perform(androidx.test.espresso.action.ViewActions.click())
+                    Thread.sleep(500)
+                    assertEquals(mode, store.read().imageMode)
+                    scenario.onActivity { activity ->
+                        val view = descendants(activity.window.decorView).filterIsInstance<com.winlator.widget.XServerView>().first()
+                        val transform = view.renderer.viewTransformation
+                        assertEquals("Game must use the full root, including the old control band", activity.window.decorView.height, view.height)
+                        val viewport = WolfViewport(transform.viewOffsetX, transform.viewOffsetY, transform.viewWidth,
+                            transform.viewHeight, 1280, 960, view.width, view.height)
+                        assertEquals(640 to 480, viewport.point(view.width / 2f, view.height / 2f))
+                        if (mode == WolfImageMode.FIT) {
+                            assertTrue(transform.viewWidth <= view.width && transform.viewHeight <= view.height)
+                        } else if (mode == WolfImageMode.FILL) {
+                            assertTrue(transform.viewWidth >= view.width && transform.viewHeight >= view.height)
+                        } else {
+                            assertEquals(view.width, transform.viewWidth)
+                            assertEquals(view.height, transform.viewHeight)
+                        }
+                        val controls = descendants(activity.window.decorView).filterIsInstance<WolfTouchControls>().first()
+                        val menu = buttons(controls).first { it.text == "Menu" }
+                        assertTrue(menu.x >= controls.paddingLeft && menu.y >= controls.paddingTop)
+                        assertTrue(menu.x + menu.width <= controls.width - controls.paddingRight)
+                        File(context.getExternalFilesDir(null), "wolf-fps.txt").appendText(
+                            "\n${if (landscape) "Landscape" else "Portrait"} $mode: view=${view.width}x${view.height}; image=${transform.viewWidth}x${transform.viewHeight}@${transform.viewOffsetX},${transform.viewOffsetY}")
+                    }
+                    screenshot("integrated-${if (landscape) "landscape" else "portrait"}-$mode.png")
+                }
+            }
+            checkModes(true)
             scenario.onActivity { activity -> showWolfOptions(activity, WolfGameOptions(activity, "official-wolf-test-$sample-beta5")) {} }
             Thread.sleep(500)
             screenshot("integrated-settings-landscape.png")
@@ -122,6 +166,7 @@ class WolfIntegratedRuntimeTest {
                 .perform(androidx.test.espresso.action.ViewActions.click())
             scenario.onActivity { it.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_PORTRAIT }
             Thread.sleep(1500)
+            checkModes(false)
             scenario.onActivity { activity -> showWolfOptions(activity, WolfGameOptions(activity, "official-wolf-test-$sample-beta5")) {} }
             Thread.sleep(500)
             screenshot("integrated-settings.png")
@@ -143,7 +188,7 @@ class WolfIntegratedRuntimeTest {
                 assertFalse(report.contains("a wine server seems to be running, but I cannot connect"))
                 assertTrue("Normal close must finalize the diagnostic session", report.contains("État : Fermeture demandée"))
             }
-        } finally { diagnostics.enabled = previousDebug }
+        } finally { diagnostics.enabled = previousDebug; store.save(previousOptions) }
     }
     private fun buttons(view: View): List<Button> = if (view is Button) listOf(view) else if (view is ViewGroup) (0 until view.childCount).flatMap { buttons(view.getChildAt(it)) } else emptyList()
     private fun descendants(view: View): List<View> = listOf(view) + if (view is ViewGroup) (0 until view.childCount).flatMap { descendants(view.getChildAt(it)) } else emptyList()

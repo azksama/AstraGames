@@ -68,6 +68,12 @@ public class Drawable extends XResource {
         this.data = data;
     }
 
+    /** Caller holds the drawable manager lock. The packed copy can then be uploaded without blocking X11. */
+    public void copyPixelsTo(ByteBuffer destination, int x, int y, int width, int height) {
+        copyArea((short)x, (short)y, (short)0, (short)0, (short)width, (short)height, getStride(), (short)width, data, destination);
+        destination.rewind();
+    }
+
     private short getStride() {
         return texture instanceof GPUImage ? ((GPUImage)texture).getStride() : width;
     }

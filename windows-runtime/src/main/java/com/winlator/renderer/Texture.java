@@ -22,6 +22,9 @@ public class Texture {
     private boolean fullUpdate = true;
     private int dirtyLeft, dirtyTop, dirtyRight, dirtyBottom;
     private long uploadedBytes, fullUploads, partialUploads;
+    private ByteBuffer capturedPixels;
+    private boolean captured;
+    private int capturedX, capturedY, capturedWidth, capturedHeight, capturedImageWidth, capturedImageHeight;
 
     public long getUploadedBytes() { return uploadedBytes; }
     public long getFullUploads() { return fullUploads; }
@@ -177,6 +180,37 @@ public class Texture {
         }
     }
 
+    /** Snapshot damage under the X11 drawable lock. Reuse one packed buffer, growing only when needed. */
+    public void captureUpdate() {
+        if (captured || owner == null || owner.getData() == null || (isAllocated() && !needsUpdate)) return;
+        boolean complete = !isAllocated() || fullUpdate;
+        capturedX = complete ? 0 : dirtyLeft; capturedY = complete ? 0 : dirtyTop;
+        capturedWidth = complete ? owner.width : dirtyRight - dirtyLeft;
+        capturedHeight = complete ? owner.height : dirtyBottom - dirtyTop;
+        capturedImageWidth = owner.width; capturedImageHeight = owner.height;
+        int bytes = capturedWidth * capturedHeight * 4;
+        if (capturedPixels == null || capturedPixels.capacity() < bytes) capturedPixels = ByteBuffer.allocateDirect(bytes);
+        owner.copyPixelsTo(capturedPixels, capturedX, capturedY, capturedWidth, capturedHeight);
+        captured = true;
+        setNeedsUpdate(false);
+    }
+
+    /** GL thread only. Incoming X11 updates after capture remain dirty for the next frame. */
+    public void uploadCapturedUpdate() {
+        if (!captured) return;
+        if (!isAllocated()) allocateTexture((short)capturedImageWidth, (short)capturedImageHeight, capturedPixels);
+        else {
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId);
+            GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, capturedX, capturedY, capturedWidth, capturedHeight,
+                format, GLES20.GL_UNSIGNED_BYTE, capturedPixels);
+            GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
+        }
+        uploadedBytes += (long)capturedWidth * capturedHeight * 4;
+        if (capturedWidth == capturedImageWidth && capturedHeight == capturedImageHeight) fullUploads++;
+        else partialUploads++;
+        captured = false;
+    }
+
     public boolean isAllocated() {
         return textureId > 0;
     }
@@ -205,6 +239,7 @@ public class Texture {
     }
 
     public void destroy() {
+        capturedPixels = null; captured = false;
         if (textureId > 0) {
             int[] textureIds = new int[]{textureId};
             GLES20.glDeleteTextures(textureIds.length, textureIds, 0);

@@ -54,12 +54,13 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
                         MotionEvent.ACTION_MOVE -> {
                             if (abs(event.rawX - downX) + abs(event.rawY - downY) > dp(8)) dragged = true
                             if (dragged) {
-                                view.x = (originX + event.rawX - downX).coerceIn(0f, (width - view.width).coerceAtLeast(0).toFloat())
-                                view.y = (originY + event.rawY - downY).coerceIn(0f, (height - view.height).coerceAtLeast(0).toFloat())
+                                view.x = (originX + event.rawX - downX).coerceIn(paddingLeft.toFloat(), (width - paddingRight - view.width).coerceAtLeast(paddingLeft).toFloat())
+                                view.y = (originY + event.rawY - downY).coerceIn(paddingTop.toFloat(), (height - paddingBottom - view.height).coerceAtLeast(paddingTop).toFloat())
                             }
                         }
                         MotionEvent.ACTION_UP -> if (dragged) {
-                            store?.position(def.id, landscape(), view.x / (width - view.width).coerceAtLeast(1), view.y / (height - view.height).coerceAtLeast(1))
+                            store?.position(def.id, landscape(), (view.x - paddingLeft) / (width - paddingLeft - paddingRight - view.width).coerceAtLeast(1),
+                                (view.y - paddingTop) / (height - paddingTop - paddingBottom - view.height).coerceAtLeast(1))
                         } else view.performClick()
                         MotionEvent.ACTION_CANCEL -> { view.x = originX; view.y = originY }
                     }
@@ -122,20 +123,22 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
     override fun onLayout(changed: Boolean, l: Int, t: Int, r: Int, b: Int) {
         super.onLayout(changed, l, t, r, b)
         val step = dp(52 * options.size / 100).coerceAtLeast(dp(48))
+        val areaWidth = width - paddingLeft - paddingRight
+        val areaHeight = height - paddingTop - paddingBottom
         for (def in definitions) {
             val view = buttons.getValue(def.id)
             val saved = store?.position(def.id, landscape())
             val default = when (def.id) {
-                "up" -> (dp(12) + step).toFloat() to (height - dp(12) - step * 3).toFloat()
-                "left" -> dp(12).toFloat() to (height - dp(12) - step * 2).toFloat()
-                "right" -> (dp(12) + step * 2).toFloat() to (height - dp(12) - step * 2).toFloat()
-                "down" -> (dp(12) + step).toFloat() to (height - dp(12) - step).toFloat()
-                "accept" -> (width - dp(12) - view.width).toFloat() to (height - dp(22) - step * 2).toFloat()
-                "back" -> (width - dp(20) - view.width - dp(76 * options.size / 100)).toFloat() to (height - dp(12) - view.height).toFloat()
-                else -> (width - dp(20) - view.width - dp(76 * options.size / 100)).toFloat() to (height - dp(12) - step * 3).toFloat()
+                "up" -> (dp(12) + step).toFloat() to (areaHeight - dp(12) - step * 3).toFloat()
+                "left" -> dp(12).toFloat() to (areaHeight - dp(12) - step * 2).toFloat()
+                "right" -> (dp(12) + step * 2).toFloat() to (areaHeight - dp(12) - step * 2).toFloat()
+                "down" -> (dp(12) + step).toFloat() to (areaHeight - dp(12) - step).toFloat()
+                "accept" -> (areaWidth - dp(12) - view.width).toFloat() to (areaHeight - dp(22) - step * 2).toFloat()
+                "back" -> (areaWidth - dp(20) - view.width - dp(76 * options.size / 100)).toFloat() to (areaHeight - dp(12) - view.height).toFloat()
+                else -> (areaWidth - dp(20) - view.width - dp(76 * options.size / 100)).toFloat() to (areaHeight - dp(12) - step * 3).toFloat()
             }
-            view.x = (saved?.first?.times(width - view.width) ?: default.first).coerceIn(0f, (width - view.width).coerceAtLeast(0).toFloat())
-            view.y = (saved?.second?.times(height - view.height) ?: default.second).coerceIn(0f, (height - view.height).coerceAtLeast(0).toFloat())
+            view.x = paddingLeft + (saved?.first?.times(areaWidth - view.width) ?: default.first).coerceIn(0f, (areaWidth - view.width).coerceAtLeast(0).toFloat())
+            view.y = paddingTop + (saved?.second?.times(areaHeight - view.height) ?: default.second).coerceIn(0f, (areaHeight - view.height).coerceAtLeast(0).toFloat())
         }
         if (indexOfChild(menuButton) != childCount - 1) menuButton.bringToFront()
     }

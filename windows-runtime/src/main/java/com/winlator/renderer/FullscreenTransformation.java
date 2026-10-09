@@ -23,6 +23,12 @@ public class FullscreenTransformation {
         this.height = targetHeight;
     }
 
+    public void useEntireDesktop(ScreenInfo screenInfo) {
+        // The physical viewport restores the game's aspect ratio; logical coordinates still span the desktop.
+        x = y = 0;
+        width = screenInfo.width; height = screenInfo.height;
+    }
+
     public short[] transformPointerCoords(short x, short y) {
         short[] localPoint = window.rootPointToLocal(x, y, true);
         float scaleX = (float)window.getWidth() / this.width;

@@ -36,8 +36,13 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
     }
     val performance = choice("Fluidité · au prochain lancement", WolfPerformance.entries.map { it.label }, original.performance.ordinal)
     label("Rapide favorise la vitesse ; revenez à Stable si le jeu devient instable.")
-    val resolution = choice("Affichage Windows · au prochain lancement", WolfOptions.resolutions, WolfOptions.resolutions.indexOf(original.resolution))
+    val resolution = choice("Affichage Windows · au prochain lancement", WolfOptions.resolutions.map {
+        if (it == "auto") "Automatique (orientation)" else it
+    }, WolfOptions.resolutions.indexOf(original.resolution))
     label("La définition interne dépend du jeu. Le lissage adoucit les pixels lors de l’agrandissement.")
+    label("Automatique : bureau 4:3 en portrait, 16:9 en paysage, au lancement.")
+    val imageMode = choice("Cadrage · immédiat", WolfImageMode.entries.map { it.label }, original.imageMode.ordinal)
+    label("Image entière montre tout le jeu. Remplir coupe les bords ; Étirer déforme les proportions. Un jeu 4:3 ne gagne pas de décor en changeant le bureau Windows.")
     val smooth = toggle("Lissage renforcé", original.smooth)
     val fps = choice("Limite d’affichage", listOf("30 images/s", "60 images/s"), if (original.maxFps == 30) 0 else 1)
     val counter = toggle("Compteur d’images modifiées", original.showFps)
@@ -53,7 +58,7 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
         .setPositiveButton("Enregistrer") { _, _ ->
             store.save(WolfOptions(WolfPerformance.entries[performance.selectedItemPosition], WolfOptions.resolutions[resolution.selectedItemPosition],
                 smooth.isChecked, if (fps.selectedItemPosition == 0) 30 else 60, counter.isChecked, touch.selectedItemPosition == 1,
-                opacity.progress + 15, size.progress + 70)); changed()
+                opacity.progress + 15, size.progress + 70, WolfImageMode.entries[imageMode.selectedItemPosition])); changed()
         }.create()
     dialog.setOnShowListener {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(accent)
