@@ -3,6 +3,7 @@ package fr.astragames.app.windows
 import android.graphics.Bitmap
 import android.view.View
 import android.view.ViewGroup
+import android.view.MotionEvent
 import android.widget.Button
 import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
@@ -60,8 +61,42 @@ class WolfIntegratedRuntimeTest {
             val frameStart = android.os.SystemClock.elapsedRealtime()
             Thread.sleep(10_000)
             val fps = (renderer!!.contentFrameCount - firstFrame) * 1000.0 / (android.os.SystemClock.elapsedRealtime() - frameStart)
-            File(context.getExternalFilesDir(null), "wolf-fps.txt").writeText("Official Wolf sample; emulator x86_64; received content FPS=$fps")
+            File(context.getExternalFilesDir(null), "wolf-fps.txt").writeText("Official Wolf sample; emulator x86_64; changed content images/s=$fps")
             assertTrue("No game content frames were presented", fps > 0)
+            // The official map starts with a multi-page explanation; finish it before walking.
+            repeat(24) {
+                scenario.onActivity { activity -> buttons(activity.window.decorView).first { it.text == "Valider" }.performClick() }
+                Thread.sleep(500)
+            }
+            screenshot("integrated-before-moving.png")
+            // Exercise actual touch buttons while the player moves, rather than counting idle animation.
+            val movingStart = renderer!!.contentFrameCount
+            val movingTime = android.os.SystemClock.elapsedRealtime()
+            for (direction in listOf("Droite", "Gauche", "Bas", "Haut")) {
+                var button: Button? = null
+                val downTime = android.os.SystemClock.uptimeMillis()
+                scenario.onActivity { activity ->
+                    button = buttons(activity.window.decorView).first { it.contentDescription == direction }
+                    MotionEvent.obtain(downTime, downTime, MotionEvent.ACTION_DOWN, 10f, 10f, 0).also { button!!.dispatchTouchEvent(it); it.recycle() }
+                }
+                Thread.sleep(2000)
+                screenshot("integrated-moving-$direction.png")
+                scenario.onActivity {
+                    MotionEvent.obtain(downTime, android.os.SystemClock.uptimeMillis(), MotionEvent.ACTION_UP, 10f, 10f, 0).also { event -> button!!.dispatchTouchEvent(event); event.recycle() }
+                }
+            }
+            val movingFps = (renderer!!.contentFrameCount - movingStart) * 1000.0 / (android.os.SystemClock.elapsedRealtime() - movingTime)
+            File(context.getExternalFilesDir(null), "wolf-fps.txt").appendText("\nTouch movement; changed content images/s=$movingFps; ${renderer!!.performanceSnapshot}")
+            assertTrue("No content during touch movement", movingFps > 0)
+            val soak = InstrumentationRegistry.getArguments().getString("wolfSoakSeconds")?.toIntOrNull()?.coerceIn(0, 300) ?: 0
+            for (elapsed in 0 until soak step 10) {
+                val before = renderer!!.contentFrameCount
+                scenario.onActivity { activity -> buttons(activity.window.decorView).first { it.text == "Valider" }.performClick() }
+                Thread.sleep(10_000)
+                val after = renderer!!.contentFrameCount
+                File(context.getExternalFilesDir(null), "wolf-fps.txt").appendText("\nSoak ${elapsed + 10}s: contentFPS=${(after - before) / 10.0}; ${renderer!!.performanceSnapshot}")
+                assertTrue("No content during the soak test", after > before)
+            }
             scenario.onActivity { it.requestedOrientation = android.content.pm.ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE }
             Thread.sleep(1500)
             screenshot("integrated-landscape.png")
@@ -104,6 +139,7 @@ class WolfIntegratedRuntimeTest {
                 assertTrue(report.contains("Lancement du jeu via"))
                 assertTrue(report.contains("===== runtime ====="))
                 assertTrue(report.contains("Serveur Windows supervisé"))
+                assertTrue(report.contains("Rendu Android"))
                 assertFalse(report.contains("a wine server seems to be running, but I cannot connect"))
                 assertTrue("Normal close must finalize the diagnostic session", report.contains("État : Fermeture demandée"))
             }

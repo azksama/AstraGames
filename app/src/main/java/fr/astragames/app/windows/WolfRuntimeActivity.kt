@@ -260,6 +260,7 @@ class WolfRuntimeActivity : FragmentActivity() {
     private fun startFpsCounter() {
         fpsJob = lifecycleScope.launch {
             var previous = display?.renderer?.contentFrameCount ?: 0L
+            display?.renderer?.performanceSnapshot
             var started = android.os.SystemClock.elapsedRealtime()
             var seconds = 0
             while (true) {
@@ -267,9 +268,12 @@ class WolfRuntimeActivity : FragmentActivity() {
                 val now = android.os.SystemClock.elapsedRealtime()
                 val total = display?.renderer?.contentFrameCount ?: previous
                 val fps = (total - previous) * 1000f / (now - started).coerceAtLeast(1)
-                fpsLabel?.text = "Affichage : %.1f FPS".format(java.util.Locale.ROOT, fps)
+                fpsLabel?.text = "Images modifiées : %.1f/s".format(java.util.Locale.ROOT, fps)
                 fpsLabel?.visibility = if (gameOptions.showFps) View.VISIBLE else View.GONE
-                if (++seconds % 10 == 0) withContext(Dispatchers.IO) { diagnostic?.event("Images reçues affichées : %.1f FPS".format(java.util.Locale.ROOT, fps)) }
+                if (++seconds % 10 == 0) {
+                    val metrics = display?.renderer?.performanceSnapshot.orEmpty()
+                    withContext(Dispatchers.IO) { diagnostic?.event("Images modifiées affichées : %.1f/s\n%s".format(java.util.Locale.ROOT, fps, metrics)) }
+                }
                 previous = total; started = now
             }
         }

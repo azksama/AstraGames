@@ -187,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.7](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.7). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.8](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.8). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
@@ -245,6 +245,15 @@ Le tactile propose le clic à l’endroit touché (déplacement si le jeu le gè
 direction depuis le centre de l’image. Ce second mode ne calcule pas un chemin vers une destination.
 Voir les [preuves et limites de la bêta 7](docs/VALIDATION_1.12.0-beta.7.md), notamment la distinction
 entre les FPS mesurés sur l’émulateur x86_64 et les performances ARM64 encore à confirmer sur appareil.
+
+La bêta 8 transfère uniquement les zones modifiées de l’image et réutilise les images identiques,
+y compris lorsque Wine transmet une fenêtre entière pour une petite modification de texte.
+Les dessins sont regroupés sur le rafraîchissement Android, dans la limite 30/60 choisie.
+Le compteur devient **Images modifiées** : une valeur faible sur un écran immobile est normale,
+et ce compteur ne mesure pas la cadence interne de Wolf. Le diagnostic ajoute le coût de
+soumission du rendu, le volume des transferts et leurs tailles. Les mesures sur émulateur
+réduisent environ de moitié le coût d’un transfert de texte ; un minimum permanent de 30–60 FPS
+sur téléphone n’est pas établi. Voir les [mesures de la bêta 8](docs/VALIDATION_1.12.0-beta.8.md).
 
 Les cinq dernières sessions sont conservées localement, avec rotation des logs (512 Kio × deux
 fichiers et 64 Kio de début par flux). Aucun envoi automatique ; l’export texte peut contenir le nom du jeu et des

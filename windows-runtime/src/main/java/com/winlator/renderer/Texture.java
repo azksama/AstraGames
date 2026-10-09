@@ -2,6 +2,7 @@ package com.winlator.renderer;
 
 import android.opengl.GLES11Ext;
 import android.opengl.GLES20;
+import android.opengl.GLES30;
 import android.opengl.GLES32;
 
 import com.winlator.xserver.Drawable;
@@ -18,6 +19,13 @@ public class Texture {
     protected boolean needsUpdate = true;
     private boolean flipY = false;
     protected Drawable owner;
+    private boolean fullUpdate = true;
+    private int dirtyLeft, dirtyTop, dirtyRight, dirtyBottom;
+    private long uploadedBytes, fullUploads, partialUploads;
+
+    public long getUploadedBytes() { return uploadedBytes; }
+    public long getFullUploads() { return fullUploads; }
+    public long getPartialUploads() { return partialUploads; }
 
     public Texture(Drawable owner) {
         this.owner = owner;
@@ -113,6 +121,25 @@ public class Texture {
 
     public void setNeedsUpdate(boolean needsUpdate) {
         this.needsUpdate = needsUpdate;
+        fullUpdate = needsUpdate;
+    }
+
+    /** Bounding union; retain the complete first upload and unknown/shared-buffer updates. */
+    public void markDirty(int x, int y, int width, int height) {
+        if (owner == null) { setNeedsUpdate(true); return; }
+        int left = Math.max(0, x), top = Math.max(0, y);
+        int right = Math.min(owner.width, x + width), bottom = Math.min(owner.height, y + height);
+        if (right <= left || bottom <= top) return;
+        if (needsUpdate && fullUpdate) return;
+        if (!needsUpdate) {
+            dirtyLeft = left; dirtyTop = top; dirtyRight = right; dirtyBottom = bottom;
+        }
+        else {
+            dirtyLeft = Math.min(dirtyLeft, left); dirtyTop = Math.min(dirtyTop, top);
+            dirtyRight = Math.max(dirtyRight, right); dirtyBottom = Math.max(dirtyBottom, bottom);
+        }
+        needsUpdate = true;
+        fullUpdate = dirtyLeft == 0 && dirtyTop == 0 && dirtyRight == owner.width && dirtyBottom == owner.height;
     }
 
     public void updateFromDrawable() {
@@ -121,12 +148,32 @@ public class Texture {
         ByteBuffer data = owner.getData();
         if (!isAllocated()) {
             allocateTexture(owner.width, owner.height, data);
+            uploadedBytes += (long)owner.width * owner.height * 4;
+            fullUploads++;
+            setNeedsUpdate(false);
         }
         else if (needsUpdate) {
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, textureId);
-            GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, owner.width, owner.height, format, GLES20.GL_UNSIGNED_BYTE, data);
+            if (fullUpdate) {
+                GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, 0, 0, owner.width, owner.height, format, GLES20.GL_UNSIGNED_BYTE, data);
+                uploadedBytes += (long)owner.width * owner.height * 4;
+                fullUploads++;
+            }
+            else {
+                // GLES 3 reads the rectangle directly from the existing image buffer: no staging allocation/copy.
+                GLES20.glPixelStorei(GLES30.GL_UNPACK_ROW_LENGTH, owner.width);
+                GLES20.glPixelStorei(GLES30.GL_UNPACK_SKIP_PIXELS, dirtyLeft);
+                GLES20.glPixelStorei(GLES30.GL_UNPACK_SKIP_ROWS, dirtyTop);
+                GLES20.glTexSubImage2D(GLES20.GL_TEXTURE_2D, 0, dirtyLeft, dirtyTop,
+                    dirtyRight - dirtyLeft, dirtyBottom - dirtyTop, format, GLES20.GL_UNSIGNED_BYTE, data);
+                GLES20.glPixelStorei(GLES30.GL_UNPACK_ROW_LENGTH, 0);
+                GLES20.glPixelStorei(GLES30.GL_UNPACK_SKIP_PIXELS, 0);
+                GLES20.glPixelStorei(GLES30.GL_UNPACK_SKIP_ROWS, 0);
+                uploadedBytes += (long)(dirtyRight - dirtyLeft) * (dirtyBottom - dirtyTop) * 4;
+                partialUploads++;
+            }
             GLES20.glBindTexture(GLES20.GL_TEXTURE_2D, 0);
-            needsUpdate = false;
+            setNeedsUpdate(false);
         }
     }
 

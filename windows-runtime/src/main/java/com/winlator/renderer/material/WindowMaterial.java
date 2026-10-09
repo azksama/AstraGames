@@ -43,7 +43,7 @@ public class WindowMaterial extends ShaderMaterial {
             "layout(location = 0) out vec4 outFragColor;",
 
             // Four bilinear fetches implement a cubic B-spline when magnifying.
-            "vec4 cubic(float f) { return vec4(pow(1.0-f,3.0), 3.0*f*f*f-6.0*f*f+4.0, -3.0*f*f*f+3.0*f*f+3.0*f+1.0, f*f*f)/6.0; }",
+            "vec4 cubic(float f) { float f2=f*f; float f3=f2*f; float g=1.0-f; return vec4(g*g*g, 3.0*f3-6.0*f2+4.0, -3.0*f3+3.0*f2+3.0*f+1.0, f3)/6.0; }",
             "vec4 sampleSmooth(vec2 uv) {",
                 "vec2 size = vec2(textureSize(windowTexture, 0));",
                 "vec2 p = uv * size - 0.5; vec2 f = fract(p); p -= f;",

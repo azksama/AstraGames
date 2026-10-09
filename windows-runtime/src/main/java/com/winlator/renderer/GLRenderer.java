@@ -66,7 +66,10 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     private final java.util.concurrent.atomic.AtomicBoolean contentPending = new java.util.concurrent.atomic.AtomicBoolean();
     private final java.util.concurrent.atomic.AtomicLong contentFrames = new java.util.concurrent.atomic.AtomicLong();
     private volatile boolean smoothScaling = false;
+    private final RenderStatistics statistics = new RenderStatistics();
+    private long frameUploadBytes, frameFullUploads, framePartialUploads;
     public long getContentFrameCount() { return contentFrames.get(); }
+    public String getPerformanceSnapshot() { return statistics.snapshotAndReset(); }
     public void setSmoothScaling(boolean value) { smoothScaling = value; xServerView.requestRender(); }
 
     public GLRenderer(XServerView xServerView, XServer xServer) {
@@ -112,6 +115,8 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
 
     @Override
     public void onDrawFrame(GL10 gl) {
+        long frameStart = System.nanoTime();
+        frameUploadBytes = frameFullUploads = framePartialUploads = 0;
         boolean receivedContent = contentPending.getAndSet(false);
         if (toggleFullscreen) {
             fullscreen = !fullscreen;
@@ -124,6 +129,8 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         }
         else drawFrame();
         if (receivedContent) contentFrames.incrementAndGet();
+        long frameEnd = System.nanoTime();
+        statistics.frame(receivedContent, frameEnd, frameEnd - frameStart, frameUploadBytes, frameFullUploads, framePartialUploads);
     }
 
     protected void drawFrame() {
@@ -178,6 +185,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     @Override
     public void onUpdateWindowContent(Window window) {
         if (window.isRenderable()) {
+            statistics.updated();
             contentPending.set(true);
             xServerView.requestContentRender();
         }
@@ -225,7 +233,11 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     private void renderWindowDrawable(Drawable drawable, int x, int y, boolean transparent, FullscreenTransformation fullscreenTransformation) {
         synchronized (drawable.renderLock) {
             Texture texture = drawable.getTexture();
+            long bytes = texture.getUploadedBytes(), full = texture.getFullUploads(), partial = texture.getPartialUploads();
             texture.updateFromDrawable();
+            frameUploadBytes += texture.getUploadedBytes() - bytes;
+            frameFullUploads += texture.getFullUploads() - full;
+            framePartialUploads += texture.getPartialUploads() - partial;
 
             if (fullscreenTransformation != null) {
                 XForm.set(tmpXForm1, fullscreenTransformation.x, fullscreenTransformation.y, fullscreenTransformation.width, fullscreenTransformation.height);

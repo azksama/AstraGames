@@ -6,6 +6,7 @@
 #include <math.h>
 #include <android/bitmap.h>
 #include <android/log.h>
+#include <stdint.h>
 
 #define WHITE 0xffffff
 #define BLACK 0x000000
@@ -111,6 +112,50 @@ Java_com_winlator_xserver_Drawable_copyArea(JNIEnv *env, jclass obj, jshort srcX
             dstDataAddr += dstStride;
         }
     }
+}
+
+/* A software frame can cover the whole window while only a few pixels changed.
+ * Bionic's vectorized memcmp skips identical rows; copy and upload only the changed span. */
+JNIEXPORT jlong JNICALL
+Java_com_winlator_xserver_Drawable_copyAreaChanged(JNIEnv *env, jclass obj,
+        jshort srcX, jshort srcY, jshort dstX, jshort dstY, jshort width, jshort height,
+        jshort srcStride, jshort dstStride, jobject srcData, jobject dstData) {
+    if (width <= 0 || height <= 0 || srcX < 0 || srcY < 0 || dstX < 0 || dstY < 0 ||
+        srcX + width > srcStride || dstX + width > dstStride) return 0;
+    const uint8_t *srcBase = (*env)->GetDirectBufferAddress(env, srcData);
+    uint8_t *dstBase = (*env)->GetDirectBufferAddress(env, dstData);
+    int64_t srcOffset = ((int64_t)srcY * srcStride + srcX) * 4;
+    int64_t dstOffset = ((int64_t)dstY * dstStride + dstX) * 4;
+    int64_t srcSize = ((int64_t)(height - 1) * srcStride + width) * 4;
+    int64_t dstSize = ((int64_t)(height - 1) * dstStride + width) * 4;
+    if (!srcBase || !dstBase || srcOffset + srcSize > (*env)->GetDirectBufferCapacity(env, srcData) ||
+        dstOffset + dstSize > (*env)->GetDirectBufferCapacity(env, dstData)) return 0;
+    const uint8_t *src = srcBase + srcOffset;
+    uint8_t *dst = dstBase + dstOffset;
+    /* Aliased buffers keep the previous copy path; the diff path is for independent frames. */
+    if ((uintptr_t)dst < (uintptr_t)src + srcSize && (uintptr_t)src < (uintptr_t)dst + dstSize) {
+        Java_com_winlator_xserver_Drawable_copyArea(env, obj, srcX, srcY, dstX, dstY,
+            width, height, srcStride, dstStride, srcData, dstData);
+        return ((uint64_t)(uint16_t)dstX << 48) | ((uint64_t)(uint16_t)dstY << 32) |
+            ((uint64_t)(uint16_t)width << 16) | (uint16_t)height;
+    }
+    int left = width, right = 0, top = height, bottom = 0;
+    for (int y = 0; y < height; y++, src += srcStride * 4, dst += dstStride * 4) {
+        if (memcmp(src, dst, width * 4) == 0) continue;
+        int first = 0, last = width;
+        while (first + 16 <= last && memcmp(src + first * 4, dst + first * 4, 64) == 0) first += 16;
+        while (first < last && memcmp(src + first * 4, dst + first * 4, 4) == 0) first++;
+        while (last - 16 >= first && memcmp(src + (last - 16) * 4, dst + (last - 16) * 4, 64) == 0) last -= 16;
+        while (last > first && memcmp(src + (last - 1) * 4, dst + (last - 1) * 4, 4) == 0) last--;
+        memcpy(dst + first * 4, src + first * 4, (last - first) * 4);
+        if (first < left) left = first;
+        if (last > right) right = last;
+        if (y < top) top = y;
+        bottom = y + 1;
+    }
+    if (right <= left) return 0;
+    return ((uint64_t)(uint16_t)(dstX + left) << 48) | ((uint64_t)(uint16_t)(dstY + top) << 32) |
+        ((uint64_t)(uint16_t)(right - left) << 16) | (uint16_t)(bottom - top);
 }
 
 JNIEXPORT void JNICALL
