@@ -65,7 +65,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
             // Migrate pending private writes once, before changing the working directory.
             // If both copies changed, keep the private version playable and exportable.
             progress("Récupération des sauvegardes de l’ancienne copie…")
-            val conflicts = if (!migrated && manifest.isFile && copiedGame.isDirectory) synchronize() else 0
+            val conflicts = if (!migrated && manifest.isFile && copiedGame.isDirectory) synchronize(direct, progress) else 0
             if (conflicts == 0) {
                 progress("Configuration du dossier d’origine…")
                 configuration.apply(direct, executable)
@@ -299,53 +299,62 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
     }
 
     /** Never overwrites a source edited since import. Conflicting saves remain local. */
-    suspend fun synchronize(): Int = withContext(Dispatchers.IO) {
+    suspend fun synchronize(progress: (String) -> Unit = {}): Int = withContext(Dispatchers.IO) {
         if (isDirect) return@withContext 0 // The game already writes into its original folder.
-        val source = documentDir(context, sourceUri.toUri()) ?: error("Dossier source inaccessible ; sauvegardes conservées dans Astra.")
-        check(source.canWrite()) { "Dossier source en lecture seule ; sauvegardes conservées dans Astra." }
-        var conflicts = 0
-        for (file in game.walkTopDown().filter { it.isFile }) {
-            coroutineContext.ensureActive()
-            val path = file.relativeTo(game).invariantSeparatorsPath
-            if (file.name.equals("Game.ini", true) || path.endsWith(".exe", true) || path.endsWith(".dll", true)) continue
-            safeFile(game, path) // Reject links that escape the working copy.
-            // Game saves are always hashed; asset contents are read only after a metadata change.
-            if (!isSave(path) && stamps.optString(path) == stamp(file)) continue
-            val local = WolfRuntimeInstaller.hash(file)
-            val previous = hashes.optString(path).takeIf(String::isNotEmpty)
-            if (local == previous) { stamps.put(path, stamp(file)); continue }
-            var parent = source
-            val segments = path.split('/')
-            for (name in segments.dropLast(1)) parent = parent.findFile(name) ?: parent.createDirectory(name) ?: error("Écriture du dossier impossible.")
-            val name = segments.last()
-            val existing = parent.findFile(name)
-            val incoming = existing?.let { doc ->
-                val temp = File(directory, "source-save.tmp")
-                requireNotNull(context.contentResolver.openInputStream(doc.uri)).use { input -> temp.outputStream().use { input.copyTo(it) } }
-                WolfRuntimeInstaller.hash(temp)
-            }
-            if (incoming == local) { hashes.put(path, local); stamps.put(path, stamp(file)); continue }
-            if (incoming != previous) { conflicts++; continue }
-            val staged = parent.createFile("application/octet-stream", ".astra-wolf-${System.nanoTime()}") ?: error("Création de la sauvegarde impossible.")
-            try {
-                requireNotNull(context.contentResolver.openOutputStream(staged.uri, "wt")).use { output -> file.inputStream().use { it.copyTo(output) } }
-                val backup = ".astra-wolf-backup-${System.nanoTime()}-$name"
-                if (existing != null) check(existing.renameTo(backup)) { "Le fournisseur ne permet pas une sauvegarde sûre. La copie reste dans Astra." }
-                if (!staged.renameTo(name)) {
-                    existing?.renameTo(name)
-                    error("Finalisation impossible ; sauvegarde conservée dans Astra.")
-                }
-                // Keep the previous source version as a hidden backup.
-                hashes.put(path, local)
-                stamps.put(path, stamp(file))
-                saveManifest()
-            } catch (error: Exception) { staged.delete(); throw error }
+        synchronize(directDirectory(null), progress)
+    }
+
+    private suspend fun synchronize(direct: File?, progress: (String) -> Unit): Int {
+        val destination = if (direct != null) WolfFileSaveDestination(direct) else {
+            val source = documentDir(context, sourceUri.toUri()) ?: error("Dossier source inaccessible ; sauvegardes conservées dans Astra.")
+            check(source.canWrite()) { "Dossier source en lecture seule ; sauvegardes conservées dans Astra." }
+            WolfDocumentSaveDestination(context, source.uri)
         }
-        saveManifest()
-        // Do not certify an incomplete import after a failed preparation.
+        // Checkpoint once, including on cancellation. Rewriting a 70,000-entry manifest after
+        // every save made migration quadratic. After process death, matching source/local hashes
+        // also recover a completed write whose index had not yet been checkpointed.
         val complete = cache.isFile && JSONObject(cache.readText()).optBoolean("complete")
-        saveState(complete)
-        conflicts
+        val started = android.os.SystemClock.elapsedRealtime()
+        var lastProgress = started
+        var checked = 0
+        var recovered = 0
+        var conflicts = 0
+        fun report() {
+            progress("Récupération des sauvegardes : $checked fichiers vérifiés · $recovered récupéré(s) · $conflicts conflit(s)")
+            lastProgress = android.os.SystemClock.elapsedRealtime()
+        }
+        report()
+        try {
+            for (file in game.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }.filter { it.isFile }) {
+                coroutineContext.ensureActive()
+                val path = file.relativeTo(game).invariantSeparatorsPath
+                if (path.split('/').any { it.startsWith(".astra-") } || file.name.equals("Game.ini", true) ||
+                    file.extension.lowercase() in setOf("exe", "dll") || java.nio.file.Files.isSymbolicLink(file.toPath())) continue
+                safeFile(game, path)
+                checked++
+                // Saves are always hashed; unchanged assets need only their cached metadata.
+                val unchanged = !isSave(path) && stamps.optString(path) == stamp(file)
+                var firstRecovered = false
+                if (!unchanged) {
+                    val local = wolfSaveHash(file)
+                    val previous = hashes.optString(path).takeIf(String::isNotEmpty)
+                    if (local == previous) stamps.put(path, stamp(file))
+                    else if (destination.recover(file, path, previous, local)) {
+                        hashes.put(path, local)
+                        stamps.put(path, stamp(file))
+                        firstRecovered = ++recovered == 1
+                    } else conflicts++
+                }
+                if (firstRecovered || android.os.SystemClock.elapsedRealtime() - lastProgress >= 1000) report()
+            }
+        } finally {
+            saveManifest()
+            // Do not certify an incomplete import after a failed preparation.
+            saveState(complete)
+        }
+        report()
+        progress("Anciennes sauvegardes vérifiées en ${android.os.SystemClock.elapsedRealtime() - started} ms · $recovered récupéré(s) · $conflicts conflit(s)")
+        return conflicts
     }
     private fun saveManifest() {
         directory.mkdirs()

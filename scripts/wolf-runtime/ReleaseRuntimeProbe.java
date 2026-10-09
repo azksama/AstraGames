@@ -31,6 +31,8 @@ public class ReleaseRuntimeProbe extends Instrumentation {
                 originalIni = original.isFile() ? java.nio.file.Files.readAllBytes(original.toPath()) : null;
             }
             if (!new File(sample, "Game.exe").isFile()) throw new Exception("Missing official fixture");
+            File gameRoot = gameDirectory(gameId);
+            if (arguments != null && "true".equals(arguments.getString("wolfSeedLegacyCopy"))) seedLegacyCopy(sample, gameRoot);
             Intent intent = new Intent().setClassName(getTargetContext(), "fr.astragames.app.windows.WolfRuntimeActivity")
                 .putExtra("id", gameId).putExtra("source", sample.toURI().toString())
                 .putExtra("executable", "Game.exe").putExtra("title", "Wolf release test")
@@ -58,10 +60,8 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             long renderedMs = android.os.SystemClock.elapsedRealtime() - launchStarted;
             boolean coldPrefix = arguments != null && "true".equals(arguments.getString("wolfColdPrefix"));
             if (!coldPrefix && renderedMs >= 60000) throw new Exception("Prepared official sample exceeded 60 seconds: " + renderedMs);
-            java.security.MessageDigest digest = java.security.MessageDigest.getInstance("SHA-256");
-            StringBuilder hash = new StringBuilder();
-            for (byte b : digest.digest(gameId.getBytes("UTF-8"))) hash.append(String.format("%02x", b));
-            File gameRoot = new File(getTargetContext().getFilesDir(), "wolf-games/" + hash);
+            boolean migrated = arguments != null && "true".equals(arguments.getString("wolfRequireMigration"));
+            if (migrated) verifyMigration(sample, gameRoot);
             if (arguments != null && "true".equals(arguments.getString("wolfKillAfterRendered"))) {
                 File sentinel = new File(sample, "SaveData/astra-interruption-probe.sav");
                 sentinel.getParentFile().mkdirs();
@@ -95,7 +95,7 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             if (arguments != null && "true".equals(arguments.getString("wolfRequireDirect"))) {
                 org.json.JSONObject mode = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(new File(gameRoot, "working-mode.json").toPath()), "UTF-8"));
                 if (!mode.optString("mode").equals("DIRECT")) throw new Exception("Original directory was not used: " + mode);
-                if (new File(gameRoot, "game").exists()) throw new Exception("Unexpected game import");
+                if (!migrated && new File(gameRoot, "game").exists()) throw new Exception("Unexpected game import");
                 if (originalIni == null ? ini.exists() : !java.util.Arrays.equals(originalIni, java.nio.file.Files.readAllBytes(ini.toPath())))
                     throw new Exception("Original configuration was not restored");
             }
@@ -106,6 +106,60 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             result.putString("stream", android.util.Log.getStackTraceString(error));
             finish(Activity.RESULT_CANCELED, result);
         }
+    }
+    private File gameDirectory(String gameId) throws Exception {
+        byte[] bytes = java.security.MessageDigest.getInstance("SHA-256").digest(gameId.getBytes("UTF-8"));
+        return new File(getTargetContext().getFilesDir(), "wolf-games/" + hex(bytes));
+    }
+    /** Only used on an owned official sample: simulate a completed old import with pending progress. */
+    private void seedLegacyCopy(File sample, File gameRoot) throws Exception {
+        File copy = new File(gameRoot, "game");
+        if (copy.exists()) throw new Exception("Refusing to overwrite an existing private game fixture");
+        File sourceSave = new File(sample, "SaveData/astra-migration-probe.sav");
+        if (sourceSave.exists()) throw new Exception("Refusing to overwrite an existing source save fixture");
+        sourceSave.getParentFile().mkdirs();
+        java.nio.file.Files.write(sourceSave.toPath(), "ASTRA_MIGRATION_ORIGINAL".getBytes("UTF-8"));
+        org.json.JSONObject hashes = new org.json.JSONObject(), stamps = new org.json.JSONObject();
+        try (java.util.stream.Stream<java.nio.file.Path> paths = java.nio.file.Files.walk(sample.toPath())) {
+            java.util.Iterator<java.nio.file.Path> files = paths.filter(path -> java.nio.file.Files.isRegularFile(path)
+                && !java.nio.file.Files.isSymbolicLink(path)).iterator();
+            while (files.hasNext()) {
+                java.nio.file.Path path = files.next();
+                String relative = sample.toPath().relativize(path).toString().replace('\\', '/');
+                if (relative.contains(".astra-")) continue;
+                File target = new File(copy, relative);
+                target.getParentFile().mkdirs();
+                java.nio.file.Files.copy(path, target.toPath());
+                byte[] digest = java.security.MessageDigest.getInstance("SHA-256").digest(java.nio.file.Files.readAllBytes(path));
+                hashes.put(relative, hex(digest));
+                stamps.put(relative, target.length() + ":" + target.lastModified());
+            }
+        }
+        java.nio.file.Files.write(new File(copy, "SaveData/astra-migration-probe.sav").toPath(), "ASTRA_MIGRATION_PENDING".getBytes("UTF-8"));
+        java.nio.file.Files.write(new File(gameRoot, "source-hashes.json").toPath(), hashes.toString().getBytes("UTF-8"));
+        java.nio.file.Files.write(new File(gameRoot, "import-state.json").toPath(), new org.json.JSONObject()
+            .put("source", sample.toURI().toString()).put("complete", true).put("stamps", stamps).toString().getBytes("UTF-8"));
+        java.nio.file.Files.write(new File(gameRoot, "working-mode.json").toPath(), new org.json.JSONObject()
+            .put("source", sample.toURI().toString()).put("mode", "COPY").toString().getBytes("UTF-8"));
+    }
+    private void verifyMigration(File sample, File gameRoot) throws Exception {
+        org.json.JSONObject mode = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(new File(gameRoot, "working-mode.json").toPath()), "UTF-8"));
+        if (!mode.optString("mode").equals("DIRECT")) throw new Exception("Legacy game did not migrate to its original directory: " + mode);
+        for (File root : new File[] {sample, new File(gameRoot, "game")}) {
+            String saved = new String(java.nio.file.Files.readAllBytes(new File(root, "SaveData/astra-migration-probe.sav").toPath()), "UTF-8");
+            if (!saved.equals("ASTRA_MIGRATION_PENDING")) throw new Exception("Pending migration fixture was lost: " + root);
+        }
+        File[] backups = new File(sample, "SaveData").listFiles(file -> file.getName().startsWith(".astra-wolf-backup-"));
+        boolean preserved = false;
+        if (backups != null) for (File backup : backups) {
+            if (new String(java.nio.file.Files.readAllBytes(backup.toPath()), "UTF-8").equals("ASTRA_MIGRATION_ORIGINAL")) preserved = true;
+        }
+        if (!preserved) throw new Exception("Original source version was not backed up during migration");
+    }
+    private static String hex(byte[] bytes) {
+        StringBuilder hash = new StringBuilder();
+        for (byte b : bytes) hash.append(String.format("%02x", b));
+        return hash.toString();
     }
     private static Button find(View view, String label) {
         if (view instanceof Button && ((Button)view).getText().toString().equals(label)) return (Button)view;

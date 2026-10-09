@@ -187,7 +187,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.12](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.12). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.13](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.13). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
@@ -235,6 +235,15 @@ et les écritures du diagnostic s’effectuent hors du fil d’affichage. **Diag
 reste accessible sur l’écran de chargement ; une attente de plus de 20 secondes sans changement
 de sous-étape ajoute un état des threads Astra au rapport, sans conclure automatiquement à un crash.
 Voir les [preuves et limites de la bêta 12](docs/VALIDATION_1.12.0-beta.12.md).
+
+La bêta 13 accélère aussi le premier passage d’une ancienne copie privée au dossier d’origine.
+La récupération utilise le dossier physique accessible, sans recherches SAF fichier par fichier,
+et affiche les nombres de fichiers vérifiés, récupérés et en conflit. Les ressources inchangées
+restent en cache ; l’index est enregistré en fin de récupération, également en cas d’annulation.
+La version précédente d’une sauvegarde remplacée reste sauvegardée ; une divergence conserve
+la copie privée utilisable et exportable. Les dossiers accessibles uniquement par SAF utilisent
+des lectures groupées des noms et une nouvelle vérification avant chaque remplacement.
+Voir les [preuves et limites de la bêta 13](docs/VALIDATION_1.12.0-beta.13.md).
 
 Si le lancement s’arrête, ouvrir **Paramètres → Diagnostic Wolf RPG**, activer **Mode debug Wolf RPG**,
 puis relancer le jeu. Le rapport indique la dernière étape, le code de sortie, les exceptions et les

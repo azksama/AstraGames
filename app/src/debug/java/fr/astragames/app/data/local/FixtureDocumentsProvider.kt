@@ -13,12 +13,26 @@ import java.io.File
 /** Debug variant only: exercises real content:// child URIs, stream truncation and provider renames. */
 class FixtureDocumentsProvider : DocumentsProvider() {
     private val root get() = File(context!!.filesDir, "fixtures").apply { mkdirs() }
+    private val documentQueries = java.util.concurrent.atomic.AtomicInteger()
+    private val childQueries = java.util.concurrent.atomic.AtomicInteger()
+    @Volatile private var failingRename: String? = null
     override fun onCreate() = true
     private fun file(id: String): File = File(root, id).also {
         require(it.canonicalFile.toPath().startsWith(root.canonicalFile.toPath()))
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        if (method == "resetQueryStats") {
+            documentQueries.set(0); childQueries.set(0)
+            return Bundle()
+        }
+        if (method == "queryStats") return Bundle().apply {
+            putInt("documents", documentQueries.get()); putInt("children", childQueries.get())
+        }
+        if (method == "failNextRename") {
+            failingRename = arg
+            return Bundle()
+        }
         if (method == "fixture") {
             val id = arg!!
             val directory = file(id).apply { mkdirs() }
@@ -45,10 +59,14 @@ class FixtureDocumentsProvider : DocumentsProvider() {
         file(documentId).canonicalFile.toPath().startsWith(file(parentDocumentId).canonicalFile.toPath())
 
     override fun queryRoots(projection: Array<out String>?): Cursor = MatrixCursor(arrayOf(DocumentsContract.Root.COLUMN_ROOT_ID))
-    override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor =
-        MatrixCursor(projection ?: COLUMNS).apply { row(this, file(documentId)) }
-    override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor =
-        MatrixCursor(projection ?: COLUMNS).apply { file(parentDocumentId).listFiles().orEmpty().forEach { row(this, it) } }
+    override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor {
+        documentQueries.incrementAndGet()
+        return MatrixCursor(projection ?: COLUMNS).apply { row(this, file(documentId)) }
+    }
+    override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor {
+        childQueries.incrementAndGet()
+        return MatrixCursor(projection ?: COLUMNS).apply { file(parentDocumentId).listFiles().orEmpty().forEach { row(this, it) } }
+    }
 
     private fun row(cursor: MatrixCursor, file: File) {
         val values = mapOf(
@@ -73,6 +91,10 @@ class FixtureDocumentsProvider : DocumentsProvider() {
     override fun deleteDocument(documentId: String) { check(file(documentId).deleteRecursively()) }
     override fun renameDocument(documentId: String, displayName: String): String {
         val old = file(documentId)
+        if (old.parentFile!!.relativeTo(root).invariantSeparatorsPath + "/" + displayName == failingRename) {
+            failingRename = null
+            throw java.io.IOException("Fixture: final rename rejected")
+        }
         val renamed = File(old.parentFile, displayName)
         check(old.renameTo(renamed))
         return renamed.relativeTo(root).invariantSeparatorsPath

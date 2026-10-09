@@ -137,6 +137,22 @@ Après 20 secondes sans changement de message, un flux `loading` séparé conser
 threads Astra, y compris les workers dans l’APK obfusqué. Ce délai n’est pas un diagnostic de crash.
 Les détails de cette livraison figurent dans la [validation de la bêta 12](VALIDATION_1.12.0-beta.12.md).
 
+La bêta 13 corrige l’attente dans la migration d’une ancienne copie privée : lorsque le dossier
+physique est accessible, les sauvegardes y sont récupérées directement. Les ressources dont
+les métadonnées restent identiques ne sont pas relues. Les fichiers modifiés, y compris ceux
+hors d’un dossier Save, sont comparés à leur version initiale avant récupération. La progression
+indique les fichiers vérifiés, récupérés et en conflit, avec des mises à jour regroupées.
+L’index complet n’est plus réécrit après chaque fichier ; une annulation conserve son état,
+et une écriture terminée avant la mort du processus est reconnue au prochain lancement.
+Le remplacement local prépare un fichier complet et une copie de sécurité avant le renommage.
+Une version source divergente reste intacte et empêche le passage au mode direct.
+
+Pour une source uniquement SAF, les noms et types sont lus par dossier, puis remis à jour
+pour vérifier chaque fichier modifié avant remplacement. Les requêtes de cette récupération
+acceptent un signal d’annulation. Les preuves de conservation, d’annulation, de migration de
+70 000 fichiers en cache et de reprise de l’APK optimisé figurent dans la
+[validation de la bêta 13](VALIDATION_1.12.0-beta.13.md).
+
 ## Provenance et reconstruction
 
 Le code Winlator est épinglé à `3981d86efa4f333b2a34a7da8b6521476cd8c8b9` :

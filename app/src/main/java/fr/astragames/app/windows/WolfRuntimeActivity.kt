@@ -231,7 +231,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                     if (storage != null && runner != null) {
                         runCatching { diagnostic?.gameErrorLog(safeFile(storage.game, requireNotNull(intent.getStringExtra("executable"))).parentFile!!) }
                         val syncStarted = android.os.SystemClock.elapsedRealtime()
-                        runCatching { storage.synchronize() }.onSuccess { conflicts ->
+                        runCatching { storage.synchronize(::progress) }.onSuccess { conflicts ->
                             synchronized = conflicts == 0
                             if (conflicts > 0) failure = listOfNotNull(failure, "$conflicts fichier(s) ont changé dans le dossier source. Les sauvegardes restent dans Astra pour éviter un écrasement.").joinToString("\n")
                         }.onFailure {
