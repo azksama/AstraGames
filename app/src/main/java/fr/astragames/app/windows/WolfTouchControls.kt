@@ -19,7 +19,8 @@ import kotlin.math.abs
 /** Independently movable controls. Empty space passes touch through to the game. */
 internal class WolfTouchControls(context: Context, private val key: (XKeycode, Boolean) -> Unit,
     private val quit: () -> Unit, private val store: WolfGameOptions? = null,
-    private val settings: () -> Unit = {}, private val clearInput: () -> Unit = {}) : FrameLayout(context) {
+    private val settings: () -> Unit = {}, private val clearInput: () -> Unit = {},
+    private val menuVisibility: (Boolean) -> Unit = {}) : FrameLayout(context) {
     private data class Control(val id: String, val label: String, val code: XKeycode, val size: Int, val arrow: Float? = null)
     private val definitions = listOf(
         Control("up", "Haut", XKeycode.KEY_UP, 52, 0f), Control("left", "Gauche", XKeycode.KEY_LEFT, 52, -90f),
@@ -91,6 +92,8 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
                         hidden = !hidden; if (hidden) setEditing(false); reload(); true
                     }
                     menu.add("Quitter").setOnMenuItemClickListener { quit(); true }
+                    setOnDismissListener { menuVisibility(false) }
+                    menuVisibility(true)
                     show()
                 }
             }

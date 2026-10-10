@@ -5,7 +5,7 @@ import android.content.Context
 import android.widget.*
 
 /** Compact native controls shared by the game sheet and the in-session menu. */
-internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () -> Unit = {}) {
+internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () -> Unit = {}): AlertDialog {
     val context = android.view.ContextThemeWrapper(host, android.R.style.Theme_Material_Dialog_Alert)
     fun dp(value: Int) = (value * context.resources.displayMetrics.density).toInt()
     val accent = android.content.res.ColorStateList.valueOf(0xFFC9B7FF.toInt())
@@ -20,11 +20,14 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
             setSelection(selected); layout.addView(this)
         }
     }
-    val storage = choice("Fichiers du jeu · au prochain lancement", WolfStorageMode.entries.map { it.label }, original.storageMode.ordinal)
+    val runtime = choice("Moteur · au prochain lancement", WolfRuntimeMode.entries.map { it.label }, original.runtime.ordinal)
+    label("Le moteur Android exécute directement les données Wolf. Automatique utilise Winlator lorsqu’une fonction du jeu n’est pas encore prise en charge. Natif expérimental permet de tester le moteur et fournit un diagnostic précis en cas d’incompatibilité.")
+    label("Les sauvegardes natives restent séparées des sauvegardes Windows. Passer d’un moteur à l’autre ne transfère pas la progression.")
+    val storage = choice("Fichiers Winlator · au prochain lancement", WolfStorageMode.entries.map { it.label }, original.storageMode.ordinal)
     label("Le dossier d’origine évite l’import et reçoit directement les sauvegardes. Une copie privée reste disponible si le dossier est inaccessible ou si des sauvegardes sont en conflit.")
     if (android.os.Build.VERSION.SDK_INT >= 30) {
         label(if (android.os.Environment.isExternalStorageManager()) "Accès direct au stockage local autorisé."
-            else "Android demande l’accès à tous les fichiers pour lancer un jeu local sans copie. Cette autorisation est facultative : sans elle, Astra utilise une copie privée.")
+            else "Pour Winlator, Android demande l’accès à tous les fichiers pour lancer un jeu local sans copie. Cette autorisation est facultative : sans elle, Winlator utilise une copie privée. Le moteur Android lit le dossier sélectionné avec son autorisation existante.")
         layout.addView(Button(context).apply {
             text = "Accès à tous les fichiers · réglages Android"
             setOnClickListener {
@@ -78,11 +81,12 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
             store.save(WolfOptions(WolfPerformance.entries[performance.selectedItemPosition], WolfOptions.resolutions[resolution.selectedItemPosition],
                 smooth.isChecked, if (fps.selectedItemPosition == 0) 30 else 60, counter.isChecked, touch.selectedItemPosition == 1,
                 opacity.progress + 15, size.progress + 70, WolfImageMode.entries[imageMode.selectedItemPosition],
-                WolfStorageMode.entries[storage.selectedItemPosition], zoom.isChecked)); changed()
+                WolfStorageMode.entries[storage.selectedItemPosition], zoom.isChecked, WolfRuntimeMode.entries[runtime.selectedItemPosition])); changed()
         }.create()
     dialog.setOnShowListener {
         dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(accent)
         dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(accent)
     }
     dialog.show()
+    return dialog
 }

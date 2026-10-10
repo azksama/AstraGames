@@ -1,6 +1,6 @@
 # Construction du moteur Wolf Android d’Astra
 
-Décision de conception du 10 octobre 2026, fondée sur [l’analyse REA](REA_ANALYSIS.md) et [les formats examinés](FORMATS_RESEARCH.md). Les composants ci-dessous sont **à construire**. Aucun de ces schémas n’annonce un interpréteur Android déjà jouable.
+Plan initial du 10 octobre 2026, fondé sur [l’analyse REA](REA_ANALYSIS.md) et [les formats examinés](FORMATS_RESEARCH.md). Ce document conserve la proposition de reconstruction et ses critères. L'[implémentation livrée](IMPLEMENTATION.md) utilise finalement un cœur Kotlin portable et un renderer Android Canvas : les paragraphes C++/JNI/OpenGL ci-dessous décrivent le plan initial, pas l'architecture actuelle. Les critères de compatibilité des deux échantillons et de sauvegardes Windows ne sont pas encore remplis ; voir la [couverture mesurée](RUNTIME_COVERAGE.md).
 
 La cible est un interpréteur des données Wolf, compilé pour Android ARM64 et x86_64, qui utilise directement les ressources du jeu. `Game.exe` sert de référence de comportement pendant la recherche; le moteur natif n’en exécute pas le code x86.
 
@@ -96,4 +96,4 @@ Pour chaque fixture différentielle, garder hash des fichiers, version/profil or
 
 Le chemin actuel est `AstraViewModel.launchGame` → `CompatibilityDiagnostic` → `JoiPlayLauncher` → `WolfRuntimeActivity`. Ajouter un moteur natif distinct et un résultat de capacité versionné à cet endroit **après M2**, avec choix du runtime par jeu. Les modèles de commandes et réglages peuvent être partagés; les codes X11 de `WolfTouchInput` doivent être adaptés aux entrées logiques de la VM.
 
-L’accès direct et les sauvegardes appartiennent au jeu et à ses permissions. Ne pas déplacer les saves du chemin Wine vers le nouveau cœur sans codec et vérification. Conserver le lancement Wine disponible pendant la validation du moteur natif. Aucune nouvelle version d’APK n’est requise pour ce dossier de recherche.
+L’accès direct et les sauvegardes appartiennent au jeu et à ses permissions. Ne pas déplacer les saves du chemin Wine vers le nouveau cœur sans codec et vérification. Conserver le lancement Wine disponible pendant la validation du moteur natif. L'intégration Android est distribuée à partir de la bêta 14 ; ce plan de recherche ne constitue pas sa validation.

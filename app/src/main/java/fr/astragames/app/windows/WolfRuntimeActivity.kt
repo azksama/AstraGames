@@ -161,6 +161,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                     WolfDiagnostics(this@WolfRuntimeActivity).begin(intent.getStringExtra("title") ?: "Wolf RPG", intent.getStringExtra("executable") ?: "?")
                 }
                 val id = requireNotNull(intent.getStringExtra("id"))
+                intent.getStringExtra("nativeFallbackReason")?.let { diagnostic?.event("Secours Winlator après vérification native : ${it.take(12_000)}") }
                 val uri = requireNotNull(intent.getStringExtra("source"))
                 val executable = requireNotNull(intent.getStringExtra("executable"))
                 progress(1, "Lecture des réglages et récupération de la session précédente…")

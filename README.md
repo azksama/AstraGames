@@ -1,8 +1,8 @@
 # Astra
 
-Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay ou, pour Wolf RPG, avec le moteur Windows intégré. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
+Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay ou, pour Wolf RPG, avec les moteurs intégrés Android et Windows. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
 
-La [recherche REA du futur moteur Wolf Android](docs/wolf-native/README.md) documente les exécutables, formats et jalons de reconstruction. Elle ne constitue pas encore un interpréteur natif jouable.
+Le [moteur Wolf Android expérimental](docs/wolf-native/IMPLEMENTATION.md), issu de la [recherche REA](docs/wolf-native/README.md), interprète directement les données du jeu. Sa compatibilité reste partielle ; Winlator est conservé en secours, notamment pour les deux exemples officiels et les jeux disposant déjà de sauvegardes Windows.
 
 ## Fonctions incluses
 
@@ -15,6 +15,7 @@ La [recherche REA du futur moteur Wolf Android](docs/wolf-native/README.md) docu
 - scan récursif hors thread principal (garde-fous de 128 niveaux et 100 000 dossiers), avec arrêt et remontée dès qu'un dossier contient un exécutable, et écran de progression indiquant source, chemin, profondeur, dossiers et jeux ;
 - détection RPG Maker MV/MZ, Ren'Py, HTML5, Tyrano, Construct, Twine, Electron et Wolf RPG ;
 - moteur Wolf intégré expérimental : Wine, Box64 sur ARM64, affichage et commandes dans Astra, import SAF et synchronisation prudente des sauvegardes ;
+- moteur Wolf Android expérimental : lecteurs Wolf, VM Kotlin, rendu Canvas, audio Android, accès direct local/SAF, tactile et sauvegardes privées ; sélection par jeu et secours Winlator ;
 - fingerprint, reconnaissance de déplacement, doublons et jeux manquants ;
 - rapport détaillé et persistant après chaque scan : ajoutés, actualisés, déjà connus, déplacés, manquants, ignorés et erreurs avec chemin et raison ;
 - Room avec index FTS4, historique des scans et sessions de lancement ;
@@ -73,6 +74,9 @@ data/saves   codecs, découverte SAF, écriture vérifiée et backups
 data/mods    import ZIP, installation et restauration journalisées
 data/backup  archives chiffrées du catalogue
 launcher/    JoiPlay et futur MTool
+wolf-native/ cœur Wolf Kotlin portable : formats, VM, état et snapshots
+wolfnative/  hôte Android, fichiers local/SAF, rendu, audio et sauvegardes natives
+windows/     moteur intégré Winlator / Wine / Box64 et sauvegardes Windows
 translation/ ML Kit, extraction MV/MZ, cache et restauration journalisée
 updates/     releases GitHub, téléchargement vérifié et installation Android
 settings/    DataStore
@@ -189,7 +193,9 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.13](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.13). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.14](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.14). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+
+**Outils → Réglages Wolf RPG → Moteur** permet de choisir Automatique, Natif expérimental ou Winlator. Automatique conserve le moteur Windows des jeux déjà joués et utilise le secours Winlator si une fonction du jeu n'est pas portée. Le moteur Android lit les ressources dans le dossier d'origine, sans transfert général, et conserve ses sauvegardes séparément. Les deux exemples officiels ne sont pas encore jouables en natif ; voir la [couverture réelle](docs/wolf-native/RUNTIME_COVERAGE.md) et la [validation de la bêta 14](docs/VALIDATION_1.12.0-beta.14.md).
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;

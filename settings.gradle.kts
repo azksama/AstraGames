@@ -17,4 +17,5 @@ dependencyResolutionManagement {
 rootProject.name = "AstraGames"
 include(":app")
 include(":windows-runtime")
+include(":wolf-native")
 include(":baselineprofile")

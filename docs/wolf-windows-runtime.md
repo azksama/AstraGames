@@ -5,6 +5,8 @@ API 36.1 x86_64. Les exemples officiels Wolf **2.2961 et 3.729** atteignent la p
 affichent personnages et dialogues japonais, et répondent au bouton Valider d'Astra.
 Le test ne couvre pas une partie complète, tous les jeux, ni un téléphone ARM64.
 
+Depuis la bêta 14, ce parcours reste le **secours Windows** du [moteur Android expérimental](wolf-native/IMPLEMENTATION.md). Le choix par jeu dans **Réglages Wolf RPG → Moteur** conserve Winlator pour les sessions Windows existantes et les données natives incompatibles. La progression Windows reste dans les emplacements décrits ici ; elle n'est pas convertie en sauvegarde native.
+
 ## Utilisation
 
 Scanner un jeu Windows décompressé, ouvrir sa fiche et choisir Jouer. Le profil Wolf par défaut

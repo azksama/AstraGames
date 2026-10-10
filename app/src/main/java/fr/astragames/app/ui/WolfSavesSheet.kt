@@ -13,6 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.windows.WolfGameStorage
+import fr.astragames.app.wolfnative.WolfNativeSaveStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -24,6 +25,8 @@ internal fun WolfSavesSheet(game: GameEntity, onDismiss: () -> Unit) {
     val scope = rememberCoroutineScope()
     val storage = remember(game.id, game.documentUri) { WolfGameStorage(context, game.id, game.documentUri) }
     var files by remember { mutableStateOf<List<WolfGameStorage.SaveFile>>(emptyList()) }
+    var nativeFiles by remember { mutableStateOf<List<java.io.File>>(emptyList()) }
+    var exportNative by remember { mutableStateOf(false) }
     var location by remember { mutableStateOf("") }
     var loading by remember { mutableStateOf(true) }
     var exporting by remember { mutableStateOf(false) }
@@ -35,7 +38,9 @@ internal fun WolfSavesSheet(game: GameEntity, onDismiss: () -> Unit) {
             exporting = true; error = null; message = null
             try {
                 withContext(Dispatchers.IO) {
-                    requireNotNull(context.contentResolver.openOutputStream(uri, "wt")).use { storage.exportSaves(it) }
+                    requireNotNull(context.contentResolver.openOutputStream(uri, "wt")).use {
+                        if (exportNative) WolfNativeSaveStore(context, game.id, "").export(it) else storage.exportSaves(it)
+                    }
                 }
                 message = "Sauvegardes exportées."
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
@@ -46,6 +51,10 @@ internal fun WolfSavesSheet(game: GameEntity, onDismiss: () -> Unit) {
     LaunchedEffect(storage, revision) {
         loading = true; error = null
         try {
+            nativeFiles = withContext(Dispatchers.IO) {
+                WolfNativeSaveStore.directoryFor(context, game.id).listFiles().orEmpty()
+                    .filter { it.isFile && (it.name.endsWith(".astrawolf") || it.name.endsWith(".previous")) }.sortedBy { it.name }
+            }
             val result = withContext(Dispatchers.IO) {
                 storage.restoreLastLocation()
                 storage.saveFiles() to "${if (storage.isDirect) "Dossier d’origine" else "Copie privée dans Astra"} :\n${storage.game.path}"
@@ -63,7 +72,7 @@ internal fun WolfSavesSheet(game: GameEntity, onDismiss: () -> Unit) {
             item { Text("Les sauvegardes écrites dans les dossiers utilisateur Windows restent dans le préfixe du jeu. L’export les inclut sous Windows/.", style = MaterialTheme.typography.bodySmall) }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = { picker.launch("Astra-Wolf-sauvegardes.zip") }, enabled = !loading && !exporting && files.isNotEmpty()) {
+                    Button(onClick = { exportNative = false; picker.launch("Astra-Wolf-sauvegardes.zip") }, enabled = !loading && !exporting && files.isNotEmpty()) {
                         Text(if (exporting) "Export…" else "Exporter les sauvegardes")
                     }
                     TextButton(onClick = { revision++ }, enabled = !loading && !exporting) { Text("Actualiser") }
@@ -72,9 +81,15 @@ internal fun WolfSavesSheet(game: GameEntity, onDismiss: () -> Unit) {
             error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
             message?.let { item { Text(it) } }
             if (loading) item { CircularProgressIndicator(Modifier.size(28.dp)) }
-            else if (files.isEmpty() && error == null) item { Text("Aucune sauvegarde repérée. Le jeu peut utiliser un emplacement ou un format particulier.") }
+            else if (files.isEmpty() && nativeFiles.isEmpty() && error == null) item { Text("Aucune sauvegarde repérée. Le jeu peut utiliser un emplacement ou un format particulier.") }
             items(files, key = { it.path }) { file ->
                 SelectionContainer { Text("${file.path}\n${file.file.path}", style = MaterialTheme.typography.bodySmall) }
+            }
+            if (nativeFiles.isNotEmpty()) {
+                item { Text("Sauvegardes du moteur Android", style = MaterialTheme.typography.titleMedium) }
+                item { Text("Ces emplacements appartiennent au moteur natif Astra. Ils sont séparés des sauvegardes Windows et ne transfèrent pas la progression vers Winlator.") }
+                item { Button(onClick = { exportNative = true; picker.launch("Astra-Wolf-sauvegardes-natives.zip") }, enabled = !loading && !exporting) { Text("Exporter les sauvegardes natives") } }
+                items(nativeFiles, key = { "native:${it.name}" }) { file -> SelectionContainer { Text("${file.name}\n${file.path}", style = MaterialTheme.typography.bodySmall) } }
             }
         }
     }

@@ -18,8 +18,8 @@ android {
         applicationId = "fr.astragames.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 41
-        versionName = "1.12.0-beta.13"
+        versionCode = 42
+        versionName = "1.12.0-beta.14"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
     }
@@ -46,6 +46,7 @@ android {
     packaging.jniLibs.useLegacyPackaging = true
     testOptions.unitTests.isIncludeAndroidResources = true
     sourceSets.getByName("main").res.srcDir(layout.buildDirectory.dir("generated/astraIconRes"))
+    sourceSets.getByName("main").assets.srcDir(layout.buildDirectory.dir("generated/wolfNativeAssets"))
     sourceSets.getByName("androidTest").assets.srcDir("$projectDir/schemas")
 }
 
@@ -57,6 +58,13 @@ val prepareAstraIcon by tasks.registering(Copy::class) {
 
 tasks.named("preBuild").configure { dependsOn(prepareAstraIcon) }
 
+val prepareWolfNativeNotices by tasks.registering(Copy::class) {
+    from(rootProject.file("wolf-native/THIRD_PARTY_NOTICES.md"))
+    into(layout.buildDirectory.dir("generated/wolfNativeAssets"))
+    rename { "wolf-native-notices.txt" }
+}
+tasks.named("preBuild").configure { dependsOn(prepareWolfNativeNotices) }
+
 kapt {
     correctErrorTypes = true
     arguments { arg("room.schemaLocation", "$projectDir/schemas") }
@@ -66,6 +74,7 @@ jacoco { toolVersion = "0.8.13" }
 
 dependencies {
     implementation(project(":windows-runtime"))
+    implementation(project(":wolf-native"))
     implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
     val composeBom = platform("androidx.compose:compose-bom:2026.06.00")
     implementation(composeBom)

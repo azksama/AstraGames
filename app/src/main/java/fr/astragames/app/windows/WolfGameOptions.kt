@@ -24,6 +24,12 @@ internal enum class WolfStorageMode(val label: String) {
     COPY("Copie privée dans Astra")
 }
 
+internal enum class WolfRuntimeMode(val label: String) {
+    AUTO("Automatique · natif compatible, sinon Winlator"),
+    NATIVE("Natif Android · expérimental"),
+    WINLATOR("Winlator · compatibilité Windows")
+}
+
 internal data class WolfOptions(
     val performance: WolfPerformance = WolfPerformance.BALANCED,
     val resolution: String = "auto",
@@ -35,7 +41,8 @@ internal data class WolfOptions(
     val size: Int = 100,
     val imageMode: WolfImageMode = WolfImageMode.FIT,
     val storageMode: WolfStorageMode = WolfStorageMode.AUTO,
-    val pinchZoom: Boolean = false
+    val pinchZoom: Boolean = false,
+    val runtime: WolfRuntimeMode = WolfRuntimeMode.AUTO
 ) {
     fun windowsResolution(landscape: Boolean) = if (resolution == "auto") {
         if (landscape) "1280x720" else "1280x960"
@@ -57,13 +64,15 @@ internal class WolfGameOptions(context: Context, id: String) {
             opacity = it.optInt("opacity", 75).coerceIn(15, 100), size = it.optInt("size", 100).coerceIn(70, 150),
             imageMode = runCatching { WolfImageMode.valueOf(it.optString("imageMode", "FIT")) }.getOrDefault(WolfImageMode.FIT),
             storageMode = runCatching { WolfStorageMode.valueOf(it.optString("storageMode", "AUTO")) }.getOrDefault(WolfStorageMode.AUTO),
-            pinchZoom = it.optBoolean("pinchZoom", false))
+            pinchZoom = it.optBoolean("pinchZoom", false),
+            runtime = runCatching { WolfRuntimeMode.valueOf(it.optString("runtime", "AUTO")) }.getOrDefault(WolfRuntimeMode.AUTO))
     }
     fun save(options: WolfOptions) {
         val data = json().put("performance", options.performance.name).put("resolution", options.resolution)
             .put("smooth", options.smooth).put("maxFps", options.maxFps).put("showFps", options.showFps)
             .put("directionalTouch", options.directionalTouch).put("opacity", options.opacity).put("size", options.size)
             .put("imageMode", options.imageMode.name).put("storageMode", options.storageMode.name).put("pinchZoom", options.pinchZoom)
+            .put("runtime", options.runtime.name)
         prefs.edit().putString(key, data.toString()).apply()
     }
     fun binding(id: String, fallback: XKeycode): XKeycode = runCatching {

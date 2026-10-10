@@ -25,13 +25,13 @@ internal class WolfDiagnostics(private val context: Context) {
         get() = preferences.getBoolean("verbose", false)
         set(value) { check(preferences.edit().putBoolean("verbose", value).commit()) }
 
-    fun begin(title: String, executable: String): WolfDiagnosticSession {
+    fun begin(title: String, executable: String, runtime: String = WolfRuntimeInstaller.REVISION): WolfDiagnosticSession {
         root.mkdirs()
         installCrashHandler()
         val directory = File(root, "${System.currentTimeMillis()}-${UUID.randomUUID()}").apply { mkdirs() }
         val session = WolfDiagnosticSession(directory, enabled)
         active[directory.name] = session
-        session.event("Astra ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); runtime ${WolfRuntimeInstaller.REVISION}")
+        session.event("Astra ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE}); runtime $runtime")
         session.event("Jeu : ${title.take(200)}; exécutable : ${executable.take(300)}; debug=${session.verbose}")
         session.event("Android ${Build.VERSION.RELEASE} / API ${Build.VERSION.SDK_INT}; ${Build.MANUFACTURER} ${Build.MODEL}")
         session.event("ABI=${Build.SUPPORTED_ABIS.joinToString()}; matériel=${Build.HARDWARE}; pages=${runCatching { Os.sysconf(OsConstants._SC_PAGESIZE) }.getOrNull()}; espace libre=${root.usableSpace}")

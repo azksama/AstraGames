@@ -79,6 +79,11 @@
             android:name="com.canhub.cropper.CropImageActivity"
             android:theme="@style/Theme.AstraGames.Cropper" />
         <activity
+            android:name=".wolfnative.WolfNativeActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize"
+            android:configChanges="orientation|screenSize|keyboardHidden|screenLayout|smallestScreenSize|density|uiMode" />
+        <activity
             android:name=".windows.WolfRuntimeActivity"
             android:exported="false"
             android:windowSoftInputMode="adjustResize"

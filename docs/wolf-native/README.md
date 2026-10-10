@@ -1,13 +1,23 @@
 # Recherche du moteur Wolf natif Android
 
-Travail du 10 octobre 2026 pour Astra. **État : analyse des exécutables et sonde de formats livrées; interpréteur Android à construire.** Le moteur jouable de l’application reste celui décrit dans [Wolf Windows intégré](../wolf-windows-runtime.md).
+Travail du 10 octobre 2026 pour Astra. **État : interpréteur Kotlin et hôte Android intégrés, compatibilité partielle.** Le moteur natif lit les fichiers Wolf sans lancer `Game.exe`, Wine ou Box64. Les deux jeux officiels restent incompatibles avec certains handlers natifs ; [Wolf Windows intégré](../wolf-windows-runtime.md) reste leur moteur de secours.
 
 - [Analyse REA et fonctions identifiées](REA_ANALYSIS.md) : preuves, adresses, limites et différences entre les EXE officiels.
 - [Formats et corpus](FORMATS_RESEARCH.md) : cartes/CommonEvent, 53 723 commandes, encodages et compression.
 - [Architecture et jalons Android](RECONSTRUCTION.md) : cœur C++, VM, rendu, accès direct, sauvegardes et validation.
+- [Implémentation Android](IMPLEMENTATION.md) : architecture effectivement livrée, choix du moteur, accès aux fichiers, contrôles et sauvegardes privées.
+- [Couverture et refus réels](RUNTIME_COVERAGE.md) : fonctions admises, commandes expérimentales, erreurs des deux jeux officiels et limites de compatibilité.
 - [Manifeste des 34 fichiers](fixtures.json), [synthèse du corpus](corpus-summary.json), [mesure hôte](parse-benchmark.json) et [index REA dérivé](evidence-index.json) : 91 preuves et cinq inconnues ouvertes.
 
 Les exécutables, archives téléchargées, textes complets des jeux, pseudo-code et dossiers REA complets restent sous `build/`, ignoré par Git. Les fichiers suivis contiennent la recherche et ses références. Les EXE n’ont pas été exécutés pendant cette analyse statique ni modifiés.
+
+## Construire le moteur
+
+```powershell
+.\gradlew.bat :wolf-native:test :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest
+```
+
+Les tests JVM de formats utilisent les corpus officiels locaux si présents ; leur absence provoque un test ignoré, pas une preuve de lecture des corpus. Les tests Android supplémentaires sont dans `app/src/androidTest/java/fr/astragames/app/wolfnative/`. Ils utilisent exclusivement Android Emulator, ADB et instrumentation Android SDK. La partie de démonstration est écrite sous forme de fichiers Wolf indépendants et passe par les vrais parseurs, VM, renderer et entrées ; elle n'est pas l'un des jeux officiels.
 
 ## Réexécuter la sonde
 
