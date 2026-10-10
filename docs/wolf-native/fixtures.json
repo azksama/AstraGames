@@ -1,0 +1,274 @@
+[
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Game.exe",
+    "bytes": 6963200,
+    "sha256": "795203a6e875618d7fbdc7dd1f409a445c60262c911745553d040081bedb6ac0",
+    "header_hex": "4d5a90000300000004000000ffff0000b80000000000000040000000000000000000000000000000",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/CDataBase.dat",
+    "bytes": 82288,
+    "sha256": "f0d3468d58d45b66d471f620df2b6b98595d84074f96c9b4020f05be5f095a76",
+    "header_hex": "005700004f4c00464d00c114000000feffffff010000003b000000d0070000d1070000d2070000d3",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/CDataBase.project",
+    "bytes": 152169,
+    "sha256": "fb4c4c7bd4e28e744f18120e58b679cd3746c16ae41e748c53ae841f3e6b9fb6",
+    "header_hex": "14000000110000008ee5906c8cf683588365815b835e8358003b00000009000000834c8383838996",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/CommonEvent.dat",
+    "bytes": 1055820,
+    "sha256": "ee5d12fff618ef443c2b9c1c5b51ba4dc7124cfa7f2f5ea9acfd72649aeb4eb0",
+    "header_hex": "005700004f4c004643008fe10000008e000000002080841e000000000003000f000000819b834183",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/DataBase.dat",
+    "bytes": 85636,
+    "sha256": "f534f1ef54377113ccb025210ae544b136aa1d1d383717faa1ba05eb2e14660c",
+    "header_hex": "005700004f4c00464d00c112000000feffffff0100000025000000d0070000d1070000e8030000e9",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/DataBase.project",
+    "bytes": 147571,
+    "sha256": "99fb128059e8be40744a4e52fd348738680be5d5d2c5ebc9faa27666460134dd",
+    "header_hex": "12000000050000008b5a945c00250000000b0000008b5a945c82cc96bc914f000500000090e096be",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/Game.dat",
+    "bytes": 29177,
+    "sha256": "14a423a4e35c971b016649a3d706f70d6c089e5485f7a110138e581962fc5605",
+    "header_hex": "005700004f4c00464d0016000000100808013c010103000100060900000404010000000109000000",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/MapTree.dat",
+    "bytes": 48,
+    "sha256": "3135ebaf304fa5f9541606d48972111907c7fe1692433b2b4c2af115d13b435d",
+    "header_hex": "000000000000000000009004000000ffffffff00000000ffffffff010000000100000003000000ff",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/MapTreeOpenStatus.dat",
+    "bytes": 29,
+    "sha256": "5049ccc5d76a8541c0f3ea27936f362cb3c95055311be99dc79eb661a8402b87",
+    "header_hex": "0000000000000000000000000000000000000000040000000001000026",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/SysDatabase.dat",
+    "bytes": 2748,
+    "sha256": "6a757c6bec71e2b8127205382769dd3cca90579f64b9aa7aa5fe754e463d55ff",
+    "header_hex": "005700004f4c00464d00c11c000000feffffff0000000008000000d0070000e8030000e9030000ea",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/SysDatabase.project",
+    "bytes": 12799,
+    "sha256": "e796e63810d85395eb8427e78fe55f12c96ceef9471db125ae4a348334a84ca0",
+    "header_hex": "1c0000000b000000837d8362837690dd92e8000800000011000000837d8362837683748340834383",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/SysDataBaseBasic.dat",
+    "bytes": 438,
+    "sha256": "1a7c2ab7009d4d9dced995b45e0b5e31a38a112d2c1dc8550bb3e2cc5d4623cc",
+    "header_hex": "00000000000000000000c00c00000002000000d0070000e80300000a000000000000000100000000",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/SysDataBaseBasic.project",
+    "bytes": 2417,
+    "sha256": "fd5f48707680406758526181e6168562819d8323bcf0f305e091927058ae76aa",
+    "header_hex": "0c0000000b000000837d8362837690dd92e8000200000011000000837d8362837683748340834383",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/TileSetData.dat",
+    "bytes": 39254,
+    "sha256": "b24d577937d46f6c21427b3e3bea0343f0630ca66e42a7c2193df03cc1fb9256",
+    "header_hex": "005700004f4c00464d00d106000000030000008a5800200000004d6170436869702f5b426173655d",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/MapData/Dungeon.mps",
+    "bytes": 17315,
+    "sha256": "6398334095910ec4274fd19ae579c1a31789a5d425cd7fd34ef5544f667142ee",
+    "header_hex": "00000000000000000000574f4c464d000000000064000000650500000082c882b500000000002800",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/MapData/SampleMapA.mps",
+    "bytes": 31990,
+    "sha256": "9186409b89494bfb68decf7b0e0a8a692f2e46cc30411589d8049898850c3c6b",
+    "header_hex": "00000000000000000000574f4c464d000000000064000000650500000082c882b500000000002800",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/MapData/SampleMapB.mps",
+    "bytes": 13155,
+    "sha256": "fc4486e1643bbe95e18fe678bdb9b6d8a8083e08620fd0f014dceb1674478390",
+    "header_hex": "00000000000000000000574f4c464d000000000064000000650500000082c882b500000000001e00",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "2.2961",
+    "path": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/MapData/TitleMap.mps",
+    "bytes": 7806,
+    "sha256": "5881e8fa043f85bf73a57d3b3d3c87aea3009c7f2711e636ee5986c37cc3f679",
+    "header_hex": "00000000000000000000574f4c464d000000000064000000650500000082c882b500000000001400",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Game.exe",
+    "bytes": 12511744,
+    "sha256": "4ee2a905a5a74a513c885b7096150ffda1a9800180db5b5b0337ad8fd86fbf8e",
+    "header_hex": "4d5a90000300000004000000ffff0000b80000000000000040000000000000000000000000000000",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/CDataBase.dat",
+    "bytes": 82669,
+    "sha256": "5d1e05c7678f631e86ce122fbd42c852779df0ce45ca56267a59a7e99e49c781",
+    "header_hex": "005700004f4c55464d00c214000000feffffff010000003b000000d0070000d1070000d2070000d3",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/CDataBase.project",
+    "bytes": 173648,
+    "sha256": "5215dab32075a19b70060ccf93465a2d853feb0578ada1128cd23c036c00362a",
+    "header_hex": "1400000019000000e4b8bbe4babae585ace382b9e38386e383bce382bfe382b9003b0000000d0000",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/CommonEvent.dat",
+    "bytes": 385224,
+    "sha256": "f3a2dd7ab806d06d347622b4660b2437f4f46680000abb83b052affd9ff10e21",
+    "header_hex": "005700004f4c554643009399f91300b5e00500d0e10000008e000000002080841e0800f014000300",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/DataBase.dat",
+    "bytes": 17582,
+    "sha256": "2cc6979c0e58f4e25280405fc98752c8913b8ca6c725fe48dc895f26ef0a05f7",
+    "header_hex": "005700004f4c55464d00c4745d01009b440000f99c12000000feffffff0100000025000000d00700",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/DataBase.project",
+    "bytes": 172260,
+    "sha256": "801637348c58797feb7d481d2fbb5a5e2b898d8be68c0ca67496bf8347dc2a42",
+    "header_hex": "1200000007000000e68a80e883bd002500000010000000e68a80e883bde381aee5908de5898d0007",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/Game.dat",
+    "bytes": 29230,
+    "sha256": "c70169499e78d2c385861e69f2ab94295c9d75cc6eba9326f3e5cae3852e3605",
+    "header_hex": "005700004f4c00464d552b000000100808013c010103000100030500000404010000000101000101",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/MapTree.dat",
+    "bytes": 48,
+    "sha256": "3135ebaf304fa5f9541606d48972111907c7fe1692433b2b4c2af115d13b435d",
+    "header_hex": "000000000000000000009004000000ffffffff00000000ffffffff010000000100000003000000ff",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/MapTreeOpenStatus.dat",
+    "bytes": 29,
+    "sha256": "5049ccc5d76a8541c0f3ea27936f362cb3c95055311be99dc79eb661a8402b87",
+    "header_hex": "0000000000000000000000000000000000000000040000000001000026",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/SysDatabase.dat",
+    "bytes": 887,
+    "sha256": "30cdd0017045de23029f33518b71987ab3cbf483b8fac1da194f035258efeeab",
+    "header_hex": "005700004f4c55464d00c4c90a000064030000f2271c000000feffffff0000000008000000d00700",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/SysDatabase.project",
+    "bytes": 22342,
+    "sha256": "dc74b887597957db8660022cdb42d320a6ea14bb39f92aed772acce36b87bb63",
+    "header_hex": "1c00000010000000e3839ee38383e38397e8a8ade5ae9a000800000019000000e3839ee38383e383",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/TileSetData.dat",
+    "bytes": 40344,
+    "sha256": "8ca0067f26f6fa719585dafae33e18716f66330d60ac9252479278ac506250ca",
+    "header_hex": "005700004f4c55464d00d20600000004000000e8a197001f0000004d6170436869702f426173655f",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/MapData/Dungeon.mps",
+    "bytes": 2790,
+    "sha256": "9f6a58a28a41e81c123cc4d8faa7435cd5771b0c22e9c2345a423d1ec404f0f5",
+    "header_hex": "00000000000000000000574f4c464d0055000000670000006971450000c50a0000b007000000e381",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/MapData/SampleMapA.mps",
+    "bytes": 25076,
+    "sha256": "8eec5b855e3de24d56715729fd93d05856835de3b01fbfaa9908a21c28c848d7",
+    "header_hex": "00000000000000000000574f4c464d00550000006700000069e7e60000d3610000b007000000e381",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/MapData/SampleMapB.mps",
+    "bytes": 3054,
+    "sha256": "112cd1dc0f104a1c5da3d4c720980a737f968936950c006414f524133304b42f",
+    "header_hex": "00000000000000000000574f4c464d005500000067000000695f360000cd0b0000b007000000e381",
+    "verifiedUnchanged": true
+  },
+  {
+    "version": "3.729",
+    "path": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/MapData/TitleMap.mps",
+    "bytes": 3223,
+    "sha256": "9448b079e30aeb306791d508cc122b4ff95f6f96a1292be5e1403ebc67287e4c",
+    "header_hex": "00000000000000000000574f4c464d0055000000670000006930240000760c0000b007000000e381",
+    "verifiedUnchanged": true
+  }
+]

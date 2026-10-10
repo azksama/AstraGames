@@ -1,0 +1,14 @@
+{
+  "platform": "Windows PC",
+  "scope": "structural parse only; warm filesystem cache; no Android VM/render",
+  "files": 10,
+  "commands": 53723,
+  "ms": [
+    408.3532000076957,
+    432.7798999729566,
+    428.0313000199385,
+    393.3583000325598,
+    414.1127000330016
+  ],
+  "medianMs": 414.1127000330016
+}

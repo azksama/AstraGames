@@ -2,6 +2,8 @@
 
 Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay ou, pour Wolf RPG, avec le moteur Windows intégré. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
 
+La [recherche REA du futur moteur Wolf Android](docs/wolf-native/README.md) documente les exécutables, formats et jalons de reconstruction. Elle ne constitue pas encore un interpréteur natif jouable.
+
 ## Fonctions incluses
 
 - onboarding et sélection de dossiers avec `ACTION_OPEN_DOCUMENT_TREE` ;

@@ -1,0 +1,1442 @@
+{
+  "schemaVersion": 1,
+  "scope": "unprotected maps/common events; structural inspection; no event execution",
+  "maps": [
+    {
+      "file": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/MapData/Dungeon.mps",
+      "sha256": "6398334095910ec4274fd19ae579c1a31789a5d425cd7fd34ef5544f667142ee",
+      "fileBytes": 17315,
+      "wireVersion": 100,
+      "layoutMarker": 101,
+      "encoding": "cp932",
+      "compressed": false,
+      "compressedBytes": null,
+      "expandedPayloadBytes": 17290,
+      "title": "なし",
+      "tilesetId": 0,
+      "width": 40,
+      "height": 30,
+      "layerCount": 3,
+      "unknownV35": null,
+      "tileCount": 3600,
+      "tileBytes": 14400,
+      "tileSha256": "ef742a72433dcfb022f85cb606f373c7b10ca8d3f23dfaf070647a52e5b9b716",
+      "payloadFullyConsumed": true,
+      "eventCount": 5,
+      "pageCount": 6,
+      "commandCount": 79,
+      "opcodeHistogram": [
+        {
+          "opcode": 0,
+          "name": "Blank",
+          "count": 15
+        },
+        {
+          "opcode": 101,
+          "name": "Message",
+          "count": 11
+        },
+        {
+          "opcode": 102,
+          "name": "Choices",
+          "count": 3
+        },
+        {
+          "opcode": 103,
+          "name": "Comment",
+          "count": 4
+        },
+        {
+          "opcode": 111,
+          "name": "VariableCondition",
+          "count": 1
+        },
+        {
+          "opcode": 121,
+          "name": "SetVariable",
+          "count": 1
+        },
+        {
+          "opcode": 130,
+          "name": "Teleport",
+          "count": 1
+        },
+        {
+          "opcode": 140,
+          "name": "Sound",
+          "count": 2
+        },
+        {
+          "opcode": 151,
+          "name": "ChangeColor",
+          "count": 6
+        },
+        {
+          "opcode": 180,
+          "name": "Wait",
+          "count": 6
+        },
+        {
+          "opcode": 210,
+          "name": "CommonEvent",
+          "count": 16
+        },
+        {
+          "opcode": 401,
+          "name": "ChoiceCase",
+          "count": 8
+        },
+        {
+          "opcode": 421,
+          "name": "CancelCase",
+          "count": 1
+        },
+        {
+          "opcode": 499,
+          "name": "BranchEnd",
+          "count": 4
+        }
+      ],
+      "routeOpcodeHistogram": [],
+      "extensionHistogram": {}
+    },
+    {
+      "file": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/MapData/SampleMapA.mps",
+      "sha256": "9186409b89494bfb68decf7b0e0a8a692f2e46cc30411589d8049898850c3c6b",
+      "fileBytes": 31990,
+      "wireVersion": 100,
+      "layoutMarker": 101,
+      "encoding": "cp932",
+      "compressed": false,
+      "compressedBytes": null,
+      "expandedPayloadBytes": 31965,
+      "title": "なし",
+      "tilesetId": 0,
+      "width": 40,
+      "height": 30,
+      "layerCount": 3,
+      "unknownV35": null,
+      "tileCount": 3600,
+      "tileBytes": 14400,
+      "tileSha256": "69480c4bb628316a2835a2b31cee74c1d32a5cfaeaa79332c0ba4362245e9009",
+      "payloadFullyConsumed": true,
+      "eventCount": 19,
+      "pageCount": 20,
+      "commandCount": 324,
+      "opcodeHistogram": [
+        {
+          "opcode": 0,
+          "name": "Blank",
+          "count": 60
+        },
+        {
+          "opcode": 101,
+          "name": "Message",
+          "count": 78
+        },
+        {
+          "opcode": 102,
+          "name": "Choices",
+          "count": 6
+        },
+        {
+          "opcode": 103,
+          "name": "Comment",
+          "count": 51
+        },
+        {
+          "opcode": 111,
+          "name": "VariableCondition",
+          "count": 8
+        },
+        {
+          "opcode": 112,
+          "name": "StringCondition",
+          "count": 1
+        },
+        {
+          "opcode": 121,
+          "name": "SetVariable",
+          "count": 7
+        },
+        {
+          "opcode": 122,
+          "name": "SetString",
+          "count": 3
+        },
+        {
+          "opcode": 123,
+          "name": "InputKey",
+          "count": 1
+        },
+        {
+          "opcode": 130,
+          "name": "Teleport",
+          "count": 2
+        },
+        {
+          "opcode": 140,
+          "name": "Sound",
+          "count": 7
+        },
+        {
+          "opcode": 150,
+          "name": "Picture",
+          "count": 11
+        },
+        {
+          "opcode": 151,
+          "name": "ChangeColor",
+          "count": 3
+        },
+        {
+          "opcode": 170,
+          "name": "StartLoop",
+          "count": 1
+        },
+        {
+          "opcode": 171,
+          "name": "BreakLoop",
+          "count": 1
+        },
+        {
+          "opcode": 174,
+          "name": "ReturnToTitle",
+          "count": 1
+        },
+        {
+          "opcode": 180,
+          "name": "Wait",
+          "count": 7
+        },
+        {
+          "opcode": 201,
+          "name": "Move",
+          "count": 1
+        },
+        {
+          "opcode": 210,
+          "name": "CommonEvent",
+          "count": 15
+        },
+        {
+          "opcode": 280,
+          "name": "MapEffect",
+          "count": 1
+        },
+        {
+          "opcode": 290,
+          "name": "Effect",
+          "count": 4
+        },
+        {
+          "opcode": 401,
+          "name": "ChoiceCase",
+          "count": 34
+        },
+        {
+          "opcode": 420,
+          "name": "ElseCase",
+          "count": 1
+        },
+        {
+          "opcode": 421,
+          "name": "CancelCase",
+          "count": 4
+        },
+        {
+          "opcode": 498,
+          "name": "LoopEnd",
+          "count": 1
+        },
+        {
+          "opcode": 499,
+          "name": "BranchEnd",
+          "count": 15
+        }
+      ],
+      "routeOpcodeHistogram": [
+        {
+          "opcode": 21,
+          "count": 1
+        },
+        {
+          "opcode": 26,
+          "count": 3
+        },
+        {
+          "opcode": 47,
+          "count": 1
+        }
+      ],
+      "extensionHistogram": {}
+    },
+    {
+      "file": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/MapData/SampleMapB.mps",
+      "sha256": "fc4486e1643bbe95e18fe678bdb9b6d8a8083e08620fd0f014dceb1674478390",
+      "fileBytes": 13155,
+      "wireVersion": 100,
+      "layoutMarker": 101,
+      "encoding": "cp932",
+      "compressed": false,
+      "compressedBytes": null,
+      "expandedPayloadBytes": 13130,
+      "title": "なし",
+      "tilesetId": 0,
+      "width": 30,
+      "height": 30,
+      "layerCount": 3,
+      "unknownV35": null,
+      "tileCount": 2700,
+      "tileBytes": 10800,
+      "tileSha256": "546bc087f0ee2a522c5d31962cafc9a3ab090e21542010d8a91f55b1b172e797",
+      "payloadFullyConsumed": true,
+      "eventCount": 6,
+      "pageCount": 6,
+      "commandCount": 36,
+      "opcodeHistogram": [
+        {
+          "opcode": 0,
+          "name": "Blank",
+          "count": 8
+        },
+        {
+          "opcode": 101,
+          "name": "Message",
+          "count": 10
+        },
+        {
+          "opcode": 102,
+          "name": "Choices",
+          "count": 1
+        },
+        {
+          "opcode": 130,
+          "name": "Teleport",
+          "count": 1
+        },
+        {
+          "opcode": 140,
+          "name": "Sound",
+          "count": 1
+        },
+        {
+          "opcode": 151,
+          "name": "ChangeColor",
+          "count": 1
+        },
+        {
+          "opcode": 161,
+          "name": "PrepareTransition",
+          "count": 1
+        },
+        {
+          "opcode": 162,
+          "name": "ExecuteTransition",
+          "count": 1
+        },
+        {
+          "opcode": 210,
+          "name": "CommonEvent",
+          "count": 9
+        },
+        {
+          "opcode": 401,
+          "name": "ChoiceCase",
+          "count": 2
+        },
+        {
+          "opcode": 499,
+          "name": "BranchEnd",
+          "count": 1
+        }
+      ],
+      "routeOpcodeHistogram": [],
+      "extensionHistogram": {}
+    },
+    {
+      "file": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/MapData/TitleMap.mps",
+      "sha256": "5881e8fa043f85bf73a57d3b3d3c87aea3009c7f2711e636ee5986c37cc3f679",
+      "fileBytes": 7806,
+      "wireVersion": 100,
+      "layoutMarker": 101,
+      "encoding": "cp932",
+      "compressed": false,
+      "compressedBytes": null,
+      "expandedPayloadBytes": 7781,
+      "title": "なし",
+      "tilesetId": 0,
+      "width": 20,
+      "height": 15,
+      "layerCount": 3,
+      "unknownV35": null,
+      "tileCount": 900,
+      "tileBytes": 3600,
+      "tileSha256": "a6b042933c0d178d7a8df7d5a59b4c1b88652e449ecde6b980ca9bd6cbaf379e",
+      "payloadFullyConsumed": true,
+      "eventCount": 1,
+      "pageCount": 1,
+      "commandCount": 87,
+      "opcodeHistogram": [
+        {
+          "opcode": 0,
+          "name": "Blank",
+          "count": 6
+        },
+        {
+          "opcode": 101,
+          "name": "Message",
+          "count": 5
+        },
+        {
+          "opcode": 102,
+          "name": "Choices",
+          "count": 1
+        },
+        {
+          "opcode": 103,
+          "name": "Comment",
+          "count": 49
+        },
+        {
+          "opcode": 111,
+          "name": "VariableCondition",
+          "count": 1
+        },
+        {
+          "opcode": 121,
+          "name": "SetVariable",
+          "count": 3
+        },
+        {
+          "opcode": 130,
+          "name": "Teleport",
+          "count": 1
+        },
+        {
+          "opcode": 140,
+          "name": "Sound",
+          "count": 1
+        },
+        {
+          "opcode": 150,
+          "name": "Picture",
+          "count": 2
+        },
+        {
+          "opcode": 175,
+          "name": "EndGame",
+          "count": 1
+        },
+        {
+          "opcode": 179,
+          "name": "LoopTimes",
+          "count": 1
+        },
+        {
+          "opcode": 180,
+          "name": "Wait",
+          "count": 4
+        },
+        {
+          "opcode": 201,
+          "name": "Move",
+          "count": 1
+        },
+        {
+          "opcode": 202,
+          "name": "WaitForMove",
+          "count": 1
+        },
+        {
+          "opcode": 210,
+          "name": "CommonEvent",
+          "count": 1
+        },
+        {
+          "opcode": 290,
+          "name": "Effect",
+          "count": 2
+        },
+        {
+          "opcode": 401,
+          "name": "ChoiceCase",
+          "count": 4
+        },
+        {
+          "opcode": 498,
+          "name": "LoopEnd",
+          "count": 1
+        },
+        {
+          "opcode": 499,
+          "name": "BranchEnd",
+          "count": 2
+        }
+      ],
+      "routeOpcodeHistogram": [
+        {
+          "opcode": 21,
+          "count": 1
+        },
+        {
+          "opcode": 22,
+          "count": 8
+        },
+        {
+          "opcode": 47,
+          "count": 7
+        }
+      ],
+      "extensionHistogram": {}
+    },
+    {
+      "file": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/MapData/Dungeon.mps",
+      "sha256": "9f6a58a28a41e81c123cc4d8faa7435cd5771b0c22e9c2345a423d1ec404f0f5",
+      "fileBytes": 2790,
+      "wireVersion": 103,
+      "layoutMarker": 105,
+      "encoding": "utf-8",
+      "compressed": true,
+      "compressedBytes": 2757,
+      "expandedPayloadBytes": 17777,
+      "title": "なし",
+      "tilesetId": 0,
+      "width": 40,
+      "height": 30,
+      "layerCount": 3,
+      "unknownV35": 3,
+      "tileCount": 3600,
+      "tileBytes": 14400,
+      "tileSha256": "ef742a72433dcfb022f85cb606f373c7b10ca8d3f23dfaf070647a52e5b9b716",
+      "payloadFullyConsumed": true,
+      "eventCount": 5,
+      "pageCount": 6,
+      "commandCount": 79,
+      "opcodeHistogram": [
+        {
+          "opcode": 0,
+          "name": "Blank",
+          "count": 15
+        },
+        {
+          "opcode": 101,
+          "name": "Message",
+          "count": 11
+        },
+        {
+          "opcode": 102,
+          "name": "Choices",
+          "count": 3
+        },
+        {
+          "opcode": 103,
+          "name": "Comment",
+          "count": 4
+        },
+        {
+          "opcode": 111,
+          "name": "VariableCondition",
+          "count": 1
+        },
+        {
+          "opcode": 121,
+          "name": "SetVariable",
+          "count": 1
+        },
+        {
+          "opcode": 130,
+          "name": "Teleport",
+          "count": 1
+        },
+        {
+          "opcode": 140,
+          "name": "Sound",
+          "count": 2
+        },
+        {
+          "opcode": 151,
+          "name": "ChangeColor",
+          "count": 6
+        },
+        {
+          "opcode": 180,
+          "name": "Wait",
+          "count": 6
+        },
+        {
+          "opcode": 210,
+          "name": "CommonEvent",
+          "count": 16
+        },
+        {
+          "opcode": 401,
+          "name": "ChoiceCase",
+          "count": 8
+        },
+        {
+          "opcode": 421,
+          "name": "CancelCase",
+          "count": 1
+        },
+        {
+          "opcode": 499,
+          "name": "BranchEnd",
+          "count": 4
+        }
+      ],
+      "routeOpcodeHistogram": [],
+      "extensionHistogram": {
+        "<empty>": 79
+      }
+    },
+    {
+      "file": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/MapData/SampleMapA.mps",
+      "sha256": "8eec5b855e3de24d56715729fd93d05856835de3b01fbfaa9908a21c28c848d7",
+      "fileBytes": 25076,
+      "wireVersion": 103,
+      "layoutMarker": 105,
+      "encoding": "utf-8",
+      "compressed": true,
+      "compressedBytes": 25043,
+      "expandedPayloadBytes": 59111,
+      "title": "なし",
+      "tilesetId": 0,
+      "width": 40,
+      "height": 30,
+      "layerCount": 3,
+      "unknownV35": 3,
+      "tileCount": 3600,
+      "tileBytes": 14400,
+      "tileSha256": "cc46489a03bf08d1d2b4444af46ea0c06945ca5d6ca137d424413e9a0d04d4a4",
+      "payloadFullyConsumed": true,
+      "eventCount": 25,
+      "pageCount": 26,
+      "commandCount": 683,
+      "opcodeHistogram": [
+        {
+          "opcode": 0,
+          "name": "Blank",
+          "count": 100
+        },
+        {
+          "opcode": 101,
+          "name": "Message",
+          "count": 158
+        },
+        {
+          "opcode": 102,
+          "name": "Choices",
+          "count": 11
+        },
+        {
+          "opcode": 103,
+          "name": "Comment",
+          "count": 82
+        },
+        {
+          "opcode": 111,
+          "name": "VariableCondition",
+          "count": 12
+        },
+        {
+          "opcode": 112,
+          "name": "StringCondition",
+          "count": 1
+        },
+        {
+          "opcode": 121,
+          "name": "SetVariable",
+          "count": 36
+        },
+        {
+          "opcode": 122,
+          "name": "SetString",
+          "count": 11
+        },
+        {
+          "opcode": 123,
+          "name": "InputKey",
+          "count": 1
+        },
+        {
+          "opcode": 130,
+          "name": "Teleport",
+          "count": 2
+        },
+        {
+          "opcode": 140,
+          "name": "Sound",
+          "count": 16
+        },
+        {
+          "opcode": 150,
+          "name": "Picture",
+          "count": 46
+        },
+        {
+          "opcode": 151,
+          "name": "ChangeColor",
+          "count": 3
+        },
+        {
+          "opcode": 170,
+          "name": "StartLoop",
+          "count": 1
+        },
+        {
+          "opcode": 171,
+          "name": "BreakLoop",
+          "count": 1
+        },
+        {
+          "opcode": 172,
+          "name": "BreakEvent",
+          "count": 1
+        },
+        {
+          "opcode": 174,
+          "name": "ReturnToTitle",
+          "count": 1
+        },
+        {
+          "opcode": 179,
+          "name": "LoopTimes",
+          "count": 9
+        },
+        {
+          "opcode": 180,
+          "name": "Wait",
+          "count": 38
+        },
+        {
+          "opcode": 201,
+          "name": "Move",
+          "count": 1
+        },
+        {
+          "opcode": 210,
+          "name": "CommonEvent",
+          "count": 15
+        },
+        {
+          "opcode": 280,
+          "name": "MapEffect",
+          "count": 1
+        },
+        {
+          "opcode": 290,
+          "name": "Effect",
+          "count": 34
+        },
+        {
+          "opcode": 300,
+          "name": "CommonEventByName",
+          "count": 4
+        },
+        {
+          "opcode": 401,
+          "name": "ChoiceCase",
+          "count": 55
+        },
+        {
+          "opcode": 420,
+          "name": "ElseCase",
+          "count": 1
+        },
+        {
+          "opcode": 421,
+          "name": "CancelCase",
+          "count": 8
+        },
+        {
+          "opcode": 498,
+          "name": "LoopEnd",
+          "count": 10
+        },
+        {
+          "opcode": 499,
+          "name": "BranchEnd",
+          "count": 24
+        }
+      ],
+      "routeOpcodeHistogram": [
+        {
+          "opcode": 9,
+          "count": 1
+        },
+        {
+          "opcode": 21,
+          "count": 1
+        },
+        {
+          "opcode": 26,
+          "count": 4
+        },
+        {
+          "opcode": 47,
+          "count": 3
+        },
+        {
+          "opcode": 60,
+          "count": 2
+        }
+      ],
+      "extensionHistogram": {
+        "<empty>": 683
+      }
+    },
+    {
+      "file": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/MapData/SampleMapB.mps",
+      "sha256": "112cd1dc0f104a1c5da3d4c720980a737f968936950c006414f524133304b42f",
+      "fileBytes": 3054,
+      "wireVersion": 103,
+      "layoutMarker": 105,
+      "encoding": "utf-8",
+      "compressed": true,
+      "compressedBytes": 3021,
+      "expandedPayloadBytes": 13919,
+      "title": "なし",
+      "tilesetId": 0,
+      "width": 30,
+      "height": 30,
+      "layerCount": 3,
+      "unknownV35": 3,
+      "tileCount": 2700,
+      "tileBytes": 10800,
+      "tileSha256": "546bc087f0ee2a522c5d31962cafc9a3ab090e21542010d8a91f55b1b172e797",
+      "payloadFullyConsumed": true,
+      "eventCount": 6,
+      "pageCount": 6,
+      "commandCount": 36,
+      "opcodeHistogram": [
+        {
+          "opcode": 0,
+          "name": "Blank",
+          "count": 8
+        },
+        {
+          "opcode": 101,
+          "name": "Message",
+          "count": 10
+        },
+        {
+          "opcode": 102,
+          "name": "Choices",
+          "count": 1
+        },
+        {
+          "opcode": 103,
+          "name": "Comment",
+          "count": 2
+        },
+        {
+          "opcode": 130,
+          "name": "Teleport",
+          "count": 1
+        },
+        {
+          "opcode": 140,
+          "name": "Sound",
+          "count": 1
+        },
+        {
+          "opcode": 151,
+          "name": "ChangeColor",
+          "count": 1
+        },
+        {
+          "opcode": 210,
+          "name": "CommonEvent",
+          "count": 9
+        },
+        {
+          "opcode": 401,
+          "name": "ChoiceCase",
+          "count": 2
+        },
+        {
+          "opcode": 499,
+          "name": "BranchEnd",
+          "count": 1
+        }
+      ],
+      "routeOpcodeHistogram": [],
+      "extensionHistogram": {
+        "<empty>": 36
+      }
+    },
+    {
+      "file": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/MapData/TitleMap.mps",
+      "sha256": "9448b079e30aeb306791d508cc122b4ff95f6f96a1292be5e1403ebc67287e4c",
+      "fileBytes": 3223,
+      "wireVersion": 103,
+      "layoutMarker": 105,
+      "encoding": "utf-8",
+      "compressed": true,
+      "compressedBytes": 3190,
+      "expandedPayloadBytes": 9264,
+      "title": "なし",
+      "tilesetId": 0,
+      "width": 20,
+      "height": 15,
+      "layerCount": 3,
+      "unknownV35": 3,
+      "tileCount": 900,
+      "tileBytes": 3600,
+      "tileSha256": "a6b042933c0d178d7a8df7d5a59b4c1b88652e449ecde6b980ca9bd6cbaf379e",
+      "payloadFullyConsumed": true,
+      "eventCount": 1,
+      "pageCount": 1,
+      "commandCount": 89,
+      "opcodeHistogram": [
+        {
+          "opcode": 0,
+          "name": "Blank",
+          "count": 6
+        },
+        {
+          "opcode": 101,
+          "name": "Message",
+          "count": 5
+        },
+        {
+          "opcode": 102,
+          "name": "Choices",
+          "count": 1
+        },
+        {
+          "opcode": 103,
+          "name": "Comment",
+          "count": 51
+        },
+        {
+          "opcode": 111,
+          "name": "VariableCondition",
+          "count": 1
+        },
+        {
+          "opcode": 121,
+          "name": "SetVariable",
+          "count": 3
+        },
+        {
+          "opcode": 130,
+          "name": "Teleport",
+          "count": 1
+        },
+        {
+          "opcode": 140,
+          "name": "Sound",
+          "count": 1
+        },
+        {
+          "opcode": 150,
+          "name": "Picture",
+          "count": 2
+        },
+        {
+          "opcode": 175,
+          "name": "EndGame",
+          "count": 1
+        },
+        {
+          "opcode": 179,
+          "name": "LoopTimes",
+          "count": 1
+        },
+        {
+          "opcode": 180,
+          "name": "Wait",
+          "count": 4
+        },
+        {
+          "opcode": 201,
+          "name": "Move",
+          "count": 1
+        },
+        {
+          "opcode": 202,
+          "name": "WaitForMove",
+          "count": 1
+        },
+        {
+          "opcode": 210,
+          "name": "CommonEvent",
+          "count": 1
+        },
+        {
+          "opcode": 290,
+          "name": "Effect",
+          "count": 2
+        },
+        {
+          "opcode": 401,
+          "name": "ChoiceCase",
+          "count": 4
+        },
+        {
+          "opcode": 498,
+          "name": "LoopEnd",
+          "count": 1
+        },
+        {
+          "opcode": 499,
+          "name": "BranchEnd",
+          "count": 2
+        }
+      ],
+      "routeOpcodeHistogram": [
+        {
+          "opcode": 21,
+          "count": 1
+        },
+        {
+          "opcode": 22,
+          "count": 8
+        },
+        {
+          "opcode": 47,
+          "count": 7
+        }
+      ],
+      "extensionHistogram": {
+        "<empty>": 89
+      }
+    }
+  ],
+  "commonEvents": [
+    {
+      "file": "build/wolf-research/sample22961/WOLF_RPG_Editor2/Data/BasicData/CommonEvent.dat",
+      "sha256": "ee5d12fff618ef443c2b9c1c5b51ba4dc7124cfa7f2f5ea9acfd72649aeb4eb0",
+      "fileBytes": 1055820,
+      "wireVersion": 143,
+      "encoding": "cp932",
+      "compressed": false,
+      "compressedBytes": null,
+      "expandedPayloadBytes": 1055809,
+      "payloadFullyConsumed": true,
+      "eventCount": 225,
+      "commandCount": 25611,
+      "opcodeHistogram": [
+        {
+          "opcode": 0,
+          "name": "Blank",
+          "count": 3251
+        },
+        {
+          "opcode": 99,
+          "name": "Checkpoint",
+          "count": 49
+        },
+        {
+          "opcode": 101,
+          "name": "Message",
+          "count": 68
+        },
+        {
+          "opcode": 103,
+          "name": "Comment",
+          "count": 5536
+        },
+        {
+          "opcode": 106,
+          "name": "DebugMessage",
+          "count": 46
+        },
+        {
+          "opcode": 107,
+          "name": "ClearDebugText",
+          "count": 1
+        },
+        {
+          "opcode": 111,
+          "name": "VariableCondition",
+          "count": 1736
+        },
+        {
+          "opcode": 112,
+          "name": "StringCondition",
+          "count": 31
+        },
+        {
+          "opcode": 121,
+          "name": "SetVariable",
+          "count": 3983
+        },
+        {
+          "opcode": 122,
+          "name": "SetString",
+          "count": 284
+        },
+        {
+          "opcode": 123,
+          "name": "InputKey",
+          "count": 54
+        },
+        {
+          "opcode": 124,
+          "name": "SetVariableEx",
+          "count": 32
+        },
+        {
+          "opcode": 126,
+          "name": "BanInput",
+          "count": 4
+        },
+        {
+          "opcode": 140,
+          "name": "Sound",
+          "count": 10
+        },
+        {
+          "opcode": 150,
+          "name": "Picture",
+          "count": 743
+        },
+        {
+          "opcode": 160,
+          "name": "SetTransition",
+          "count": 1
+        },
+        {
+          "opcode": 170,
+          "name": "StartLoop",
+          "count": 36
+        },
+        {
+          "opcode": 171,
+          "name": "BreakLoop",
+          "count": 66
+        },
+        {
+          "opcode": 172,
+          "name": "BreakEvent",
+          "count": 296
+        },
+        {
+          "opcode": 176,
+          "name": "StartLoop2",
+          "count": 50
+        },
+        {
+          "opcode": 179,
+          "name": "LoopTimes",
+          "count": 411
+        },
+        {
+          "opcode": 180,
+          "name": "Wait",
+          "count": 75
+        },
+        {
+          "opcode": 201,
+          "name": "Move",
+          "count": 1
+        },
+        {
+          "opcode": 210,
+          "name": "CommonEvent",
+          "count": 14
+        },
+        {
+          "opcode": 211,
+          "name": "CommonEventReserve",
+          "count": 4
+        },
+        {
+          "opcode": 212,
+          "name": "SetLabel",
+          "count": 66
+        },
+        {
+          "opcode": 213,
+          "name": "JumpLabel",
+          "count": 131
+        },
+        {
+          "opcode": 220,
+          "name": "SaveLoad",
+          "count": 2
+        },
+        {
+          "opcode": 221,
+          "name": "LoadGame",
+          "count": 8
+        },
+        {
+          "opcode": 222,
+          "name": "SaveGame",
+          "count": 1
+        },
+        {
+          "opcode": 250,
+          "name": "Database",
+          "count": 2506
+        },
+        {
+          "opcode": 270,
+          "name": "Party",
+          "count": 2
+        },
+        {
+          "opcode": 290,
+          "name": "Effect",
+          "count": 173
+        },
+        {
+          "opcode": 300,
+          "name": "CommonEventByName",
+          "count": 1147
+        },
+        {
+          "opcode": 401,
+          "name": "ChoiceCase",
+          "count": 2433
+        },
+        {
+          "opcode": 420,
+          "name": "ElseCase",
+          "count": 146
+        },
+        {
+          "opcode": 498,
+          "name": "LoopEnd",
+          "count": 447
+        },
+        {
+          "opcode": 499,
+          "name": "BranchEnd",
+          "count": 1767
+        }
+      ],
+      "extensionHistogram": {},
+      "routeOpcodeHistogram": [
+        {
+          "opcode": 29,
+          "count": 1
+        }
+      ]
+    },
+    {
+      "file": "build/wolf-research/sample3729/WOLF_RPG_Editor3/Data/BasicData/CommonEvent.dat",
+      "sha256": "f3a2dd7ab806d06d347622b4660b2437f4f46680000abb83b052affd9ff10e21",
+      "fileBytes": 385224,
+      "wireVersion": 147,
+      "encoding": "utf-8",
+      "compressed": true,
+      "compressedBytes": 385205,
+      "expandedPayloadBytes": 1309081,
+      "payloadFullyConsumed": true,
+      "eventCount": 225,
+      "commandCount": 26699,
+      "opcodeHistogram": [
+        {
+          "opcode": 0,
+          "name": "Blank",
+          "count": 3370
+        },
+        {
+          "opcode": 99,
+          "name": "Checkpoint",
+          "count": 49
+        },
+        {
+          "opcode": 101,
+          "name": "Message",
+          "count": 70
+        },
+        {
+          "opcode": 103,
+          "name": "Comment",
+          "count": 5875
+        },
+        {
+          "opcode": 106,
+          "name": "DebugMessage",
+          "count": 44
+        },
+        {
+          "opcode": 107,
+          "name": "ClearDebugText",
+          "count": 1
+        },
+        {
+          "opcode": 111,
+          "name": "VariableCondition",
+          "count": 1790
+        },
+        {
+          "opcode": 112,
+          "name": "StringCondition",
+          "count": 33
+        },
+        {
+          "opcode": 121,
+          "name": "SetVariable",
+          "count": 4151
+        },
+        {
+          "opcode": 122,
+          "name": "SetString",
+          "count": 298
+        },
+        {
+          "opcode": 123,
+          "name": "InputKey",
+          "count": 58
+        },
+        {
+          "opcode": 124,
+          "name": "SetVariableEx",
+          "count": 54
+        },
+        {
+          "opcode": 126,
+          "name": "BanInput",
+          "count": 6
+        },
+        {
+          "opcode": 140,
+          "name": "Sound",
+          "count": 10
+        },
+        {
+          "opcode": 150,
+          "name": "Picture",
+          "count": 760
+        },
+        {
+          "opcode": 160,
+          "name": "SetTransition",
+          "count": 1
+        },
+        {
+          "opcode": 170,
+          "name": "StartLoop",
+          "count": 37
+        },
+        {
+          "opcode": 171,
+          "name": "BreakLoop",
+          "count": 69
+        },
+        {
+          "opcode": 172,
+          "name": "BreakEvent",
+          "count": 304
+        },
+        {
+          "opcode": 176,
+          "name": "StartLoop2",
+          "count": 50
+        },
+        {
+          "opcode": 179,
+          "name": "LoopTimes",
+          "count": 430
+        },
+        {
+          "opcode": 180,
+          "name": "Wait",
+          "count": 78
+        },
+        {
+          "opcode": 201,
+          "name": "Move",
+          "count": 2
+        },
+        {
+          "opcode": 210,
+          "name": "CommonEvent",
+          "count": 17
+        },
+        {
+          "opcode": 211,
+          "name": "CommonEventReserve",
+          "count": 4
+        },
+        {
+          "opcode": 212,
+          "name": "SetLabel",
+          "count": 68
+        },
+        {
+          "opcode": 213,
+          "name": "JumpLabel",
+          "count": 134
+        },
+        {
+          "opcode": 220,
+          "name": "SaveLoad",
+          "count": 2
+        },
+        {
+          "opcode": 221,
+          "name": "LoadGame",
+          "count": 9
+        },
+        {
+          "opcode": 222,
+          "name": "SaveGame",
+          "count": 2
+        },
+        {
+          "opcode": 250,
+          "name": "Database",
+          "count": 2544
+        },
+        {
+          "opcode": 270,
+          "name": "Party",
+          "count": 4
+        },
+        {
+          "opcode": 290,
+          "name": "Effect",
+          "count": 247
+        },
+        {
+          "opcode": 300,
+          "name": "CommonEventByName",
+          "count": 1160
+        },
+        {
+          "opcode": 401,
+          "name": "ChoiceCase",
+          "count": 2526
+        },
+        {
+          "opcode": 420,
+          "name": "ElseCase",
+          "count": 152
+        },
+        {
+          "opcode": 498,
+          "name": "LoopEnd",
+          "count": 467
+        },
+        {
+          "opcode": 499,
+          "name": "BranchEnd",
+          "count": 1823
+        }
+      ],
+      "extensionHistogram": {
+        "<empty>": 26699
+      },
+      "routeOpcodeHistogram": [
+        {
+          "opcode": 29,
+          "count": 1
+        },
+        {
+          "opcode": 160,
+          "count": 1
+        }
+      ]
+    }
+  ],
+  "errors": [],
+  "sourceReportSha256": "024f683087680d5102825b634d0308c2adf4c5cf76d7aba25c17f364cedff8bb"
+}
