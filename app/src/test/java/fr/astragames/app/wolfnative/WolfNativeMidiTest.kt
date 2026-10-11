@@ -13,6 +13,13 @@ class WolfNativeMidiTest {
         val bytes = midi(96, track); val original = bytes.copyOf()
         val info = requireNotNull(WolfNativeMidi.parse(bytes))
         assertEquals(500, info.millis(96)); assertEquals(750, info.millis(192))
+        assertEquals(192, info.lengthTicks)
+        assertEquals(96, info.ticks(500)); assertEquals(192, info.ticks(750))
+        for (time in listOf(0, 250, 501, 700, 999)) {
+            val tick = info.ticks(time)
+            assertTrue(info.millis(tick) <= time)
+            assertTrue(info.millis(tick + 1) > time)
+        }
         val raised = info.transpose(bytes, 12)
         assertEquals(72, raised[31].toInt()); assertEquals(60, raised[35].toInt())
         assertArrayEquals(original, bytes)

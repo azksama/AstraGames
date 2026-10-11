@@ -116,6 +116,9 @@ data class NativePicture(
     val fontOverrides: Map<Int, String> = emptyMap(),
     /** Null in older saves means their already rendered text must stay fully visible. */
     val textTiming: NativeTextPictureTiming? = null,
+    /** Command124 fields32/33 survive after the movement tween completes. */
+    val moveDuration: Int = 0,
+    val moveRemaining: Int = -1,
 )
 
 data class NativeText(val text: String, val x: Float, val y: Float, val size: Float = 16f, val color: Int = -1)
@@ -241,14 +244,16 @@ data class WolfCapabilityIssue(
     val opcode: Int,
     val offset: Int,
     val reason: String,
+    val operands: String? = null,
 )
 
 data class WolfCapabilities(val issues: List<WolfCapabilityIssue>, val scannedMapCount: Int = 0, val inspectedAllMaps: Boolean = false) {
     val supported: Boolean get() = issues.isEmpty()
-    fun description(limit: Int = 12): String {
+    fun description(limit: Int = 12, includeOperands: Boolean = false): String {
         require(limit > 0)
         val shown = issues.take(limit).joinToString("\n") {
-            "${it.file} / événement ${it.eventId} / commande ${it.opcode} @0x${it.offset.toString(16)} : ${it.reason}"
+            "${it.file} / événement ${it.eventId} / commande ${it.opcode} @0x${it.offset.toString(16)} : ${it.reason}" +
+                if (includeOperands && it.operands != null) "\n  ${it.operands}" else ""
         }
         return shown + if (issues.size > limit) "\n… ${issues.size - limit} autres incompatibilités dans le rapport complet." else ""
     }

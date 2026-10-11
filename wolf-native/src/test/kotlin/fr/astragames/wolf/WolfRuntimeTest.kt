@@ -1576,7 +1576,7 @@ class WolfRuntimeTest {
         val runtime = fixture(emptyList(), initialMap = map("passage", emptyList()).copy(tiles = tiles), tileset = tileset)
         runtime.key(NativeKey.RIGHT, true); repeat(20) { runtime.tick() }
         assertEquals(2f, runtime.snapshotState().x, .001f)
-        val p = page(emptyList()).copy(flags = 0x83, graphicBlend = 3, movement = byteArrayOf(3, 3, 3, 2))
+        val p = page(emptyList()).copy(flags = 0x83, graphicBlend = 3, movement = byteArrayOf(3, 3, 3, 4))
         val game = fixture(emptyList(), initialMap = map("unsupported", listOf(WolfEvent(3, "moving", 2, 2, listOf(p)))))
         val report = game.inspectCapabilities().description()
         assertTrue(report.contains("autonome"))

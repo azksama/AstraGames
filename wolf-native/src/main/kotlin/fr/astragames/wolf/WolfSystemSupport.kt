@@ -81,6 +81,11 @@ internal class WolfSystemTelemetry(private val nanoTime: () -> Long = System::na
     var active = true; private set
     var controllerName = ""; private set
     var controllerKind = ""; private set
+    var availableMemoryMB: Int? = null; private set
+    var usedMemoryMB: Int? = null; private set
+    var eventNanos = 0L; private set
+    var renderNanos = 0L; private set
+    private var pendingEventNanos = 0L
     fun tick() {
         val now = nanoTime(); frameAt = now; samples++
         val elapsed = now - sampleAt
@@ -91,6 +96,14 @@ internal class WolfSystemTelemetry(private val nanoTime: () -> Long = System::na
     }
     fun millis(base: Int, modern: Boolean) = (base + if (modern) ((nanoTime() - frameAt).coerceAtLeast(0) / 1_000_000L).coerceAtMost(1999).toInt() else 0).coerceAtMost(1999)
     fun rendered(fps: Int) { require(fps >= 0); renderFps = fps }
+    fun renderedDuration(nanos: Long) { require(nanos >= 0); renderNanos = nanos }
+    fun availableMemory(bytes: Long) { require(bytes >= 0); availableMemoryMB = (bytes / 1_048_576).coerceAtMost(4096).toInt() }
+    fun usedMemory(bytes: Long) { require(bytes >= 0); usedMemoryMB = (bytes / 1_048_576).coerceAtMost(Int.MAX_VALUE.toLong()).toInt() }
+    fun execution(nanos: Long, completed: Boolean) {
+        pendingEventNanos += nanos.coerceAtLeast(0)
+        if (completed) { eventNanos = pendingEventNanos; pendingEventNanos = 0 }
+    }
+    fun resetExecution() { pendingEventNanos = 0; eventNanos = 0 }
     fun focus(value: Boolean) { active = value; sampleAt = nanoTime(); frameAt = sampleAt; samples = 0; internalFps = 0; renderFps = 0 }
     fun controller(name: String, kind: String) { controllerName = name; controllerKind = if (name.isEmpty()) "" else kind.ifEmpty { "UNKNOWN" } }
 }

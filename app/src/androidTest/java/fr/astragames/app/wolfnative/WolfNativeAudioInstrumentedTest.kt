@@ -13,6 +13,53 @@ import java.util.UUID
 import java.util.concurrent.ConcurrentLinkedQueue
 
 class WolfNativeAudioInstrumentedTest {
+    @Test fun livePlaybackPublishesDecoderPositionsMidiTicksAndIndependentBgsVoiceLifetimes() {
+        val context = InstrumentationRegistry.getInstrumentation().targetContext
+        val root = File(context.cacheDir, "native-audio-state-${UUID.randomUUID()}").apply { mkdirs() }
+        val errors = ConcurrentLinkedQueue<String>(); val events = ConcurrentLinkedQueue<String>()
+        val latest = java.util.concurrent.atomic.AtomicReference<List<fr.astragames.wolf.WolfAudioPlayback>>(emptyList())
+        val source = object : WolfAssetSource {
+            val files = mapOf("Data/field.wav" to wave(), "Data/notes.mid" to midi())
+            override fun read(path: String) = files[path] ?: error("Missing authored track $path")
+            override fun exists(path: String) = path in files
+            override fun list(path: String) = emptyList<String>()
+        }
+        val audio = WolfNativeAudio(context, source, root, { errors.offer(it) }, { events.offer(it) }, {
+            assertNotEquals("Decoder sampling must stay off the main thread", android.os.Looper.getMainLooper(), android.os.Looper.myLooper())
+            latest.set(it)
+        })
+        fun await(condition: () -> Boolean) {
+            val deadline = SystemClock.elapsedRealtime() + 15_000
+            while (errors.isEmpty() && !condition() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(20)
+            assertTrue(errors.joinToString(), errors.isEmpty()); assertTrue("Live audio state did not arrive: ${latest.get()}", condition())
+        }
+        try {
+            audio.apply(NativeEffect.Audio(0, "field.wav", loop = true))
+            audio.apply(NativeEffect.Audio(1, "notes.mid", loop = true, voice = 3))
+            await { latest.get().size == 2 }
+            val first = latest.get()
+            assertEquals(2000, first.single { it.channel == 0 }.duration)
+            assertEquals(384, first.single { it.channel == 1 }.duration)
+            assertEquals(3, first.single { it.channel == 1 }.voice)
+            await { latest.get().single { it.channel == 0 }.position > 100 && latest.get().single { it.channel == 1 }.position > 10 }
+            audio.pause(); await { events.count { it.startsWith("paused |") } == 2 }
+            SystemClock.sleep(100)
+            val paused = latest.get().associate { it.channel to it.position }
+            SystemClock.sleep(150)
+            assertEquals(paused, latest.get().associate { it.channel to it.position })
+            audio.resume(); await { events.count { it.startsWith("resumed |") } == 2 }
+            await { latest.get().single { it.channel == 0 }.position > paused.getValue(0) }
+            audio.apply(NativeEffect.Audio(1, stop = true, voice = 3))
+            await { latest.get().size == 1 && latest.get().single().channel == 0 }
+            audio.apply(NativeEffect.Audio(0, stop = true)); await { latest.get().isEmpty() }
+        } finally {
+            audio.close()
+            val deadline = SystemClock.elapsedRealtime() + 2_000
+            while (root.listFiles().orEmpty().isNotEmpty() && SystemClock.elapsedRealtime() < deadline) SystemClock.sleep(20)
+            check(root.canonicalFile.parentFile == context.cacheDir.canonicalFile); root.deleteRecursively()
+        }
+    }
+
     @Test fun protectedWaveAliasesFeedRealAndroidPlayersAndMaterializeOnlyPlaintextPayloads() {
         val instrumentation = InstrumentationRegistry.getInstrumentation()
         val context = instrumentation.targetContext

@@ -6,12 +6,17 @@ internal object WolfCapabilityInspector {
     fun inspect(game: WolfGameData, currentMapId: Int, currentMap: WolfMap, source: WolfAssetSource, mapLoader: (Int) -> WolfMap, allMaps: Boolean): WolfCapabilities {
         val issues = linkedMapOf<List<Any>, WolfCapabilityIssue>()
         var truncated = false
-        fun issue(file: String, event: Int, opcode: Int, offset: Int, reason: String?) {
+        var inspectedCommand: WolfCommand? = null
+        var inspectedPage: WolfPage? = null
+        fun issue(file: String, event: Int, opcode: Int, offset: Int, reason: String?, detail: String? = null) {
             if (reason == null) return
             val key = listOf(file, event, opcode, reason)
             if (key in issues) return
             if (issues.size >= MAX_ISSUES) { truncated = true; return }
-            issues[key] = WolfCapabilityIssue(file, event, opcode, offset, reason)
+            // Format only retained diagnostics; no dialogue or whole command lists are kept.
+            val operands = detail ?: inspectedCommand?.let(WolfDiagnosticOperands::command)
+                ?: inspectedPage?.let(WolfDiagnosticOperands::page)
+            issues[key] = WolfCapabilityIssue(file, event, opcode, offset, reason, operands)
         }
         fun value(file: String, event: Int, opcode: Int, offset: Int, code: Int, write: Boolean = false, string: Boolean = false) {
             issue(file, event, opcode, offset, variableProblem(code, write, string))
@@ -37,11 +42,17 @@ internal object WolfCapabilityInspector {
             if (string && code in 9_900_062..9_900_067 && (game.config.engineCompatibilityVersion ?: 0) < 300)
                 issue(file, event, opcode, offset, "Police système absente de ce profil Wolf")
         }
-        fun command(file: String, event: Int, c: WolfCommand) {
+        fun inspectCommand(file: String, event: Int, c: WolfCommand) {
             issue(file, event, c.opcode, c.offset, WolfRuntime.capabilityProblem(c))
             val a = c.arguments
-            if (c.opcode == 123 && a.getOrElse(1) { 0 } and 0x30000 != 0 && (game.config.engineCompatibilityVersion ?: 0) < 350)
+            if (c.opcode == 123 && a.getOrElse(1) { 0 } and 0x70000 != 0 && (game.config.engineCompatibilityVersion ?: 0) < 350)
                 issue(file, event, c.opcode, c.offset, "Mode de bord récent absent de ce profil Wolf")
+            if (c.opcode == 124 && a.getOrElse(1) { 0 } ushr 12 and 15 == 3) {
+                if (a.getOrElse(2) { -1 } in setOf(13, 30) && (game.config.engineCompatibilityVersion ?: 0) < 340)
+                    issue(file, event, c.opcode, c.offset, "Recherche d'événement écran avant Wolf3.40 non qualifiée")
+                if (a.getOrElse(2) { -1 } == 24 && game.config.byteSettings.getOrNull(17)?.let(WolfStateReadSemantics::language) == null)
+                    issue(file, event, c.opcode, c.offset, "Langue de Game.dat inconnue")
+            }
             if (c.opcode == 124 && a.getOrElse(1) { 0 } ushr 12 and 15 == 2 &&
                 (a[1] ushr 16 and 255 in 22..23 || a[1] ushr 16 and 255 >= 150) && (game.config.engineCompatibilityVersion ?: 0) < 350)
                 issue(file, event, c.opcode, c.offset, "Conversion écran/carte absente de ce profil Wolf")
@@ -125,8 +136,8 @@ internal object WolfCapabilityInspector {
                             issue(file, event, c.opcode, c.offset, failure.message ?: "Progression de texte non établie")
                         }
                     }
-                    if (action == 0 && kind in setOf(0, 3)) c.strings.firstOrNull()?.takeUnless { it.startsWith('<') }?.let { path ->
-                        runCatching { WolfParser.dataPath(path) }.fold({ normalized -> if (!source.exists(normalized)) issue(file, event, c.opcode, c.offset, "Ressource de pic absente : $normalized") }, { issue(file, event, c.opcode, c.offset, "Chemin de pic invalide") })
+                    if (action == 0 && kind in setOf(0, 3)) c.strings.firstOrNull()?.let { path ->
+                        issue(file, event, c.opcode, c.offset, pictureResourceProblem(path, source))
                     }
                 }
                 179, 180 -> v(0)
@@ -225,6 +236,12 @@ internal object WolfCapabilityInspector {
                 }
             }
         }
+        fun command(file: String, event: Int, c: WolfCommand) {
+            val previous = inspectedCommand
+            inspectedCommand = c
+            try { inspectCommand(file, event, c) }
+            finally { inspectedCommand = previous }
+        }
         val config = game.config
         if (config.byteSettings.getOrNull(8)?.toInt() !in 0..1 || config.byteSettings.getOrNull(9)?.toInt() !in 0..1)
             issue("Game.dat", -1, -1, 0, "Réglage de demi-pas/collision inconnu")
@@ -247,19 +264,28 @@ internal object WolfCapabilityInspector {
             val tileset = game.tilesets.getOrNull(map.tilesetId)
             if (tileset == null) issue(map.name, -1, -1, 0, "Tileset absent")
             map.events.forEach { event -> event.pages.forEach { page ->
-                if (page.trigger !in 0..4) issue(map.name, event.id, -1, page.offset, "Déclencheur de page inconnu")
-                if (page.conditions.size != 37) issue(map.name, event.id, -1, page.offset, "Conditions de page incomplètes")
-                else repeat(4) { index ->
-                    val f = page.conditions[index + 1].toInt() and 255
-                    if (f and 15 !in 0..1 || f ushr 4 !in 0..6) issue(map.name, event.id, -1, page.offset, "Mode de condition de page inconnu")
-                    if (f and 15 != 0) value(map.name, event.id, -1, page.offset, intAt(page.conditions, 5 + index * 4))
-                }
-                if (page.movement.size != 4 || page.movement.take(3).any { it.toInt() !in 0..6 } || page.movement.getOrNull(3)?.toInt() !in 0..1) issue(map.name, event.id, -1, page.offset, "Mode autonome de page non implémenté")
-                if (page.graphicBlend !in 0..3) issue(map.name, event.id, -1, page.offset, "Mélange du graphique de page inconnu")
-                if (page.featureCount !in 0..4 || page.features.size < minOf(page.featureCount, 3))
-                    issue(map.name, event.id, -1, page.offset, "Fonction avancée de page ou transfert non implémenté")
-                if (page.route.commands.isNotEmpty()) issue(map.name, event.id, 201, page.offset, routeProblem(page.route))
-                page.commands.forEach { command(map.name, event.id, it) }
+                val previous = inspectedPage
+                inspectedPage = page
+                try {
+                    if (page.trigger !in 0..4) issue(map.name, event.id, -1, page.offset, "Déclencheur de page inconnu")
+                    if (page.conditions.size != 37) issue(map.name, event.id, -1, page.offset, "Conditions de page incomplètes")
+                    else repeat(4) { index ->
+                        val f = page.conditions[index + 1].toInt() and 255
+                        if (f and 15 !in 0..1 || f ushr 4 !in 0..6) issue(map.name, event.id, -1, page.offset, "Mode de condition de page inconnu")
+                        if (f and 15 != 0) value(map.name, event.id, -1, page.offset, intAt(page.conditions, 5 + index * 4))
+                    }
+                    // Animation and speed index the engine's cadence tables. Movement frequency
+                    // is an unsigned page byte, not a 0..6 table index. Modes2/3 are the native
+                    // random/towards-hero strategies; runtime executes them at the same cadence.
+                    if (page.movement.size != 4 || page.movement[0].toInt().and(255) !in 0..6 ||
+                        page.movement[1].toInt().and(255) !in 0..6 || page.movement[3].toInt().and(255) !in 0..3)
+                        issue(map.name, event.id, -1, page.offset, "Mode autonome de page non implémenté")
+                    if (page.graphicBlend !in 0..3) issue(map.name, event.id, -1, page.offset, "Mélange du graphique de page inconnu")
+                    if (page.featureCount !in 0..4 || page.features.size < minOf(page.featureCount, 3))
+                        issue(map.name, event.id, -1, page.offset, "Fonction avancée de page ou transfert non implémenté")
+                    if (page.route.commands.isNotEmpty()) issue(map.name, event.id, 201, page.offset, routeProblem(page.route))
+                    page.commands.forEach { command(map.name, event.id, it) }
+                } finally { inspectedPage = previous }
             } }
         }
         fun result(mapCount: Int, complete: Boolean): WolfCapabilities {
@@ -277,9 +303,27 @@ internal object WolfCapabilityInspector {
             try { inspectMap(mapLoader(reference.id)) }
             catch (error: Exception) { issue(reference.file, -1, -1, 0, "Carte non inspectable : ${error.message ?: error.javaClass.simpleName}") }
             mapCount++
-            if (issues.size >= MAX_ISSUES) { truncated = true; return result(mapCount, false) }
         }
-        return result(mapCount, true)
+        // Limit retained diagnostics, never the number of maps actually inspected.
+        // A truncated report must not advertise complete compatibility coverage.
+        return result(mapCount, !truncated)
+    }
+
+    private fun pictureResourceProblem(input: String, source: WolfAssetSource): String? {
+        val path = input.replace("\r", "") // Runtime.text removes CR before resource expansion.
+        if (path.isBlank() || path.startsWith('<')) return null
+        // Mutable strings, common values and nested DB expressions are expanded by the
+        // interpreter at SHOW. A lexical placeholder is never a filename to look up.
+        if (WolfTextCodes.variableToken.findAll(path).any { !WolfTextCodes.quotedEscape(path, it.range.first) }) return null
+        val normalized = runCatching { WolfParser.rootAssetPath(WolfParser.imageAssetPath(path)) }
+            .getOrElse { return "Chemin de pic invalide" }
+        return runCatching {
+            // Media readers prefer foo.png.wolfx over foo.png and accept either spelling.
+            // Presence alone does not certify the encryption key, pixels or media format;
+            // those remain checked by the resource worker when the image is required.
+            val present = !normalized.endsWith(".wolfx", true) && source.exists("$normalized.wolfx") || source.exists(normalized)
+            if (present) null else "Ressource de pic absente : $normalized"
+        }.getOrElse { "Ressource de pic non vérifiable : $normalized (${it.message ?: it.javaClass.simpleName})" }
     }
 
     fun variableProblem(code: Int, write: Boolean = false, string: Boolean = false): String? {
@@ -339,9 +383,7 @@ internal object WolfTextCodes {
     /** Validate the surrounding syntax after replacing only variable tokens, including nested ones.
      * Actual values are expanded and checked again when the command executes. */
     val variableToken = Regex("""\\(cself|self|sysS|sys|[ucs]db|v[0-9]?|s)\[([^\[\]]*)]""")
-    fun staticExpansion(input: String): String = variableToken.replace(input) { match ->
-        if (quotedEscape(input, match.range.first)) match.value else "16"
-    }
+    fun staticExpansion(input: String): String = WolfTextExpansion.staticShape(input)
     fun presentationProblem(input: String, allowVariables: Boolean = false): String? {
         var problem: String? = null
         val expanded = if (allowVariables) staticExpansion(input) else input

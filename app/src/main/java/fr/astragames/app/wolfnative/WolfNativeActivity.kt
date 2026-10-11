@@ -194,6 +194,7 @@ class WolfNativeActivity : FragmentActivity() {
             downloads = WolfNativeDownloads(fileSource)
             val vm = WolfRuntime.load(fileSource) { stage((phase + 1).coerceAtMost(5), it) }.also { runtime = it }
             vm.windowActive(focused && !paused)
+            updateHostMemory(vm)
             updateControllerDevice()
             launchPreferences = WolfNativeLaunchPreferences(this, requireNotNull(intent.getStringExtra("id"))).also {
                 vm.initialNextLaunchScale(it.nextWindowScalePermille)
@@ -202,7 +203,7 @@ class WolfNativeActivity : FragmentActivity() {
             val capabilities = vm.inspectCapabilities(includeAllMaps = true)
             diagnostic?.event("Audit natif : ${capabilities.scannedMapCount} cartes inspectées ; ${capabilities.issues.size} incompatibilités ; complet=${capabilities.inspectedAllMaps}")
             if (!capabilities.supported) {
-                diagnostic?.event("Incompatibilités natives détectées avant lancement :\n${capabilities.description(Int.MAX_VALUE)}")
+                diagnostic?.event("Incompatibilités natives détectées avant lancement :\n${capabilities.description(Int.MAX_VALUE, includeOperands = true)}")
                 if (currentOptions.runtime == WolfRuntimeMode.AUTO) { fallback("Fonctions non encore compatibles :\n${capabilities.description()}"); return }
                 fail("Fonctions non encore compatibles :\n${capabilities.description()}"); return
             }
@@ -230,7 +231,8 @@ class WolfNativeActivity : FragmentActivity() {
                     (colors.number(row.id, 2) ?: 255).coerceIn(0, 255)) }
             }
             audio = WolfNativeAudio(this, fileSource, java.io.File(cacheDir, "wolf-native-audio"), ::fail,
-                onPlaybackEvent = { diagnostic?.event("Audio natif : $it") })
+                onPlaybackEvent = { diagnostic?.event("Audio natif : $it") },
+                onPlaybackState = { states -> onOwner { if (!closed && !failed && runtime === vm) vm.audioPlayback(states) } })
             speech = WolfNativeSpeech(this,
                 onPlaying = { request, playing -> onOwner { if (!closed && !failed && runtime === vm) vm.speechPlaying(request, playing) } },
                 onVoices = { request, voices -> onOwner { if (!closed && !failed && runtime === vm) vm.completeSpeechVoices(request, voices) } },
@@ -250,6 +252,7 @@ class WolfNativeActivity : FragmentActivity() {
                 val view = WolfNativeView(this, textures, WolfNativeView.Callbacks(
                     key = { code, pressed -> key("display", code, pressed) },
                     pointer = { x, y, pressed -> input { it.pointer(x, y, pressed) } },
+                    mouse = { x, y, buttons, wheel, inside -> input { it.mouse(x, y, buttons, wheel, inside) } },
                     choose = { choice -> input { it.choose(choice) } }, firstFrame = ::firstFrame, error = ::fail,
                     notice = { message -> onOwner { diagnostic?.event(message) } },
                     videoState = { id, state -> input { it.videoState(id, state) } },
@@ -281,6 +284,8 @@ class WolfNativeActivity : FragmentActivity() {
         if (closed || failed || paused || !focused && !textInputActive || menuPaused) return
         try {
             val vm = runtime ?: return
+            vm.renderedDuration(display?.lastDrawNanos ?: 0L)
+            if (SystemClock.elapsedRealtime() >= nextHostMemoryAt) updateHostMemory(vm)
             if (resumeOnly && !vm.hasPendingTick) return
             var count = 0
             while (count++ < 256) (inputs.poll() ?: break)(vm)
@@ -530,6 +535,14 @@ class WolfNativeActivity : FragmentActivity() {
             }
         } }
         catch (_: java.util.concurrent.RejectedExecutionException) { /* Activity closed during dispatch. */ }
+    }
+    private var nextHostMemoryAt = 0L
+    private fun updateHostMemory(vm: WolfRuntime) {
+        val memory = android.app.ActivityManager.MemoryInfo()
+        getSystemService(android.app.ActivityManager::class.java).getMemoryInfo(memory)
+        vm.availableMemory(memory.availMem.coerceAtLeast(0))
+        vm.usedMemory(android.os.Debug.getPss().coerceAtLeast(0).toLong() * 1024)
+        nextHostMemoryAt = SystemClock.elapsedRealtime() + 2_000
     }
     private fun releaseInput() {
         if (::controls.isInitialized) controls.releaseAll()

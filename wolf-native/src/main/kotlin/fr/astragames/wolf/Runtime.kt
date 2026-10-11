@@ -88,6 +88,9 @@ class WolfRuntime private constructor(
     private var targetTile: Pair<Int, Int>? = null
     private var randomState = 0x13579bdf
     private val telemetry = WolfSystemTelemetry()
+    private val mouse = WolfPointerState()
+    private val audioPlayback = linkedMapOf<Pair<Int, Int>, WolfAudioPlayback>()
+    private var triggeredEventThisFrame = -1
     private var lastDiagnostic = ""
     private var downloadProgress = WolfDownloadProgress()
     private var timerFrameOrigin = 0L
@@ -175,6 +178,13 @@ class WolfRuntime private constructor(
     /** Called on the VM owner, never from a UI or decode worker directly. */
     fun windowActive(active: Boolean) = telemetry.focus(active)
     fun renderedFps(fps: Int) = telemetry.rendered(fps)
+    fun renderedDuration(nanos: Long) = telemetry.renderedDuration(nanos)
+    fun availableMemory(bytes: Long) = telemetry.availableMemory(bytes)
+    fun usedMemory(bytes: Long) = telemetry.usedMemory(bytes)
+    fun audioPlayback(states: List<WolfAudioPlayback>) {
+        audioPlayback.clear()
+        states.forEach { if (activeAudio[it.channel to it.voice]?.path == it.path) audioPlayback[it.channel to it.voice] = it }
+    }
     fun controllerDevice(name: String, kind: String) = telemetry.controller(name, kind)
     fun downloadProgress(requestId: Long, value: WolfDownloadProgress) {
         if (requestId == lastDownloadRequest && requestId in pendingDownloads) downloadProgress = value
@@ -269,10 +279,20 @@ class WolfRuntime private constructor(
         else physicalPadButtons.remove(button)
     }
 
-    fun releaseInput() { edgeLogical = emptySet(); previousEdgeLogical = emptySet(); edgeKeyboard = emptySet(); previousEdgeKeyboard = emptySet(); edgeController = emptySet(); previousEdgeController = emptySet(); keys.clear(); newKeys.clear(); releasedKeys.clear(); queuedKeyPresses.clear(); queuedKeyReleases.clear(); queuedPhysicalPresses.clear(); queuedPadPresses.clear(); queuedPointerPress = false; queuedPointerRelease = false; physicalKeys.clear(); newPhysicalKeys.clear(); physicalPadButtons.clear(); newPhysicalPadButtons.clear(); keyRepeats.reset(); nextAutomaticScanKeys.clear(); automaticScanKeys.clear(); nextAutomaticKeys.clear(); nextAutomaticRawKeys.clear(); automaticRawKeys.clear(); nextAutomaticPointer = null; targetTile = null; pointerPressed = false; pointerNewPress = false; pointerNewRelease = false; pointerX = -1f; pointerY = -1f }
+    fun releaseInput() { mouse.reset(); edgeLogical = emptySet(); previousEdgeLogical = emptySet(); edgeKeyboard = emptySet(); previousEdgeKeyboard = emptySet(); edgeController = emptySet(); previousEdgeController = emptySet(); keys.clear(); newKeys.clear(); releasedKeys.clear(); queuedKeyPresses.clear(); queuedKeyReleases.clear(); queuedPhysicalPresses.clear(); queuedPadPresses.clear(); queuedPointerPress = false; queuedPointerRelease = false; physicalKeys.clear(); newPhysicalKeys.clear(); physicalPadButtons.clear(); newPhysicalPadButtons.clear(); keyRepeats.reset(); nextAutomaticScanKeys.clear(); automaticScanKeys.clear(); nextAutomaticKeys.clear(); nextAutomaticRawKeys.clear(); automaticRawKeys.clear(); nextAutomaticPointer = null; targetTile = null; pointerPressed = false; pointerNewPress = false; pointerNewRelease = false; pointerX = -1f; pointerY = -1f }
 
     /** Coordinates are inverse-transformed by the host from the visible viewport. */
     fun pointer(x: Float, y: Float, pressed: Boolean = true) {
+        mouse.update(x, y, if (pressed) 1 else 0)
+        updatePointer(x, y, pressed)
+    }
+
+    fun mouse(x: Float, y: Float, buttons: Int, wheel: Int = 0, inside: Boolean = true) {
+        mouse.update(x, y, buttons, wheel, inside)
+        updatePointer(x, y, buttons and 1 != 0)
+    }
+
+    private fun updatePointer(x: Float, y: Float, pressed: Boolean) {
         val firstPress = pressed && !pointerPressed
         if (firstPress) { if (tickExecutions == null) pointerNewPress = true else queuedPointerPress = true }
         if (!pressed && pointerPressed) { if (tickExecutions == null) pointerNewRelease = true else queuedPointerRelease = true }
@@ -311,9 +331,11 @@ class WolfRuntime private constructor(
         if (terminated) return
         if (pendingFontOverrides.isNotEmpty()) return
         var completed = false
+        val executionBegan = System.nanoTime()
         try {
           if (tickExecutions == null) {
             ticks++
+            triggeredEventThisFrame = -1
             newKeys.addAll(queuedKeyPresses); queuedKeyPresses.clear()
             releasedKeys.addAll(queuedKeyReleases); queuedKeyReleases.clear()
             newPhysicalKeys.addAll(queuedPhysicalPresses); queuedPhysicalPresses.clear()
@@ -333,7 +355,8 @@ class WolfRuntime private constructor(
             if (28 in automaticScanKeys) pendingTextInputs.forEach { (id, pending) ->
                 if (!pending.confirmationRequested) { pending.confirmationRequested = true; effects.add(NativeEffect.ConfirmTextInput(id)) }
             }
-            nextAutomaticPointer?.let { (x, y, press) -> pointerX = x; pointerY = y; if (press) pointerNewPress = true }; nextAutomaticPointer = null
+            nextAutomaticPointer?.let { (x, y, press) -> pointerX = x; pointerY = y; mouse.pulse(x, y, press); if (press) pointerNewPress = true }; nextAutomaticPointer = null
+            mouse.frame()
             val heldReaders = (keys + newKeys + logicalPhysicalState(false)).filterNot { it in bannedKeys }.toSet()
             previousEdgeLogical = edgeLogical; edgeLogical = heldReaders
             previousEdgeKeyboard = edgeKeyboard; edgeKeyboard = (physicalKeys + newPhysicalKeys + automaticScanKeys).toSet()
@@ -397,7 +420,10 @@ class WolfRuntime private constructor(
             val address = current?.address ?: EventAddress(mapId)
             val wrapped = WolfRuntimeException(address.map, address.event, address.common, c?.opcode ?: -1, c?.offset ?: 0, failure.message ?: failure.javaClass.simpleName)
             failed = wrapped; releaseInput(); lastDiagnostic = wrapped.message.orEmpty(); effects.add(NativeEffect.Diagnostic(lastDiagnostic)); throw wrapped
-        } finally { if (completed || failed != null) { tickExecutions = null; tickExecutionIndex = 0; newKeys.clear(); releasedKeys.clear(); newPhysicalKeys.clear(); newPhysicalPadButtons.clear(); automaticRawKeys.clear(); automaticScanKeys.clear(); pointerNewPress = false; pointerNewRelease = false } }
+        } finally {
+            telemetry.execution(System.nanoTime() - executionBegan, completed || failed != null)
+            if (completed || failed != null) { tickExecutions = null; tickExecutionIndex = 0; newKeys.clear(); releasedKeys.clear(); newPhysicalKeys.clear(); newPhysicalPadButtons.clear(); automaticRawKeys.clear(); automaticScanKeys.clear(); pointerNewPress = false; pointerNewRelease = false }
+        }
     }
 
     fun frame(): NativeFrame {
@@ -755,9 +781,10 @@ class WolfRuntime private constructor(
         map.events.forEach { event ->
             val page = activePage(event)
             if (page == null) { actors.remove(event.id); return@forEach }
+            val created = event.id !in actors
             val actor = actors.getOrPut(event.id) { Actor(event.id, event.x - if (page.flags and 128 != 0) .5f else 0f, event.y - if (page.flags and 64 != 0) .5f else 0f, page.graphicFile) }
             val marker = variables.system[-1_000_000 - event.id]
-            if (marker != page.index) {
+            if (created || marker != page.index) {
                 variables.system[-1_000_000 - event.id] = page.index
                 val keepFacing = marker != null && page.pageTransfer?.let { it != 0 } == true
                 actor.path = page.graphicFile
@@ -771,7 +798,7 @@ class WolfRuntime private constructor(
                 if (page.graphicBlend !in 0..3)
                     throw WolfRuntimeException(mapId, event.id, -1, -1, page.offset, "Graphique, collision ou fonctionnalité avancée de page non portés")
                 val mode = page.movement.getOrNull(3)?.toInt()?.and(255) ?: 0
-                if (mode !in 0..1) throw WolfRuntimeException(mapId, event.id, -1, 201, page.offset, "Mouvement autonome $mode non porté")
+                if (mode !in 0..3) throw WolfRuntimeException(mapId, event.id, -1, 201, page.offset, "Mouvement autonome $mode non porté")
                 actor.motion = WolfCharacterMotion.State(page.movement.getOrNull(2)?.toInt()?.and(255) ?: 6, mode)
                 actor.route = page.route.takeIf { mode == 1 && it.commands.isNotEmpty() }; actor.routeIndex = 0
                 actor.routeForced = false; actor.savedRoute = null; actor.savedRouteIndex = 0; actor.routeCommon = -1
@@ -1254,7 +1281,11 @@ class WolfRuntime private constructor(
                         frame.waitHost = true; effects.add(NativeEffect.SpeechVoices(id))
                     }
                 }
-            } else writeTextValue(destination, WolfStringMacros.evaluate(rhs, game, map) { pathMacro(it, frame.address) }, frame.address)
+            } else writeTextValue(destination, WolfStringMacros.evaluate(rhs, game, map,
+                convertSpecial = variables.system[150] != 1,
+                actorGraphic = ::graphicFilename,
+                pictureFile = { id -> pictures[id]?.let { it.text ?: relativeGraphicPath(it.path.orEmpty()) } ?: "<<NotFound>>" },
+                path = { pathMacro(it, frame.address) }), frame.address)
             return
         }
         val previous = variables.readString(destination, frame.address)
@@ -1343,14 +1374,30 @@ class WolfRuntime private constructor(
                     5 -> actor.direction
                     6 -> ((actor.x + .5f) * game.config.tileSize - cameraX()).toInt()
                     7 -> ((actor.y + 1f) * game.config.tileSize - cameraY()).toInt()
+                    8 -> shadowNumber(actor).takeIf { game.databases[WolfDatabaseKind.SYSTEM]?.types?.getOrNull(9)?.string(it, 0)?.isNotBlank() == true } ?: -1
                     9 -> tileTag(actor.x.toInt(), actor.y.toInt())
                     10 -> actor.id
                     11 -> { val x = (actor.x + .5f) * game.config.tileSize - cameraX(); val y = (actor.y + 1f) * game.config.tileSize - cameraY(); if (x > -game.config.tileSize && x < game.config.width + game.config.tileSize && y > -game.config.tileSize && y < game.config.height + game.config.tileSize * 2) 1 else 0 }
                     12 -> map.events.firstOrNull { it.id == actor.id }?.let(::activePage)?.index?.plus(1) ?: 0
                     13 -> map.events.firstOrNull { it.id == actor.id }?.let(::activePage)?.trigger ?: 0
                     14, 15 -> map.events.firstOrNull { it.id == actor.id }?.let(::activePage)?.features?.getOrNull(field - 13)?.toInt()?.and(255) ?: 0
-                    16 -> actor.pattern + 1
+                    16 -> actor.pattern
                     17 -> if (actor.moveTicks > 0 || actor.pixelMotion?.moved == true) 1 else 0
+                    18 -> characterDivisions(actor).first
+                    19 -> characterDivisions(actor).second
+                    23 -> actor.speed
+                    24 -> actor.motion.frequency
+                    25 -> characterAnimation(actor).state.frequency
+                    26 -> actor.opacity
+                    27 -> if (actor.flags and 8 != 0) 1 else 0
+                    28 -> WolfStateReadSemantics.zoomedCoordinate(((actor.x + .5f) * game.config.tileSize - cameraX()).toInt(), 0, mapZoomCenterX.toInt(), (mapZoom * 100).toInt())
+                    29 -> WolfStateReadSemantics.zoomedCoordinate(((actor.y + 1f) * game.config.tileSize - cameraY()).toInt(), 0, mapZoomCenterY.toInt(), (mapZoom * 100).toInt())
+                    30 -> {
+                        var mask = 0
+                        val directions = if (game.config.characterDirectionsMove == 8) intArrayOf(8, 4, 6, 2, 7, 9, 1, 3) else intArrayOf(8, 4, 6, 2)
+                        directions.forEachIndexed { bit, d -> if (canMoveGrid((logicalX(actor) * 2).toInt(), (logicalY(actor) * 2).toInt(), d, actor)) mask = mask or (1 shl bit) }
+                        mask
+                    }
                     else -> error("Champ de personnage non porté : $field")
                 }
             }
@@ -1399,7 +1446,15 @@ class WolfRuntime private constructor(
             3 -> when (val field = c.args[2]) {
                 0 -> mapId
                 1, 2 -> activeAudio[audioKey(field - 1)]?.path?.let { path -> game.databases[WolfDatabaseKind.SYSTEM]?.types?.getOrNull(field)?.rows?.indexOfFirst { asset(it.strings.firstOrNull().orEmpty()) == path } } ?: -1
-                7 -> if (pointerNewPress) 2 else if (pointerPressed) 1 else 0
+                3, 4 -> liveAudio(field - 3)?.position ?: 0
+                5, 6 -> liveAudio(field - 5)?.duration ?: 0
+                7 -> mouse.state(1)
+                8 -> mouse.state(4)
+                9 -> mouse.state(2)
+                10 -> mouse.wheel
+                11 -> mouse.deltaX
+                12 -> mouse.deltaY
+                13, 30 -> eventAtPointer(field == 30)
                 14 -> frame.address.event
                 15 -> map.width
                 16 -> map.height
@@ -1408,14 +1463,27 @@ class WolfRuntime private constructor(
                 19 -> foreground?.stack?.lastOrNull()?.pc?.minus(1) ?: -1
                 20 -> pointerX.toInt()
                 21 -> pointerY.toInt()
-                22 -> ((java.lang.Runtime.getRuntime().totalMemory() - java.lang.Runtime.getRuntime().freeMemory()) / 1_048_576).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                22 -> telemetry.usedMemoryMB ?: ((java.lang.Runtime.getRuntime().totalMemory() - java.lang.Runtime.getRuntime().freeMemory()) / 1_048_576).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                23 -> requireNotNull(telemetry.availableMemoryMB) { "Mémoire disponible non fournie par l'hôte" }
+                24 -> requireNotNull(game.config.byteSettings.getOrNull(17)?.let(WolfStateReadSemantics::language)) { "Langue de Game.dat inconnue" }
+                25 -> currentTileset()?.id ?: -1
+                26 -> actors.size
+                27 -> 0 // Android controllers use Astra's DirectInput-compatible Wolf button profile.
+                28 -> triggeredEventThisFrame
+                29 -> if (mouse.inside) 1 else 0
+                31 -> (mapZoom * 100).toInt()
+                32 -> mapZoomCenterX.toInt()
+                33 -> mapZoomCenterY.toInt()
+                34 -> (telemetry.eventNanos / 100_000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                35 -> (telemetry.renderNanos / 100_000).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
                 else -> error("Champ d'état général non porté : $field")
             }
             4 -> {
                 val id = value(2)
                 val field = c.args.getOrElse(3) { error("Champ d'image absent") }
-                val picture = pictures[id]
-                if (picture == null) if (field == 9) 0 else -1
+                val picture = pictures[id]?.let { if (flags and 64 != 0) renderPicture(it) else it }
+                if (field in 36..37) WolfStateReadSemantics.neighborPictureId(pictures.keys, id, field == 37)
+                else if (picture == null) if (field == 9) 0 else -1
                 else {
                     val size = if (field in setOf(2, 3, 8)) pictureDimensions(picture) else null
                     if (size == null && field in setOf(2, 3, 8)) {
@@ -1464,6 +1532,27 @@ class WolfRuntime private constructor(
     }
 
     private fun currentTileset(): WolfTileset? = mapChanges.tileset
+
+    private fun characterDivisions(actor: Actor): Pair<Int, Int> {
+        if (actor.tileId >= 0) return 1 to 1
+        val grid = WolfCharacterGrid.divisions(actor.path, game.config.animationPatterns, game.config.characterDirectionsImage)
+        return grid.first to if ((game.config.engineCompatibilityVersion ?: 0) >= 372) grid.second else 4
+    }
+
+    private fun eventAtPointer(extended: Boolean): Int {
+        require((game.config.engineCompatibilityVersion ?: 0) >= 340) { "Recherche d'événement écran avant Wolf3.40 non qualifiée" }
+        val tile = game.config.tileSize
+        val width = map.width * tile; val height = map.height * tile
+        val x = (cameraX().toInt() + ((pointerX - mapZoomCenterX) / mapZoom + mapZoomCenterX).toInt() + width) % width
+        val y = (cameraY().toInt() + ((pointerY - mapZoomCenterY) / mapZoom + mapZoomCenterY).toInt() + height) % height
+        val candidates = actors.values.map { actor ->
+            val page = map.events.firstOrNull { it.id == actor.id }?.let(::activePage)
+            val reachX = if (extended) page?.features?.getOrNull(1)?.toInt()?.and(255) ?: 0 else 0
+            val reachY = if (extended) page?.features?.getOrNull(2)?.toInt()?.and(255) ?: 0 else 0
+            WolfEventPointerQuery.Actor(actor.id, (actor.x * tile).toInt(), (actor.y * tile).toInt(), squareHitbox(actor), reachX, reachY)
+        }
+        return WolfEventPointerQuery.find(candidates, x, y, tile, width, height, map.loopX, map.loopY, extended)
+    }
 
     private fun mapTextureParameters(kind: WolfMapTextures.Kind): WolfMapTextures.Parameters {
         val speedField = if (kind == WolfMapTextures.Kind.FOG) 62 else 67
@@ -1597,6 +1686,19 @@ class WolfRuntime private constructor(
             11 -> sx; 12 -> sy
             21 -> p.video?.let { if (!it.playing && it.durationMs > 0 && it.durationMs - it.positionMs < 25) it.durationMs else it.positionMs }?.toInt() ?: 0
             22 -> p.video?.durationMs?.toInt() ?: 0
+            23 -> p.z
+            24 -> WolfStateReadSemantics.pictureAnchor(p.anchor)
+            25 -> p.divisionsX
+            26 -> p.divisionsY
+            27 -> WolfStateReadSemantics.colorPercentage(((p.colorR - 1f) * 255 + p.tone.red).toInt())
+            28 -> WolfStateReadSemantics.colorPercentage(((p.colorG - 1f) * 255 + p.tone.green).toInt())
+            29 -> WolfStateReadSemantics.colorPercentage(((p.colorB - 1f) * 255 + p.tone.blue).toInt())
+            30 -> p.blend
+            31 -> if (p.screenRelative) 0 else 1
+            32 -> p.moveDuration
+            33 -> p.moveRemaining
+            34 -> WolfStateReadSemantics.minimumPositiveDelay(delayedPictures.filter { it.id == p.id }.map { it.remaining })
+            35 -> WolfStateReadSemantics.maximumPositiveDelay(delayedPictures.filter { it.id == p.id }.map { it.remaining })
             else -> error("Champ d'image non porté : $field")
         }
     }
@@ -2062,6 +2164,10 @@ class WolfRuntime private constructor(
     }
 
     private fun audioKey(channel: Int): Pair<Int, Int> = channel to if (channel == 1) variables.system[99] ?: 0 else 0
+    private fun liveAudio(channel: Int): WolfAudioPlayback? {
+        val key = audioKey(channel)
+        return audioPlayback[key]?.takeIf { activeAudio[key]?.path == it.path }
+    }
 
     private fun selectBgsVoice(voice: Int) {
         variables.system[99] = voice
@@ -2070,7 +2176,7 @@ class WolfRuntime private constructor(
     }
 
     private fun resetAudio() {
-        activeAudio.clear(); bgsVolumes.clear(); bgsPitches.clear()
+        activeAudio.clear(); audioPlayback.clear(); bgsVolumes.clear(); bgsPitches.clear()
         (95..99).forEach { variables.system.remove(it) }
         (0..2).forEach { effects.add(NativeEffect.Audio(it, stop = true, voice = -1)); effects.add(NativeEffect.AudioGain(it, 100)) }
         effects.add(NativeEffect.AudioCache(3))
@@ -2148,14 +2254,18 @@ class WolfRuntime private constructor(
     private fun applyPicture(id: Int, action: Int, duration: Int, target: NativePicture?) {
         val prior = pictures[id]
         if (action == 2) {
-            if (duration > 0 && prior != null) tweens[id] = PictureTween(prior, prior.copy(opacity = 0), duration, erase = true)
+            if (duration > 0 && prior != null) {
+                pictures[id] = prior.copy(moveDuration = duration, moveRemaining = duration)
+                tweens[id] = PictureTween(prior, prior.copy(opacity = 0, moveDuration = duration, moveRemaining = duration), duration, erase = true)
+            }
             else { pictures.remove(id); tweens.remove(id); pictureEffects.erase(id); extendedPictureEffects.erase(id); maskedPictures.remove(id); forgetTextPicture(id) }
             return
         }
         if (action == 1 && prior == null) return
         val video = if (action == 1) prior?.video else target?.path?.takeIf { target.kind in 0..1 && WolfVideo.isMovie(it) }
             ?.let { NativeVideoState(nextVideoToken++, loop = WolfVideo.loops(it)) }
-        val to = requireNotNull(target).copy(imageFilters = if (action == 1) prior?.imageFilters.orEmpty() else emptyList(), video = video,
+        val to = requireNotNull(target).copy(moveDuration = duration, moveRemaining = duration,
+            imageFilters = if (action == 1) prior?.imageFilters.orEmpty() else emptyList(), video = video,
             textTiming = if (action == 1) prior?.textTiming else target.textTiming,
             visibleCharacters = if (action == 1) prior!!.visibleCharacters else target.visibleCharacters)
         if (action == 0) {
@@ -2174,11 +2284,14 @@ class WolfRuntime private constructor(
     }
 
     private fun updatePictures() {
+        pictures.replaceAll { _, picture -> picture.copy(moveRemaining = WolfStateReadSemantics.pictureRemainingAfterTick(picture.moveRemaining, engineFrameStep())) }
         val finished = mutableListOf<Int>()
         tweens.forEach { (id, tween) ->
-            val progress = (++tween.elapsed).toFloat() / tween.length
+            tween.elapsed = (tween.elapsed + engineFrameStep()).coerceAtMost(tween.length)
+            val progress = tween.elapsed.toFloat() / tween.length
             fun lerp(a: Float, b: Float) = a + (b - a) * progress
-            pictures[id] = tween.to.copy(x = lerp(tween.from.x, tween.to.x), y = lerp(tween.from.y, tween.to.y),
+            pictures[id] = tween.to.copy(moveRemaining = tween.length - tween.elapsed,
+                x = lerp(tween.from.x, tween.to.x), y = lerp(tween.from.y, tween.to.y),
                 scaleX = lerp(tween.from.scaleX, tween.to.scaleX), scaleY = lerp(tween.from.scaleY, tween.to.scaleY),
                 opacity = lerp(tween.from.opacity.toFloat(), tween.to.opacity.toFloat()).toInt(),
                 rotation = lerp(tween.from.rotation, tween.to.rotation),
@@ -2189,7 +2302,7 @@ class WolfRuntime private constructor(
         val ready = delayedPictures.filter {
             if (it.action == 4) {
                 if (it.remaining < 1) true else { it.remaining = (it.remaining - maxOf(1, 60 / fps)).coerceAtLeast(0); false }
-            } else --it.remaining <= 0
+            } else { it.remaining -= engineFrameStep(); it.remaining <= 0 }
         }
         delayedPictures.removeAll(ready.toSet())
         ready.forEach {
@@ -2289,7 +2402,9 @@ class WolfRuntime private constructor(
             actor.pixelMotion = actor.pixelMotion?.copy(moved = false, crossed = false)
             if (actor.moveTicks == 0 && actor.jumpRemaining == 0 && actor.routeWait == 0) {
                 if (actor.routeForced) { if (!wasWaiting) updateRoute(actor) }
-                else if (actor.motion.autonomousMode == 1 && WolfCharacterMotion.autonomousReady(actor.motion, characterAnimation(actor).state.idleTicks)) updateRoute(actor)
+                else if (actor.motion.autonomousMode != 0 && WolfCharacterMotion.autonomousReady(actor.motion, characterAnimation(actor).state.idleTicks)) {
+                    if (actor.motion.autonomousMode == 1) updateRoute(actor) else updateAutonomousMotion(actor)
+                }
             }
         }
         if (dialog != null || player.moveTicks > 0 || (foreground != null && !allowMovement)) return
@@ -2622,6 +2737,30 @@ class WolfRuntime private constructor(
             mapDelta((logicalX(actor) * 2).toInt(), (logicalX(player) * 2).toInt(), map.width * 2, map.loopX),
             mapDelta((logicalY(actor) * 2).toInt(), (logicalY(player) * 2).toInt(), map.height * 2, map.loopY))
         foreground = Execution("touch:${event.id}", false, Invocation(page.commands, EventAddress(mapId, event.id)))
+        triggeredEventThisFrame = event.id
+    }
+
+    private fun updateAutonomousMotion(actor: Actor) {
+        val dx = mapDelta((logicalX(actor) * 2).toInt(), (logicalX(player) * 2).toInt(), map.width * 2, map.loopX)
+        val dy = mapDelta((logicalY(actor) * 2).toInt(), (logicalY(player) * 2).toInt(), map.height * 2, map.loopY)
+        fun attempt(delta: Pair<Int, Int>, turnWhenBlocked: Boolean): Boolean {
+            val oldDirection = actor.direction
+            val moved = move(actor, delta.first, delta.second)
+            if (!moved && !turnWhenBlocked) actor.direction = oldDirection
+            if (moved || turnWhenBlocked && actor.flags and 4 == 0) characterAnimation(actor).resetIdleTicks()
+            return moved
+        }
+        when (WolfAutonomousMotion.action(actor.motion.autonomousMode, dx, dy) { random(0, it - 1) }) {
+            WolfAutonomousMotion.Action.PAUSE -> characterAnimation(actor).resetIdleTicks()
+            WolfAutonomousMotion.Action.FORWARD -> attempt(delta(actor.direction), false)
+            WolfAutonomousMotion.Action.RANDOM -> attempt(delta(WolfAutonomousMotion.randomDirection(game.config.characterDirectionsMove) { random(0, it - 1) }), false)
+            WolfAutonomousMotion.Action.TOWARD -> {
+                val horizontalTie = abs(dx) == abs(dy) && game.config.characterDirectionsMove == 4 && random(0, 1) == 0
+                for (candidate in WolfStraightRoute.candidates(dx, dy, game.config.characterDirectionsMove, horizontalTie)) {
+                    if (attempt(candidate, true)) break
+                }
+            }
+        }
     }
 
     private fun updateRoute(actor: Actor) {
@@ -2703,6 +2842,17 @@ class WolfRuntime private constructor(
         }
     }
 
+    private fun relativeGraphicPath(path: String): String = path.replace('\\', '/').removePrefix("Data/")
+    private fun graphicFilename(id: Int): String {
+        val selected = when (id) {
+            -2 -> player
+            in -7..-3 -> companions[-id - 3]
+            -1 -> null // This macro does not alias -1 to the current event.
+            else -> actors[id]
+        } ?: return "<<NotFound>>"
+        return if (selected.tileId >= 0) "<TILE>${selected.tileId}" else relativeGraphicPath(selected.path)
+    }
+
     private fun actor(id: Int, address: EventAddress): Actor = when (id) {
         -2 -> player; in -7..-3 -> companions[-id - 3]; -1 -> actors[address.event] ?: error("Événement courant absent : ${address.event}"); else -> actors[id] ?: error("Personnage absent : $id")
     }
@@ -2766,10 +2916,20 @@ class WolfRuntime private constructor(
             if (mouseMode != 0) require((game.config.engineCompatibilityVersion ?: 0) >= 350) { "Mode souris récent absent de ce profil Wolf" }
             return when (flags and 15) {
                 0 -> {
-                    val active = when (mouseMode) { 0, 1 -> if (waiting) pointerNewPress else pointerPressed || pointerNewPress; 2 -> pointerNewPress; 3 -> pointerNewRelease; else -> error("Mode de bord souris non porté : $mouseMode") }
-                    if ((!typing || typingPermissions and 1 != 0) && !mouseLeftBanned && flags and 16 != 0 && active) 20 else 0
+                    if (typing && typingPermissions and 1 == 0) 0 else {
+                        val buttons = listOf(Triple(16, 1, 20), Triple(32, 4, 21), Triple(64, 2, 22))
+                            .filter { (flag, mask, _) -> flags and flag != 0 && (mask != 1 || !mouseLeftBanned) }
+                        if (!waiting && mouseMode == 4) buttons.maxOfOrNull { mouse.duration(it.second) } ?: 0
+                        else buttons.firstOrNull { (_, mask, _) ->
+                            if (waiting) mouse.pressed(mask) else when (mouseMode) {
+                                0, 1 -> mouse.held(mask); 2 -> mouse.pressed(mask); 3 -> mouse.released(mask)
+                                else -> error("Mode de bord souris non porté : $mouseMode")
+                            }
+                        }?.third ?: 0
+                    }
                 }
                 1 -> pointerX.toInt(); 2 -> pointerY.toInt()
+                3 -> mouse.wheel
                 else -> error("Entrée souris non portée : $flags")
             }
         }
@@ -3092,6 +3252,7 @@ class WolfRuntime private constructor(
     private fun runtimeNotice(message: String) { lastDiagnostic = message; effects.add(NativeEffect.Diagnostic(message)) }
     private fun resetToTitle(resetReason: Int = 2) {
         tickExecutions = null; tickExecutionIndex = 0
+        telemetry.resetExecution()
         pendingStringFiles.clear(); pendingDatabaseFiles.clear()
         pendingDownloads.keys.forEach { effects.add(NativeEffect.CancelDownload(it)) }
         pendingDownloads.clear(); lastDownloadRequest = 0L
@@ -3391,7 +3552,10 @@ class WolfRuntime private constructor(
             }
             picture.copy(video = resumed)
         } ?: picture
-        state.tweens.forEach { tween -> tweens[tween.from.id] = PictureTween(resumeVideo(tween.from), resumeVideo(tween.to), tween.length, tween.elapsed, tween.erase) }
+        state.tweens.forEach { tween ->
+            val target = tween.to.copy(moveDuration = tween.length, moveRemaining = tween.length - tween.elapsed)
+            tweens[tween.from.id] = PictureTween(resumeVideo(tween.from), resumeVideo(target), tween.length, tween.elapsed, tween.erase)
+        }
         pictures.putAll(state.pictures.map(::resumeVideo).associateBy { it.id }); allowMovement = state.allowMovement; freezeWorld = state.freezeWorld
         bannedKeys.clear(); bannedKeys.addAll(state.bannedKeys); movementBannedKeys.clear(); movementBannedKeys.addAll(state.movementBannedKeys); mouseLeftBanned = state.mouseLeftBanned
         timerFrameOrigin = state.timerFrameOrigin; timerSecondOrigin = state.timerSecondOrigin; releaseInput()
@@ -3443,19 +3607,20 @@ class WolfRuntime private constructor(
                     else -> null
                 }
                 123 -> when {
-                    a.size < 2 || a[1] and 0xfffce000.toInt() != 0 || a[1] and 0xf00 !in setOf(0, 0x100, 0x200, 0x300) -> "Mode d'entrée non pris en charge"
-                    a[1] ushr 16 and 15 in 2..3 && a[1] and 0x80 != 0 -> "Attente avec mode de bord non prise en charge"
+                    a.size < 2 || a[1] and 0xfff8e000.toInt() != 0 || a[1] ushr 16 and 15 !in 0..4 || a[1] and 0xf00 !in setOf(0, 0x100, 0x200, 0x300) -> "Mode d'entrée non pris en charge"
+                    a[1] and 0xf00 != 0x300 && a[1] ushr 16 and 15 == 4 -> "Compteur de touches non souris non porté"
+                    a[1] and 0xf00 != 0x300 && a[1] ushr 16 and 15 in 2..3 && a[1] and 0x80 != 0 -> "Attente avec mode de bord non prise en charge"
                     a[1] and 0xf00 == 0 && (a[1] and 15 !in 0..8 || a[1] and 0x1000 != 0) -> "Mode d'entrée directionnelle non pris en charge"
-                    a[1] and 0xf00 == 0x300 && (a[1] and 15 !in 0..2 || a[1] and 0x1060 != 0) -> "Bouton ou mode souris non porté"
+                    a[1] and 0xf00 == 0x300 && (a[1] and 15 !in 0..3 || a[1] and 0x1000 != 0) -> "Bouton ou mode souris non porté"
                     a[1] and 0x1000 != 0 && a.size < 3 -> "Filtre physique sans code de touche"
                     else -> null
                 }
                 124 -> when {
-                    a.size < 3 || a[1] and 0xff0000ce.toInt() != 0 || a[1] ushr 8 and 15 !in 0..8 -> "Mode de lecture d'état non pris en charge"
-                    a[1] ushr 12 and 15 == 1 && (a.size != 4 || a[3] !in (0..7).toSet() + (9..17).toSet() || a[1] and 0xff0020 != 0) -> "Champ de personnage non porté"
-                    a[1] ushr 12 and 15 == 2 && (a.size != 4 || a[1] ushr 16 and 255 !in (0..10).toSet() + setOf(22, 23, 152, 153, 154, 155, 161, 162)) -> "Champ de position non porté"
-                    a[1] ushr 12 and 15 == 3 && (a.size != 3 || a[2] !in setOf(0, 1, 2, 7, 14, 15, 16, 17, 18, 19, 20, 21, 22) || a[1] and 0xff0020 != 0) -> "Champ d'état général non porté"
-                    a[1] ushr 12 and 15 == 4 && (a.size != 4 || a[3] !in (0..12).toSet() + setOf(21, 22) || a[1] and 0xff0020 != 0) -> "Champ d'image non porté"
+                    a.size < 3 || !WolfStateReadSemantics.recognizedFlags(a[1]) -> "Mode de lecture d'état non pris en charge"
+                    a[1] ushr 12 and 15 == 1 && (a.size != 4 || !WolfStateSupport.supports(1, a[3])) -> "Champ de personnage non porté"
+                    a[1] ushr 12 and 15 == 2 && (a.size != 4 || !WolfStateSupport.supports(2, a[1] ushr 16 and 255)) -> "Champ de position non porté"
+                    a[1] ushr 12 and 15 == 3 && (a.size != 3 || !WolfStateSupport.supports(3, a[2])) -> "Champ d'état général non porté"
+                    a[1] ushr 12 and 15 == 4 && (a.size != 4 || !WolfStateSupport.supports(4, a[3])) -> "Champ d'image non porté"
                     a[1] ushr 12 and 15 !in 1..4 -> "Catégorie de lecture d'état non portée"
                     else -> null
                 }

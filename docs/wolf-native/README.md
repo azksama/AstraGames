@@ -1,6 +1,6 @@
 # Recherche du moteur Wolf natif Android
 
-Travail du 10 octobre 2026 pour Astra. **État : interpréteur Kotlin et hôte Android intégrés, compatibilité partielle.** Le moteur natif lit les fichiers Wolf sans lancer `Game.exe`, Wine ou Box64. Les deux jeux officiels restent incompatibles avec certains handlers natifs ; [Wolf Windows intégré](../wolf-windows-runtime.md) reste leur moteur de secours.
+Travail mis à jour le 11 octobre 2026 pour Astra. **État : interpréteur Kotlin et hôte Android intégrés, compatibilité partielle.** Le moteur natif lit les fichiers Wolf sans lancer `Game.exe`, Wine ou Box64. Les parcours qualifiés des corpus officiels et leurs limites sont consignés dans la couverture ; [Wolf Windows intégré](../wolf-windows-runtime.md) reste le moteur de secours.
 
 - [Analyse REA et fonctions identifiées](REA_ANALYSIS.md) : preuves, adresses, limites et différences entre les EXE officiels.
 - [Formats et corpus](FORMATS_RESEARCH.md) : cartes/CommonEvent, 53 723 commandes, encodages et compression.
@@ -8,6 +8,7 @@ Travail du 10 octobre 2026 pour Astra. **État : interpréteur Kotlin et hôte A
 - [Implémentation Android](IMPLEMENTATION.md) : architecture effectivement livrée, choix du moteur, accès aux fichiers, contrôles et sauvegardes privées.
 - [Couverture et refus réels](RUNTIME_COVERAGE.md) : fonctions admises, commandes expérimentales, erreurs des deux jeux officiels et limites de compatibilité.
 - [Catalogue des variables système](SYSTEM_VARIABLE_COVERAGE.md) : les 182 identifiants documentés, Sys119, admissions de session et opérations isolées de sauvegarde ; [preuves REA](SYSTEM_VARIABLE_REA.md) des valeurs et effets corrigés.
+- [Catalogue des lectures d’état124](STATE_READ_COVERAGE.md) et [contrat REA](STATE_READ_REA.md) : personnages, positions, hôte Android, souris et images ; [mouvements de page](AUTONOMOUS_MOTION_REA.md), [texte et macros](TEXT_CODES_BETA19_REA.md) et [validation beta.19](../VALIDATION_1.12.0-beta.19.md).
 - [Manifeste des 34 fichiers](fixtures.json), [synthèse du corpus](corpus-summary.json), [mesure hôte](parse-benchmark.json) et [index REA dérivé](evidence-index.json) : 91 preuves et cinq inconnues ouvertes.
 
 Les exécutables, archives téléchargées, textes complets des jeux, pseudo-code et dossiers REA complets restent sous `build/`, ignoré par Git. Les fichiers suivis contiennent la recherche et ses références. Les EXE n’ont pas été exécutés pendant cette analyse statique ni modifiés.

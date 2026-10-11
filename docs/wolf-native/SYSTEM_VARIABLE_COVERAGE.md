@@ -1,6 +1,6 @@
 # Variables système Wolf : couverture vérifiée
 
-Catalogue contrôlé le 11 octobre 2026 pour Astra 1.12.0-beta.18. Les 182 identifiants de l’aide officielle normale/Pro et Sys119 (échelle logique portée précédemment) ont une admission explicite : 159 lectures natives et 24 fonctions refusées. Cette admission ne certifie pas la compatibilité complète d’un jeu ni toutes les variantes d’une commande.
+Catalogue contrôlé le 11 octobre 2026 pour Astra 1.12.0-beta.19. Les 182 identifiants de l’aide officielle normale/Pro et Sys119 (échelle logique portée précédemment) ont une admission explicite : 159 lectures natives et 24 fonctions refusées. Cette admission ne certifie pas la compatibilité complète d’un jeu ni toutes les variantes d’une commande.
 
 Le contrat exécutable est `WolfSystemSupport.kt`, partagé par `Variables.kt`, `Runtime.kt` et `Capabilities.kt`. Reproduire le rapprochement sans réseau : `python tools/wolf_system_audit.py --check`. Les tests parcourent toutes les lectures admises au démarrage et toutes les lectures isolées admises d’une sauvegarde, ainsi que les effets modifiés.
 

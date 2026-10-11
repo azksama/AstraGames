@@ -7,7 +7,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WolfSnapshotCompatibilityTest {
-    @Test fun genuineVersion21KeepsPausedTextClocksAndFontCapturesDuringVersion22Migration() {
+    @Test fun genuineVersion21KeepsPausedTextClocksAndFontCapturesDuringVersion23Migration() {
         val bytes = fixture("v21-text-clock.snap")
         assertEquals("d17ab77e579b05c84c022296e22ab7738ead1b7d14ba7a841c6c1c3731bdc768",
             MessageDigest.getInstance("SHA-256").digest(bytes).joinToString("") { "%02x".format(it) })
@@ -24,6 +24,10 @@ class WolfSnapshotCompatibilityTest {
         assertEquals(16, timing.state.waitTicks); assertEquals(6.0, timing.state.progress, 0.0)
         assertEquals(mapOf(4 to 2.0), timing.state.speedAnchors)
         assertTrue(state.tweens.single().to.textTiming!!.state.autoClose)
+        val tween = state.tweens.single()
+        assertEquals(tween.length, tween.to.moveDuration)
+        assertEquals(tween.length - tween.elapsed, tween.to.moveRemaining)
+        assertEquals(tween.to.moveRemaining, picture.moveRemaining)
         assertTrue(state.delayedPictures.single().target!!.textTiming!!.state.autoClose)
         assertEquals(state, WolfSnapshot.decode(WolfSnapshot.encode(state), state.title))
     }
@@ -36,7 +40,7 @@ class WolfSnapshotCompatibilityTest {
             -700, 900, 8, 8, 0))
         val original = runtime.snapshotState().copy(mapTextures = WolfMapTextureLayers(backdrop, fog))
         val encoded = WolfSnapshot.encode(original)
-        assertEquals(22, ByteBuffer.wrap(encoded).getInt(8))
+        assertEquals(23, ByteBuffer.wrap(encoded).getInt(8))
         assertEquals(original, WolfSnapshot.decode(encoded, original.title))
     }
 

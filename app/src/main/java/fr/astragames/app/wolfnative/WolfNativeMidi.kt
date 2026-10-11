@@ -5,7 +5,18 @@ internal class WolfNativeMidi private constructor(
     private val division: Int,
     private val tempos: List<Pair<Long, Int>>,
     private val notes: List<Int>,
+    val lengthTicks: Int,
 ) {
+    /** Inverse of the file's tempo map, with the same millisecond truncation as millis(). */
+    fun ticks(milliseconds: Int): Int {
+        require(milliseconds >= 0)
+        var low = 0; var high = Int.MAX_VALUE
+        while (low < high) {
+            val mid = low + ((high.toLong() - low + 1) / 2).toInt()
+            if (millis(mid) <= milliseconds) low = mid else high = mid - 1
+        }
+        return low
+    }
     fun millis(ticks: Int): Int {
         require(ticks >= 0)
         if (division and 0x8000 != 0) {
@@ -48,6 +59,7 @@ internal class WolfNativeMidi private constructor(
             }
             var cursor = 8 + header
             val tempos = mutableListOf<Pair<Long, Int>>(); val notes = mutableListOf<Int>()
+            var maximumTicks = 0L
             repeat(tracks) {
                 require(cursor + 8 <= bytes.size && String(bytes, cursor, 4, Charsets.US_ASCII) == "MTrk")
                 val size = be(cursor + 4, 4); cursor += 8
@@ -87,8 +99,9 @@ internal class WolfNativeMidi private constructor(
                         }
                     }
                 }
+                maximumTicks = maxOf(maximumTicks, ticks)
             }
-            return WolfNativeMidi(division, tempos.sortedBy { it.first }, notes)
+            return WolfNativeMidi(division, tempos.sortedBy { it.first }, notes, maximumTicks.coerceAtMost(Int.MAX_VALUE.toLong()).toInt())
         }
     }
 }

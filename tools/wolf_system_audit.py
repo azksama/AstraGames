@@ -100,7 +100,7 @@ def inventory(source: str, c: dict[str, set[int]]) -> list[dict]:
 def document(rows: list[dict]) -> str:
     lines = [
         '# Variables système Wolf : couverture vérifiée', '',
-        'Catalogue contrôlé le 11 octobre 2026 pour Astra 1.12.0-beta.18. Les 182 identifiants de l’aide officielle normale/Pro et Sys119 (échelle logique portée précédemment) ont une admission explicite : 159 lectures natives et 24 fonctions refusées. Cette admission ne certifie pas la compatibilité complète d’un jeu ni toutes les variantes d’une commande.', '',
+        'Catalogue contrôlé le 11 octobre 2026 pour Astra 1.12.0-beta.19. Les 182 identifiants de l’aide officielle normale/Pro et Sys119 (échelle logique portée précédemment) ont une admission explicite : 159 lectures natives et 24 fonctions refusées. Cette admission ne certifie pas la compatibilité complète d’un jeu ni toutes les variantes d’une commande.', '',
         'Le contrat exécutable est `WolfSystemSupport.kt`, partagé par `Variables.kt`, `Runtime.kt` et `Capabilities.kt`. Reproduire le rapprochement sans réseau : `python tools/wolf_system_audit.py --check`. Les tests parcourent toutes les lectures admises au démarrage et toutes les lectures isolées admises d’une sauvegarde, ainsi que les effets modifiés.', '',
         'Sources : [aide officielle normale](https://silversecond.com/WolfRPGEditor/Help/06systemvalue.html), [aide Pro](https://silversecond.com/WolfRPGEditor/Help/06systemvalue_pro.html). Les numéros 51/58 sont des séparateurs d’interface, exclus du catalogue. Les plages et les titres `SysS 1` avec espace sont développés ; les renvois Pro sont dédupliqués.', '',
         '## Valeurs, effets et limites', '',

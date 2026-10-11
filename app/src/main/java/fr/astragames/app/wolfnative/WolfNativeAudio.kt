@@ -34,6 +34,7 @@ internal class WolfNativeAudio(
     private val cacheDirectory: File,
     private val onError: (String) -> Unit,
     private val onPlaybackEvent: (String) -> Unit = {},
+    private val onPlaybackState: (List<fr.astragames.wolf.WolfAudioPlayback>) -> Unit = {},
 ) : Closeable {
     private val resourceBytes = WolfNativeResourceBytes(source)
     private val thread = HandlerThread("Wolf-native-audio").apply { start() }
@@ -72,6 +73,7 @@ internal class WolfNativeAudio(
     private var duck = 1f
     private var cachedBytes = 0L // synchronized with prepared
     private var lastPump = SystemClock.uptimeMillis()
+    private var nextPlaybackSample = 0L
 
     private data class AudioFile(val file: File, val loopStartMs: Int = 0, val loopEndMs: Int = 0,
         val midi: WolfNativeMidi? = null, val logicalPath: String = "")
@@ -117,6 +119,19 @@ internal class WolfNativeAudio(
                         }
                     } catch (error: Exception) { failure(state.path, error); release(state) }
                 }
+            }
+            if (now >= nextPlaybackSample) {
+                nextPlaybackSample = now + 50
+                val states = players.values.toList().mapNotNull { state ->
+                    if (!state.ready || state.channel !in 0..1) null else try {
+                        val position = state.player.currentPosition.coerceAtLeast(0)
+                        val duration = state.player.duration.coerceAtLeast(0)
+                        val midi = state.audio.midi
+                        fr.astragames.wolf.WolfAudioPlayback(state.channel, state.voice, state.path,
+                            midi?.ticks(position)?.coerceAtMost(midi.lengthTicks) ?: position, midi?.lengthTicks ?: duration)
+                    } catch (error: Exception) { failure(state.path, error); release(state); null }
+                }
+                onPlaybackState(states)
             }
             handler.postDelayed(this, 16)
         }

@@ -86,6 +86,7 @@ internal class WolfNativeView(
         val renderMetrics: (Double, Double) -> Unit = { _, _ -> },
         val notice: (String) -> Unit = {},
         val videoState: (Int, NativeVideoState) -> Unit = { _, _ -> },
+        val mouse: (Float, Float, Int, Int, Boolean) -> Unit = { _, _, _, _, _ -> },
     )
 
     @Volatile private var frame: NativeFrame? = null
@@ -1162,7 +1163,7 @@ internal class WolfNativeView(
         val patterns = map.animationPatterns.coerceIn(1, 5)
         val extra = if (name.endsWith("TX")) patterns else if (name.endsWith('T')) 1 else 0
         val directions = if (map.characterDirections == 8) 2 else 1
-        val columns = (patterns + extra) * directions
+        val columns = fr.astragames.wolf.WolfCharacterGrid.divisions(path, patterns, map.characterDirections).first
         val cellWidth = if (full) bitmap.width else bitmap.width / columns
         val cellHeight = if (full) bitmap.height else bitmap.height / 4
         require(full || bitmap.width % columns == 0 && bitmap.height % 4 == 0 && cellWidth > 0) {
@@ -1896,6 +1897,7 @@ internal class WolfNativeView(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         val scene = frame ?: return true
         if (closed || !firstImage) return true
+        if (event.isFromSource(android.view.InputDevice.SOURCE_MOUSE)) return mouseEvent(event, scene)
         if (event.actionMasked == MotionEvent.ACTION_CANCEL) { releaseInput(); return true }
         scaleDetector.onTouchEvent(event)
         when (event.actionMasked) {
@@ -1981,6 +1983,28 @@ internal class WolfNativeView(
 
     override fun performClick(): Boolean = super.performClick()
 
+    override fun onGenericMotionEvent(event: MotionEvent): Boolean {
+        val scene = frame
+        if (scene != null && !closed && firstImage && event.isFromSource(android.view.InputDevice.SOURCE_MOUSE))
+            return mouseEvent(event, scene)
+        return super.onGenericMotionEvent(event)
+    }
+
+    private var physicalMouse: Triple<Float, Float, Int>? = null
+    private fun mouseEvent(event: MotionEvent, scene: NativeFrame): Boolean {
+        val viewport = viewport(scene)
+        if (viewport.scaleX <= 0 || viewport.scaleY <= 0) return true
+        val x = (event.x - viewport.left) / viewport.scaleX
+        val y = (event.y - viewport.top) / viewport.scaleY
+        val inside = x >= 0f && x <= scene.logicalWidth && y >= 0f && y <= scene.logicalHeight && event.actionMasked != MotionEvent.ACTION_HOVER_EXIT
+        val buttons = if (event.actionMasked == MotionEvent.ACTION_CANCEL) 0 else event.buttonState and 7
+        val wheel = if (event.actionMasked == MotionEvent.ACTION_SCROLL) event.getAxisValue(MotionEvent.AXIS_VSCROLL).toInt() else 0
+        callbacks.mouse(x, y, buttons, wheel, inside)
+        physicalMouse = Triple(x, y, buttons)
+        if (event.actionMasked == MotionEvent.ACTION_DOWN) requestFocus()
+        return true
+    }
+
     private fun setDirections(point: Pair<Float, Float>, scene: NativeFrame) {
         val dx = (point.first - scene.logicalWidth / 2f) / (scene.logicalWidth / 2f)
         val dy = (point.second - scene.logicalHeight / 2f) / (scene.logicalHeight / 2f)
@@ -2007,6 +2031,7 @@ internal class WolfNativeView(
     private fun cancelTouch() { releasePointer(); multi = false; twoFingerCandidate = false; fingerIds = intArrayOf() }
     fun releaseInput() {
         cancelTouch()
+        physicalMouse?.let { (x, y, _) -> callbacks.mouse(x, y, 0, 0, false) }; physicalMouse = null
         physicalKeys.values.toSet().forEach { callbacks.key(it, false) }; physicalKeys.clear()
         pulseKeys.forEach { callbacks.key(it, false) }; pulseKeys.clear()
     }
@@ -2044,9 +2069,10 @@ internal class WolfNativeView(
     override fun onDetachedFromWindow() { releaseInput(); super.onDetachedFromWindow() }
 
     private fun recordMetrics(start: Long) {
+        lastDrawNanos = (System.nanoTime() - start).coerceAtLeast(0)
         val now = SystemClock.uptimeMillis()
         if (metricTime == 0L) metricTime = now
-        metricFrames++; metricDrawNanos += System.nanoTime() - start
+        metricFrames++; metricDrawNanos += lastDrawNanos
         val duration = now - metricTime
         if (duration >= 500) {
             measuredFps = metricFrames * 1000.0 / duration
@@ -2055,6 +2081,7 @@ internal class WolfNativeView(
             metricTime = now; metricFrames = 0; metricDrawNanos = 0
         }
     }
+    @Volatile var lastDrawNanos = 0L; private set
     private fun report(reason: String) {
         if (reportedError == reason || closed) return
         reportedError = reason

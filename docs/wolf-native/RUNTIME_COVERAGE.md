@@ -1,8 +1,10 @@
-# Couverture du moteur Wolf natif — beta.15
+# Couverture du moteur Wolf natif — beta.19
 
 Le moteur exécute les données du jeu sur Android, sans lancer Game.exe, Wine ou Box64. Le parcours Winlator reste disponible. L'admission examine les modes et paramètres des commandes, les références système, les pages, les routes et les cartes ; un opcode connu ne suffit pas à établir la compatibilité.
 
-Les preuves de formats, de sémantique portable, de rendu Android et de parcours de vrais jeux sont distinctes. Le [rapport de validation](../VALIDATION_1.12.0-beta.15.md) consigne les résultats de cette version. L'[inventaire des corpus](CORPUS_LEDGER_2026-10-10.md) conserve aussi les anciens checkpoints, y compris leurs refus ; une admission statique positive ne démontre pas l'exécution de toutes les branches.
+Les preuves de formats, de sémantique portable, de rendu Android et de parcours de vrais jeux sont distinctes. Le [rapport beta.15](../VALIDATION_1.12.0-beta.15.md) conserve les parcours historiques ; la [validation beta.19](../VALIDATION_1.12.0-beta.19.md) décrit les ajouts et tests actuels. L'[inventaire des corpus](CORPUS_LEDGER_2026-10-10.md) conserve aussi les anciens checkpoints, y compris leurs refus ; une admission statique positive ne démontre pas l'exécution de toutes les branches.
+
+Le [catalogue124](STATE_READ_COVERAGE.md) classe149 emplacements en113 lectures admises et36 refus/réservés, avec les profils et flags contrôlés séparément. Les temps audio/CPU/rendu et mémoire viennent de l'hôte mesuré ; mouvements autonomes2/3, macros de mesures/types/fichiers et expansion DB imbriquée sont portés dans les contrats qualifiés. La sauvegarde native v23 conserve les durées des images. Les ressources réellement absentes, quadrilatères et autres modes non qualifiés continuent de déclencher le secours Winlator.
 
 ## Fonctions implémentées
 

@@ -11,7 +11,7 @@ import java.nio.charset.CodingErrorAction
 /** Astra-owned format. Never written over the game's Windows save files. */
 internal object WolfSnapshot {
     private const val MAGIC = 0x41574e53 // AWNS
-    private const val VERSION = 22
+    private const val VERSION = 23
     private const val MAX_BYTES = 16 * 1024 * 1024
     private const val MAX_ENTRIES = 100_000
     data class State(
@@ -236,9 +236,20 @@ internal object WolfSnapshot {
             } }; require(audio.map { it.channel to it.voice }.distinct().size == audio.size)
             val opacity = input.readInt(); val color = input.readInt(); require(opacity in 0..255)
             val mode = input.readInt(); val duration = input.readInt(); val wait = input.readBoolean(); require(duration in 0..65535)
-            val tweens = buildList { repeat(input.count(24)) { val from = input.picture(version); val to = input.picture(version); val length = input.readInt(); val elapsed = input.readInt(); val erase = input.readBoolean(); require(from.id == to.id && length > 0 && elapsed in 0..length); add(TweenState(from, to, length, elapsed, erase)) } }
+            val tweens = buildList { repeat(input.count(24)) {
+                val from = input.picture(version); val to = input.picture(version)
+                val length = input.readInt(); val elapsed = input.readInt(); val erase = input.readBoolean()
+                require(from.id == to.id && length in 1..360_000 && elapsed in 0..length)
+                add(TweenState(from, if (version < 23) to.copy(moveDuration = length, moveRemaining = length - elapsed) else to,
+                    length, elapsed, erase))
+            } }
+            // Older saves stored the active tween clock, but no readable picture duration.
+            val migratedPictures = if (version < 23) {
+                val clocks = tweens.associateBy { it.to.id }
+                state.pictures.map { p -> clocks[p.id]?.let { p.copy(moveDuration = it.length, moveRemaining = it.length - it.elapsed) } ?: p }
+            } else state.pictures
             state = state.copy(companions = companions, mutableRows = mutableRows, partyFollow = follow, partySync = sync, rememberedParty = remembered, partyTrail = trail, audio = audio,
-                screenOpacity = opacity, screenColor = color, transitionMode = mode, transitionDuration = duration, transitionWait = wait, tweens = tweens)
+                screenOpacity = opacity, screenColor = color, transitionMode = mode, transitionDuration = duration, transitionWait = wait, tweens = tweens, pictures = migratedPictures)
         }
         if (version >= 5) {
             val zoom = input.readFloat(); val cx = input.readFloat(); val cy = input.readFloat()
@@ -531,6 +542,8 @@ internal object WolfSnapshot {
             count(state.speedAnchors.size)
             state.speedAnchors.toSortedMap().forEach { (cursor, value) -> writeInt(cursor); writeDouble(value) }
         }
+        require(p.moveDuration in 0..360_000 && p.moveRemaining in -1..p.moveDuration) { "Durée d'image sauvegardée invalide" }
+        writeInt(p.moveDuration); writeInt(p.moveRemaining)
     }
     private fun DataInputStream.picture(version: Int): NativePicture {
         val id = readInt(); val path = optionalText(); val text = optionalText()
@@ -575,7 +588,10 @@ internal object WolfSnapshot {
         require(rect == null || listOf(rect.x, rect.y, rect.width, rect.height).all { it.isFinite() } && rect.width in 0f..16384f && rect.height in 0f..16384f) { "Zone d'image de sauvegarde invalide" }
         require(ruby.isFinite() && ruby in 0f..1024f && shadow in -1024..1024 && visible >= 0) { "Style d'image sauvegardée invalide" }
         require(listOf(tone.red, tone.green, tone.blue).all { it in -32768..32767 }) { "Tonalité d'image sauvegardée invalide" }
-        return NativePicture(id, path, text, x, y, width, height, sx, sy, opacity, rotation, blend, z, rect, color, anchor, fontSize, fontColor, relative, kind, divX, divY, pattern, red, green, blue, ruby, shadow, visible, tone, imageFilters = filters, video = video, fontOverrides = fonts, textTiming = clock)
+        val moveDuration = if (version >= 23) readInt() else 0
+        val moveRemaining = if (version >= 23) readInt() else -1
+        require(moveDuration in 0..360_000 && moveRemaining in -1..moveDuration) { "Durée d'image sauvegardée invalide" }
+        return NativePicture(id, path, text, x, y, width, height, sx, sy, opacity, rotation, blend, z, rect, color, anchor, fontSize, fontColor, relative, kind, divX, divY, pattern, red, green, blue, ruby, shadow, visible, tone, imageFilters = filters, video = video, fontOverrides = fonts, textTiming = clock, moveDuration = moveDuration, moveRemaining = moveRemaining)
     }
     private val fontIndices = setOf(0, 1, 2, 3, 5)
     private fun DataOutputStream.fontMap(fonts: Map<Int, String>) {

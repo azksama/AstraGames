@@ -58,6 +58,34 @@ class WolfNativeRenderingInstrumentedTest {
     private val instrumentation = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
+    @Test fun physicalMouseUsesTheVisibleViewportAllButtonsWheelInclusiveEdgesAndFocusRelease() {
+        data class Read(val x: Float, val y: Float, val buttons: Int, val wheel: Int, val inside: Boolean)
+        val samples = mutableListOf<Read>()
+        val frame = NativeFrame(100, 100, null, listOf(NativePicture(1, width = 100f, height = 100f, color = Color.RED)), emptyList(), null, 1)
+        fixture(null, emptyMap(), frame, mouse = { x, y, buttons, wheel, inside -> samples += Read(x, y, buttons, wheel, inside) }).use { state ->
+            state.render(200, 100).recycle()
+            fun event(action: Int, x: Float, y: Float, buttons: Int = 0, wheel: Float = 0f) = instrumentation.runOnMainSync {
+                val props = MotionEvent.PointerProperties().apply { id = 0; toolType = MotionEvent.TOOL_TYPE_MOUSE }
+                val coords = MotionEvent.PointerCoords().apply { this.x = x; this.y = y; setAxisValue(MotionEvent.AXIS_VSCROLL, wheel) }
+                MotionEvent.obtain(0, SystemClock.uptimeMillis(), action, 1, arrayOf(props), arrayOf(coords),
+                    0, buttons, 1f, 1f, 0, 0, android.view.InputDevice.SOURCE_MOUSE, 0).let {
+                    try { assertTrue(state.view.dispatchGenericMotionEvent(it)) } finally { it.recycle() }
+                }
+            }
+            event(MotionEvent.ACTION_HOVER_MOVE, 90f, 25f, 7)
+            assertEquals(Read(40f, 25f, 7, 0, true), samples.last())
+            event(MotionEvent.ACTION_SCROLL, 150f, 100f, 2, -3f)
+            assertEquals(Read(100f, 100f, 2, -3, true), samples.last())
+            event(MotionEvent.ACTION_HOVER_MOVE, 49f, 25f)
+            assertEquals(Read(-1f, 25f, 0, 0, false), samples.last())
+            event(MotionEvent.ACTION_HOVER_MOVE, 90f, 25f, 4)
+            instrumentation.runOnMainSync { state.view.onWindowFocusChanged(false) }
+            assertEquals(Read(40f, 25f, 0, 0, false), samples.last())
+            instrumentation.runOnMainSync { state.view.releaseInput() }
+            assertEquals("No duplicate mouse release", 5, samples.size)
+        }
+    }
+
     @Test fun officialWolf2AndWolf3TitleTexturesKeepTheirOriginalPixels() {
         val root = InstrumentationRegistry.getArguments().getString("nativeOfficialRoot")
         assumeNotNull(root)
@@ -2372,7 +2400,8 @@ class WolfNativeRenderingInstrumentedTest {
     private fun fixture(map: NativeMapScene?, assets: Map<String, ByteArray>,
         frame: NativeFrame = NativeFrame(16, 16, map, emptyList(), emptyList(), null, 1),
         key: (NativeKey, Boolean) -> Unit = { _, _ -> }, pointer: (Float, Float, Boolean) -> Unit = { _, _, _ -> }, choose: (Int) -> Unit = {}, firstFrame: () -> Unit = {}, onRead: (String) -> Unit = {}, notice: (String) -> Unit = {},
-        config: WolfNativeView.Config = WolfNativeView.Config(smooth = false, showFps = false)): Fixture {
+        config: WolfNativeView.Config = WolfNativeView.Config(smooth = false, showFps = false),
+        mouse: (Float, Float, Int, Int, Boolean) -> Unit = { _, _, _, _, _ -> }): Fixture {
         val changed = CountDownLatch(if (assets.isEmpty()) 0 else assets.size)
         val source = object : WolfAssetSource {
             override fun read(path: String): ByteArray { onRead(path); return assets[path] ?: error("fixture image absent: $path") }
@@ -2382,7 +2411,7 @@ class WolfNativeRenderingInstrumentedTest {
         lateinit var state: Fixture
         instrumentation.runOnMainSync {
             val resources = WolfNativeResources(source, { changed.countDown() }, { throw AssertionError(it) })
-            val view = WolfNativeView(context, resources, WolfNativeView.Callbacks(key, pointer, choose, firstFrame, error = { throw AssertionError(it) }, notice = notice))
+            val view = WolfNativeView(context, resources, WolfNativeView.Callbacks(key, pointer, choose, firstFrame, error = { throw AssertionError(it) }, notice = notice, mouse = mouse))
             view.configure(config)
             view.layout(0, 0, frame.logicalWidth, frame.logicalHeight); view.submitFrame(frame)
             state = Fixture(view, resources)

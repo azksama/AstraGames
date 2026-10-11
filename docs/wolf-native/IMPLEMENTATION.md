@@ -12,7 +12,7 @@ La [validation de la bêta 16](../VALIDATION_1.12.0-beta.16.md) couvre une corre
 - **Natif Android · expérimental** lance directement le moteur natif. Une fonction inconnue arrête la session avec carte, événement, commun, opcode et offset, puis propose **Lancer avec Winlator**.
 - **Winlator / Windows** utilise le parcours Windows existant.
 
-L'admission statique examine toutes les cartes pour un résultat positif. Elle peut s'arrêter plus tôt sur une incompatibilité définitive ; le rapport indique cette différence. Elle ne certifie pas la jouabilité de toutes les branches.
+L'admission statique examine tous les communs, conditions et cartes déclarées, même après une incompatibilité ou saturation du quota de512 diagnostics. Une liste tronquée est signalée comme incomplète. Les erreurs structurelles des métadonnées peuvent empêcher l'analyse des cartes. L'admission ne certifie pas la jouabilité de toutes les branches. La [validation beta.19](../VALIDATION_1.12.0-beta.19.md) décrit les lectures d'état Android, mouvements de page, macros et sauvegardes v23 ajoutés.
 
 ## Architecture
 
