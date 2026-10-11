@@ -12,6 +12,7 @@ import android.view.MotionEvent
 import android.view.View
 import android.widget.Button
 import android.widget.FrameLayout
+import android.widget.LinearLayout
 import android.widget.PopupMenu
 import com.winlator.xserver.XKeycode
 import kotlin.math.abs
@@ -22,11 +23,12 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
     private val settings: () -> Unit = {}, private val clearInput: () -> Unit = {},
     private val menuVisibility: (Boolean) -> Unit = {}) : FrameLayout(context) {
     private data class Control(val id: String, val label: String, val code: XKeycode, val size: Int, val arrow: Float? = null)
-    private val definitions = listOf(
+    private val standardDefinitions = listOf(
         Control("up", "Haut", XKeycode.KEY_UP, 52, 0f), Control("left", "Gauche", XKeycode.KEY_LEFT, 52, -90f),
         Control("right", "Droite", XKeycode.KEY_RIGHT, 52, 90f), Control("down", "Bas", XKeycode.KEY_DOWN, 52, 180f),
         Control("accept", "Valider", XKeycode.KEY_ENTER, 76), Control("back", "Retour", XKeycode.KEY_ESC, 64),
         Control("shift", "Shift", XKeycode.KEY_SHIFT_L, 56))
+    private val definitions get() = standardDefinitions + store?.customControls().orEmpty().map { Control(it.id, it.label, it.code, 72) }
     private val buttons = mutableMapOf<String, Button>()
     private val held = mutableMapOf<String, XKeycode>()
     private var hidden = false
@@ -34,9 +36,47 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
         private set
     private var options = store?.read() ?: WolfOptions()
     private val menuButton: Button
+    private val editorBar = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
+    private val dialogs = mutableSetOf<AlertDialog>()
+    private var popupVisible = false
+    private val controlDialogs = store?.let { WolfControlDialogs(context, it, ::present) { reload() } }
     init {
         isMotionEventSplittingEnabled = true
-        definitions.forEach { def ->
+        definitions.forEach(::createButton)
+        editorBar.addView(button("Ajouter", false).apply {
+            contentDescription = "Ajouter un bouton de contrôle"; setOnClickListener { controlDialogs?.custom() }
+        }, LinearLayout.LayoutParams(dp(84), dp(48)))
+        editorBar.addView(button("Presets", false).apply {
+            contentDescription = "Presets de contrôles"; setOnClickListener { controlDialogs?.presets() }
+        }, LinearLayout.LayoutParams(dp(84), dp(48)).apply { leftMargin = dp(8) })
+        addView(editorBar, LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { topMargin = dp(8); leftMargin = dp(12) })
+        menuButton = button("Menu", false).apply {
+            contentDescription = "Menu du jeu"
+            setOnClickListener { anchor ->
+                releaseAll(); clearInput()
+                if (editing) { setEditing(false); return@setOnClickListener }
+                PopupMenu(context, anchor).apply {
+                    menu.add("Réglages du jeu").setOnMenuItemClickListener { settings(); true }
+                    menu.add("Modifier les touches").setOnMenuItemClickListener { setEditing(true); true }
+                    if (store != null) {
+                        menu.add("Ajouter un bouton").setOnMenuItemClickListener { setEditing(true); controlDialogs?.custom(); true }
+                        menu.add("Presets de contrôles").setOnMenuItemClickListener { controlDialogs?.presets(); true }
+                    }
+                    menu.add("Réinitialiser les touches").setOnMenuItemClickListener { store?.resetControls(); reload(); true }
+                    menu.add(if (hidden) "Afficher les commandes" else "Masquer les commandes").setOnMenuItemClickListener {
+                        if (editing) setEditing(false)
+                        hidden = !hidden; reload(); true
+                    }
+                    menu.add("Quitter").setOnMenuItemClickListener { quit(); true }
+                    setOnDismissListener { popupVisible = false; publishMenu() }
+                    popupVisible = true; publishMenu(); show()
+                }
+            }
+        }
+        addView(menuButton, LayoutParams(dp(88), dp(48), Gravity.TOP or Gravity.RIGHT).apply { topMargin = dp(8); rightMargin = dp(12) })
+        reload()
+    }
+    private fun createButton(def: Control) {
             val button = button(if (def.arrow == null) def.label else "", def.id == "accept").apply {
                 contentDescription = def.label
                 if (def.arrow != null) foreground = ArrowDrawable(def.arrow)
@@ -45,7 +85,7 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
             var touchClick = false
             var downX = 0f; var downY = 0f; var originX = 0f; var originY = 0f; var dragged = false
             button.setOnClickListener {
-                if (editing) remap(def)
+                if (editing) remap(definitions.first { it.id == def.id })
                 else if (!touchClick) { press(def); button.postDelayed({ release(def.id) }, 120) }
             }
             button.setOnTouchListener { view, event ->
@@ -78,39 +118,22 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
                 true
             }
             addView(button, LayoutParams(dp(def.size), dp(def.size)))
-        }
-        menuButton = button("Menu", false).apply {
-            contentDescription = "Menu du jeu"
-            setOnClickListener { anchor ->
-                releaseAll(); clearInput()
-                if (editing) { setEditing(false); return@setOnClickListener }
-                PopupMenu(context, anchor).apply {
-                    menu.add("Réglages du jeu").setOnMenuItemClickListener { settings(); true }
-                    menu.add(if (editing) "Terminer la disposition" else "Modifier les touches").setOnMenuItemClickListener { setEditing(!editing); true }
-                    menu.add("Réinitialiser les touches").setOnMenuItemClickListener { store?.resetControls(); reload(); true }
-                    menu.add(if (hidden) "Afficher les commandes" else "Masquer les commandes").setOnMenuItemClickListener {
-                        hidden = !hidden; if (hidden) setEditing(false); reload(); true
-                    }
-                    menu.add("Quitter").setOnMenuItemClickListener { quit(); true }
-                    setOnDismissListener { menuVisibility(false) }
-                    menuVisibility(true)
-                    show()
-                }
-            }
-        }
-        addView(menuButton, LayoutParams(dp(76), dp(48), Gravity.TOP or Gravity.RIGHT).apply { topMargin = dp(8); rightMargin = dp(12) })
-        reload()
     }
     fun setEditing(value: Boolean) {
         releaseAll(); editing = value
         if (value) hidden = false
         menuButton.text = if (value) "Terminer" else "Menu"
+        editorBar.visibility = if (value && store != null) View.VISIBLE else View.GONE
+        publishMenu()
         if (value) android.widget.Toast.makeText(context, "Glissez pour déplacer · touchez pour changer l’action", android.widget.Toast.LENGTH_LONG).show()
         reload()
     }
     fun reload() {
         releaseAll(); options = store?.read() ?: WolfOptions()
-        definitions.forEach { def -> buttons.getValue(def.id).apply {
+        val current = definitions
+        buttons.keys.filter { id -> current.none { it.id == id } }.toList().forEach { removeView(buttons.remove(it)) }
+        current.filter { it.id !in buttons }.forEach(::createButton)
+        current.forEach { def -> buttons.getValue(def.id).apply {
             val mapped = store?.binding(def.id, def.code) ?: def.code
             text = if (mapped == def.code) (if (def.arrow == null) def.label else "") else keyLabel(mapped)
             foreground = if (mapped == def.code && def.arrow != null) ArrowDrawable(def.arrow) else null
@@ -138,40 +161,51 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
                 "down" -> (dp(12) + step).toFloat() to (areaHeight - dp(12) - step).toFloat()
                 "accept" -> (areaWidth - dp(12) - view.width).toFloat() to (areaHeight - dp(22) - step * 2).toFloat()
                 "back" -> (areaWidth - dp(20) - view.width - dp(76 * options.size / 100)).toFloat() to (areaHeight - dp(12) - view.height).toFloat()
-                else -> (areaWidth - dp(20) - view.width - dp(76 * options.size / 100)).toFloat() to (areaHeight - dp(12) - step * 3).toFloat()
+                "shift" -> (areaWidth - dp(20) - view.width - dp(76 * options.size / 100)).toFloat() to (areaHeight - dp(12) - step * 3).toFloat()
+                else -> {
+                    val index = definitions.indexOf(def) - standardDefinitions.size
+                    val columns = (areaWidth / (view.width + dp(8))).coerceAtLeast(1)
+                    dp(12).toFloat() + (index % columns) * (view.width + dp(8)) to (dp(76) + (index / columns) * (view.height + dp(8))).toFloat()
+                }
             }
             view.x = paddingLeft + (saved?.first?.times(areaWidth - view.width) ?: default.first).coerceIn(0f, (areaWidth - view.width).coerceAtLeast(0).toFloat())
             view.y = paddingTop + (saved?.second?.times(areaHeight - view.height) ?: default.second).coerceIn(0f, (areaHeight - view.height).coerceAtLeast(0).toFloat())
         }
         if (indexOfChild(menuButton) != childCount - 1) menuButton.bringToFront()
+        editorBar.bringToFront()
     }
     private fun remap(def: Control) {
-        val choices = listOf(XKeycode.KEY_ENTER, XKeycode.KEY_ESC, XKeycode.KEY_SPACE, XKeycode.KEY_SHIFT_L, XKeycode.KEY_CTRL_L,
-            XKeycode.KEY_UP, XKeycode.KEY_DOWN, XKeycode.KEY_LEFT, XKeycode.KEY_RIGHT, XKeycode.KEY_Z, XKeycode.KEY_X, XKeycode.KEY_C,
-            XKeycode.KEY_A, XKeycode.KEY_S, XKeycode.KEY_D, XKeycode.KEY_W, XKeycode.KEY_F1, XKeycode.KEY_F5, XKeycode.KEY_F12)
-        AlertDialog.Builder(context).setTitle("Action de ${def.label}")
-            .setSingleChoiceItems(choices.map(::keyLabel).toTypedArray(), choices.indexOf(store?.binding(def.id, def.code) ?: def.code)) { dialog, index ->
-                store?.bind(def.id, choices[index]); reload(); dialog.dismiss()
-            }.setNegativeButton("Annuler", null).show()
+        val custom = store?.customControls()?.firstOrNull { it.id == def.id }
+        if (custom != null) controlDialogs?.custom(custom)
+        else controlDialogs?.key(store?.binding(def.id, def.code) ?: def.code) { store?.bind(def.id, it); reload() }
     }
-    private fun keyLabel(code: XKeycode) = when (code) {
-        XKeycode.KEY_ENTER -> "Entrée"; XKeycode.KEY_ESC -> "Échap"; XKeycode.KEY_SPACE -> "Espace"
-        XKeycode.KEY_SHIFT_L -> "Shift"; XKeycode.KEY_CTRL_L -> "Ctrl"
-        else -> code.name.removePrefix("KEY_")
+    private fun keyLabel(code: XKeycode) = WolfKeyboard.label(code)
+    private fun publishMenu() { menuVisibility(editing || popupVisible || dialogs.isNotEmpty()) }
+    private fun present(dialog: AlertDialog) {
+        releaseAll(); clearInput(); dialogs += dialog; publishMenu()
+        dialog.setOnDismissListener { dialogs -= dialog; publishMenu() }; dialog.show()
+        listOf(AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL).forEach { which ->
+            dialog.getButton(which)?.apply { isAllCaps = false; setTextColor(WolfViewStyle.accent); typeface = WolfViewStyle.font(context); minHeight = dp(48) }
+        }
     }
     private fun press(def: Control) {
         if (def.id in held) return
-        val code = store?.binding(def.id, def.code) ?: def.code
+        val current = definitions.firstOrNull { it.id == def.id } ?: return
+        val code = store?.binding(def.id, current.code) ?: current.code
         val alreadyHeld = code in held.values
         held[def.id] = code
         if (!alreadyHeld) key(code, true)
     }
     private fun release(id: String) { val code = held.remove(id) ?: return; if (code !in held.values) key(code, false) }
     fun releaseAll() { held.keys.toList().forEach(::release); buttons.values.forEach { it.isPressed = false } }
-    override fun onDetachedFromWindow() { releaseAll(); super.onDetachedFromWindow() }
+    override fun onDetachedFromWindow() {
+        releaseAll(); dialogs.toList().forEach(AlertDialog::dismiss); popupVisible = false
+        menuVisibility(false); super.onDetachedFromWindow()
+    }
     private fun dp(value: Int) = (value * resources.displayMetrics.density).toInt()
     private fun button(label: String, primary: Boolean) = Button(context).apply {
-        text = label; isAllCaps = false; textSize = 13f; setPadding(0, 0, 0, 0); minWidth = 0; minHeight = 0
+        text = label; isAllCaps = false; textSize = 13f; setPadding(dp(4), 0, dp(4), 0); minWidth = 0; minHeight = 0
+        maxLines = 2; typeface = WolfViewStyle.font(context)
         setTextColor(if (primary) Color.rgb(26, 17, 42) else Color.rgb(239, 231, 255))
         background = RippleDrawable(ColorStateList.valueOf(0x557B61AA), GradientDrawable().apply {
             setColor(if (primary) Color.rgb(201, 183, 255) else Color.argb(235, 42, 34, 56)); cornerRadius = dp(if (primary) 38 else 16).toFloat()

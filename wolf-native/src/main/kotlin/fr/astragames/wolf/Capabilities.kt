@@ -41,7 +41,7 @@ internal object WolfCapabilityInspector {
             issue(file, event, c.opcode, c.offset, WolfRuntime.capabilityProblem(c))
             val a = c.arguments
             if (c.opcode == 123 && a.getOrElse(1) { 0 } and 0x30000 != 0 && (game.config.engineCompatibilityVersion ?: 0) < 350)
-                issue(file, event, c.opcode, c.offset, "Mode souris récent absent de ce profil Wolf")
+                issue(file, event, c.opcode, c.offset, "Mode de bord récent absent de ce profil Wolf")
             if (c.opcode == 124 && a.getOrElse(1) { 0 } ushr 12 and 15 == 2 &&
                 (a[1] ushr 16 and 255 in 22..23 || a[1] ushr 16 and 255 >= 150) && (game.config.engineCompatibilityVersion ?: 0) < 350)
                 issue(file, event, c.opcode, c.offset, "Conversion écran/carte absente de ce profil Wolf")

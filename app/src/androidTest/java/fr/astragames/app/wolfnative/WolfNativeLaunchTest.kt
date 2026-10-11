@@ -182,7 +182,7 @@ class WolfNativeLaunchTest {
     private fun clearOptions(id: String) { context.getSharedPreferences("wolf_game_options", Context.MODE_PRIVATE).edit().remove(WolfNativeSaveStore.digest(id.toByteArray())).commit() }
     private fun capture(scenario: NativeActivityScenario, name: String) {
         if (InstrumentationRegistry.getArguments().getString("nativeCapture") != "true") return
-        scenario.onActivity { it.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
+        scenario.onActivity { assertEquals(0, it.window.attributes.flags and android.view.WindowManager.LayoutParams.FLAG_SECURE) }
         SystemClock.sleep(350)
         val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
         File(context.getExternalFilesDir(null), name).outputStream().use { bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it) }

@@ -107,7 +107,7 @@ class WolfRuntimeActivity : FragmentActivity() {
             finish()
             return
         }
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_SECURE)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         // Invalid internal arguments must reach begin()'s durable diagnostic handler.
         optionStore = WolfGameOptions(this, intent.getStringExtra("id").orEmpty())
         gameOptions = optionStore.read()
@@ -252,6 +252,12 @@ class WolfRuntimeActivity : FragmentActivity() {
                 runCatching { x11?.stop() }.onFailure { diagnostic?.failure("Arrêt X11", it) }; x11 = null
                 runCatching { shm?.stop() }.onFailure { diagnostic?.failure("Arrêt mémoire partagée", it) }; shm = null
                 withContext(Dispatchers.IO) {
+                    if (failure != null) {
+                        val log = diagnostic?.directory?.let { File(it, "runtime.log") }?.takeIf(File::isFile)
+                        log?.let { wolfRuntimeFailureHint(WolfDiagnostics.readTail(it, 512_000)) }?.let { hint ->
+                            failure = "$failure\n\n$hint"
+                        }
+                    }
                     runCatching { diagnostic?.finish(failure ?: if (closing) "Fermeture demandée" else "Partie terminée") }
                 }
                 withContext(Dispatchers.Main) {
@@ -317,7 +323,7 @@ class WolfRuntimeActivity : FragmentActivity() {
         fpsLabel?.let { label -> (label.layoutParams as? FrameLayout.LayoutParams)?.let {
             it.leftMargin = safeArea.left + dp(8); it.topMargin = safeArea.top + dp(8); label.layoutParams = it
         } }
-        loading.setPadding(safeArea.left + dp(24), safeArea.top + dp(24), safeArea.right + dp(24), safeArea.bottom + dp(24))
+        loading.setPadding(safeArea.left, safeArea.top, safeArea.right, safeArea.bottom)
         resultLayout?.setPadding(safeArea.left + dp(12), safeArea.top + dp(12), safeArea.right + dp(12), safeArea.bottom + dp(12))
         // Compose overlays already consume their own safe drawing/IME insets.
     }
@@ -388,12 +394,19 @@ class WolfRuntimeActivity : FragmentActivity() {
     }
     private fun showResult(message: String) {
         root.removeAllViews()
-        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(24, 24, 24, 24) }
+        val layout = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL; gravity = Gravity.CENTER; setPadding(dp(24), dp(24), dp(24), dp(24)); setBackgroundColor(WolfViewStyle.background) }
         resultLayout = layout
-        layout.addView(TextView(this).apply { text = message; textSize = 17f; setTextColor(Color.WHITE); gravity = Gravity.CENTER })
-        layout.addView(Button(this).apply { text = "Retour à Astra"; setOnClickListener { finish() } })
-        if (diagnostic != null) layout.addView(Button(this).apply { text = "Voir le rapport de diagnostic"; setOnClickListener { showDiagnostic() } })
-        if (gameStorage != null) layout.addView(Button(this).apply { text = "Exporter les sauvegardes"; setOnClickListener { exportPicker.launch("Astra-Wolf-sauvegardes.zip") } })
+        fun action(label: String, primary: Boolean = false, run: () -> Unit) {
+            layout.addView(WolfViewStyle.button(this, label, primary).apply { setOnClickListener { run() } }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(12) })
+        }
+        layout.addView(WolfViewStyle.label(this, message, 17f))
+        if (gameOptions.performance != WolfPerformance.STABLE && message.contains("aucune image", true)) action("Relancer avec le profil Stable", true) {
+            optionStore.save(optionStore.read().copy(performance = WolfPerformance.STABLE))
+            startActivity(Intent(intent)); finish()
+        }
+        action("Retour à Astra") { finish() }
+        if (diagnostic != null) action("Voir le rapport de diagnostic") { showDiagnostic() }
+        if (gameStorage != null) action("Exporter les sauvegardes") { exportPicker.launch("Astra-Wolf-sauvegardes.zip") }
         root.addView(layout, FrameLayout.LayoutParams(-1, -1))
         applySafeArea()
         lockOverlay?.let { root.addView(it, FrameLayout.LayoutParams(-1, -1)) }

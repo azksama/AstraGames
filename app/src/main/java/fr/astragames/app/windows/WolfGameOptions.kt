@@ -7,7 +7,7 @@ import org.json.JSONObject
 internal enum class WolfPerformance(val label: String, val strongMemory: String, val bigBlock: String, val nativeFlags: String) {
     BALANCED("Équilibré", "1", "2", "0"),
     FAST("Rapide", "0", "3", "1"),
-    STABLE("Stable (bêta 6)", "2", "0", "0");
+    STABLE("Stable", "2", "0", "0");
     fun environment() = mapOf("BOX64_DYNAREC_SAFEFLAGS" to "2", "BOX64_DYNAREC_STRONGMEM" to strongMemory,
         "BOX64_DYNAREC_BIGBLOCK" to bigBlock, "BOX64_DYNAREC_NATIVEFLAGS" to nativeFlags,
         "BOX64_DYNAREC_X87DOUBLE" to "1")
@@ -75,10 +75,34 @@ internal class WolfGameOptions(context: Context, id: String) {
             .put("runtime", options.runtime.name)
         prefs.edit().putString(key, data.toString()).apply()
     }
-    fun binding(id: String, fallback: XKeycode): XKeycode = runCatching {
-        XKeycode.valueOf(json().optString("key_$id", fallback.name))
-    }.getOrDefault(fallback)
-    fun bind(id: String, code: XKeycode) { prefs.edit().putString(key, json().put("key_$id", code.name).toString()).apply() }
+    fun binding(id: String, fallback: XKeycode): XKeycode = WolfKeyboard.parse(json().optString("key_$id", fallback.name)) ?: fallback
+    fun bind(id: String, code: XKeycode) {
+        require(WolfControlLayout.validId(id) && WolfKeyboard.valid(code))
+        write(json().put("key_$id", code.name))
+    }
+    private fun write(data: JSONObject) { prefs.edit().putString(key, data.toString()).apply() }
+    fun customControls() = WolfControlLayout.custom(json())
+    fun addControl(label: String, code: XKeycode): WolfCustomControl {
+        val controls = customControls()
+        require(controls.size < WolfControlLayout.MAX_CUSTOM) { "24 boutons personnalisés maximum." }
+        val control = WolfCustomControl("custom_" + java.util.UUID.randomUUID().toString().replace("-", ""), WolfControlLayout.label(label), code)
+        require(control.label.isNotBlank() && WolfKeyboard.valid(code))
+        write(json().put("customControls", WolfControlLayout.encodeCustom(controls + control)))
+        return control
+    }
+    fun editControl(id: String, label: String, code: XKeycode) {
+        val clean = WolfControlLayout.label(label)
+        require(clean.isNotBlank() && WolfKeyboard.valid(code))
+        val data = json()
+        data.put("customControls", WolfControlLayout.encodeCustom(customControls().map { if (it.id == id) it.copy(label = clean, code = code) else it }))
+        data.remove("key_$id"); write(data)
+    }
+    fun removeControl(id: String) {
+        val data = json().put("customControls", WolfControlLayout.encodeCustom(customControls().filterNot { it.id == id }))
+        data.remove("key_$id"); data.remove("position_false_$id"); data.remove("position_true_$id"); write(data)
+    }
+    fun controlLayout() = WolfControlLayout.normalized(json())
+    fun loadControlLayout(layout: JSONObject) { val data = json(); WolfControlLayout.apply(data, layout); write(data) }
     fun position(id: String, landscape: Boolean): Pair<Float, Float>? {
         val data = json().optJSONArray("position_${landscape}_$id") ?: return null
         val x = data.optDouble(0).toFloat(); val y = data.optDouble(1).toFloat()
@@ -91,8 +115,6 @@ internal class WolfGameOptions(context: Context, id: String) {
     }
     fun resetControls() {
         val data = json()
-        data.keys().asSequence().filter { it.startsWith("position_") || it.startsWith("key_") }.toList().forEach(data::remove)
-        data.remove("size"); data.remove("opacity")
-        prefs.edit().putString(key, data.toString()).apply()
+        WolfControlLayout.clear(data); write(data)
     }
 }

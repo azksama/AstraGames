@@ -1,0 +1,14 @@
+<resources>
+    <style name="Theme.AstraGames.WolfControls" parent="android:style/Theme.Material.Dialog.Alert">
+        <item name="android:fontFamily">@font/inter</item>
+        <item name="android:colorBackground">#191E29</item>
+        <item name="android:colorBackgroundFloating">#191E29</item>
+        <item name="android:windowBackground">@drawable/wolf_control_dialog_background</item>
+        <item name="android:textColorPrimary">#F5F2FA</item>
+        <item name="android:textColorSecondary">#ABA8B8</item>
+        <item name="android:colorAccent">#C9B7FF</item>
+        <item name="android:colorControlNormal">#ABA8B8</item>
+        <item name="android:colorControlActivated">#C9B7FF</item>
+        <item name="android:colorButtonNormal">#302147</item>
+    </style>
+</resources>

@@ -1186,6 +1186,48 @@ class WolfRuntimeTest {
         assertFalse(old.inspectCapabilities().supported); assertTrue(rejectsRuntime { old.tick() }.message!!.contains("profil Wolf"))
     }
 
+    @Test fun wolf3LogicalAndPhysicalPressAndReleaseModesReadTheirOwnEdges() {
+        val readers = listOf(0x20010, 0x30010, 0x20002, 0x30002, 0x21100, 0x31100, 0x21200, 0x31200)
+        val reader = common(0, readers.mapIndexed { i, flags -> command(123, intArrayOf(2_000_000 + i, flags, if (i < 6) 166 else 302)) }).copy(conditionWord = 3)
+        val runtime = fixture(emptyList(), listOf(reader), compatibilityVersion = 372)
+        assertTrue(runtime.inspectCapabilities().supported)
+        runtime.logicalKey(NativeKey.ACCEPT, true); runtime.logicalKey(NativeKey.UP, true)
+        runtime.physicalKey(66, true); runtime.controllerButton(302, true); runtime.tick()
+        val pressed = runtime.snapshotState().numbers
+        assertEquals(10, pressed[0]); assertEquals(0, pressed[1]); assertEquals(8, pressed[2]); assertEquals(0, pressed[3])
+        assertEquals(166, pressed[4]); assertEquals(0, pressed[5]); assertEquals(302, pressed[6]); assertEquals(0, pressed[7])
+        runtime.tick(); readers.indices.forEach { assertEquals(0, runtime.snapshotState().numbers[it]) }
+        runtime.logicalKey(NativeKey.ACCEPT, false); runtime.logicalKey(NativeKey.UP, false)
+        runtime.physicalKey(66, false); runtime.controllerButton(302, false); runtime.tick()
+        val released = runtime.snapshotState().numbers
+        assertEquals(10, released[1]); assertEquals(8, released[3]); assertEquals(166, released[5]); assertEquals(302, released[7])
+        runtime.tick(); readers.indices.forEach { assertEquals(0, runtime.snapshotState().numbers[it]) }
+    }
+    @Test fun wolf3PhysicalModeOneKeepsReadingHeldInputsLikeModeZero() {
+        val flags = listOf(0x1100, 0x11100, 0x1200, 0x11200, 0x310, 0x10310)
+        val reader = common(0, flags.mapIndexed { i, value ->
+            command(123, intArrayOf(2_000_000 + i, value, if (i < 2) 166 else 302))
+        }).copy(conditionWord = 3)
+        val runtime = fixture(emptyList(), listOf(reader), compatibilityVersion = 372)
+        assertTrue(runtime.inspectCapabilities().supported)
+        runtime.physicalKey(66, true); runtime.controllerButton(302, true); runtime.pointer(20f, 25f, true)
+        repeat(2) {
+            runtime.tick()
+            flags.indices.forEach { index ->
+                assertEquals(when (index) { 0, 1 -> 166; 2, 3 -> 302; else -> 20 }, runtime.snapshotState().numbers[index])
+            }
+        }
+        runtime.physicalKey(66, false); runtime.controllerButton(302, false); runtime.pointer(20f, 25f, false)
+        runtime.tick(); flags.indices.forEach { assertEquals(0, runtime.snapshotState().numbers[it]) }
+    }
+    @Test fun wolf3CombinedDirectionEdgeComparesResolvedDirectionAndCancellationResetsHistory() {
+        val reader = common(0, listOf(command(123, intArrayOf(2_000_000, 0x20002)), command(123, intArrayOf(2_000_001, 0x30002)))).copy(conditionWord = 3)
+        val runtime = fixture(emptyList(), listOf(reader), compatibilityVersion = 372)
+        runtime.logicalKey(NativeKey.UP, true); runtime.tick(); assertEquals(8, runtime.snapshotState().numbers[0])
+        runtime.logicalKey(NativeKey.RIGHT, true); runtime.tick(); assertEquals(9, runtime.snapshotState().numbers[0]); assertEquals(0, runtime.snapshotState().numbers[1])
+        runtime.logicalKey(NativeKey.UP, false); runtime.tick(); assertEquals(6, runtime.snapshotState().numbers[0]); assertEquals(0, runtime.snapshotState().numbers[1])
+        runtime.releaseInput(); runtime.tick(); assertEquals(0, runtime.snapshotState().numbers[1])
+    }
     @Test fun wolf3MousePressAndReleaseModesReadEdgesExactlyOnce() {
         val reader = common(0, listOf(command(123, intArrayOf(2_000_000, 0x20310)),
             command(123, intArrayOf(2_000_001, 0x30310)))).copy(conditionWord = 3)

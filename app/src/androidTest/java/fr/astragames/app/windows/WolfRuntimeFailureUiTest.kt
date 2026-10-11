@@ -5,6 +5,7 @@ import android.content.Context
 import android.content.Intent
 import android.view.View
 import android.view.ViewGroup
+import android.view.WindowManager
 import android.widget.Button
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
@@ -61,6 +62,10 @@ class WolfRuntimeFailureUiTest {
                 Thread.sleep(100)
             }
             assertNotNull("Early failure must offer the report, not close silently", reportButton)
+            scenario.onActivity { activity ->
+                assertEquals("Wolf Windows must permit Android screenshots", 0,
+                    activity.window.attributes.flags and WindowManager.LayoutParams.FLAG_SECURE)
+            }
             scenario.onActivity { reportButton!!.performClick() }
             val store = WolfDiagnostics(context)
             val report = store.report(store.reports().first())

@@ -115,7 +115,7 @@ class WolfNativeActivity : FragmentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(Color.TRANSPARENT), navigationBarStyle = SystemBarStyle.dark(Color.TRANSPARENT))
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON or WindowManager.LayoutParams.FLAG_SECURE)
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         if (android.os.Build.VERSION.SDK_INT >= 29) window.isNavigationBarContrastEnforced = false
         if (android.os.Build.VERSION.SDK_INT >= 28) window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode = if (android.os.Build.VERSION.SDK_INT >= 30) WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
@@ -129,13 +129,18 @@ class WolfNativeActivity : FragmentActivity() {
         currentOptions = options.read()
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         loading = WolfLoadingView(this, ::closeSession, ::showDiagnostic)
-        controls = WolfTouchControls(this, { code, pressed -> nativeKey(code)?.let { key -> key("controls", key, pressed) } },
+        controls = WolfTouchControls(this, { code, pressed ->
+            val mapped = nativeKey(code)
+            if (mapped != null) key("controls:${code.name}", mapped, pressed, fr.astragames.app.windows.WolfKeyboard.scan(code))
+            else fr.astragames.app.windows.WolfKeyboard.scan(code)?.let { physicalKey("controls:${code.name}", it, pressed) }
+        },
             ::closeSession, options, ::showMenu, ::releaseInput, ::menuVisibility).apply { visibility = View.GONE }
         root.addView(loading, FrameLayout.LayoutParams(-1, -1)); root.addView(controls, FrameLayout.LayoutParams(-1, -1))
         setContentView(root)
         ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
             val safe = insets.getInsets(WindowInsetsCompat.Type.systemBars() or WindowInsetsCompat.Type.displayCutout())
             controls.setPadding(safe.left, safe.top, safe.right, safe.bottom)
+            loading.setPadding(safe.left, safe.top, safe.right, safe.bottom)
             lockOverlay?.setPadding(safe.left, safe.top, safe.right, safe.bottom); insets
         }
         WindowInsetsControllerCompat(window, root).apply {

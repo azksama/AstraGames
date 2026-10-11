@@ -46,6 +46,12 @@ class WolfRuntime private constructor(
     private val newPhysicalKeys = linkedSetOf<Int>()
     private val physicalPadButtons = linkedSetOf<Int>()
     private val newPhysicalPadButtons = linkedSetOf<Int>()
+    private var edgeLogical = emptySet<NativeKey>()
+    private var previousEdgeLogical = emptySet<NativeKey>()
+    private var edgeKeyboard = emptySet<Int>()
+    private var previousEdgeKeyboard = emptySet<Int>()
+    private var edgeController = emptySet<Int>()
+    private var previousEdgeController = emptySet<Int>()
     private val nextAutomaticScanKeys = linkedSetOf<Int>()
     private val automaticScanKeys = linkedSetOf<Int>()
     private val bannedKeys = linkedSetOf<NativeKey>()
@@ -244,7 +250,7 @@ class WolfRuntime private constructor(
         else physicalPadButtons.remove(button)
     }
 
-    fun releaseInput() { keys.clear(); newKeys.clear(); releasedKeys.clear(); queuedKeyPresses.clear(); queuedKeyReleases.clear(); queuedPhysicalPresses.clear(); queuedPadPresses.clear(); queuedPointerPress = false; queuedPointerRelease = false; physicalKeys.clear(); newPhysicalKeys.clear(); physicalPadButtons.clear(); newPhysicalPadButtons.clear(); keyRepeats.reset(); nextAutomaticScanKeys.clear(); automaticScanKeys.clear(); nextAutomaticKeys.clear(); nextAutomaticRawKeys.clear(); automaticRawKeys.clear(); nextAutomaticPointer = null; targetTile = null; pointerPressed = false; pointerNewPress = false; pointerNewRelease = false; pointerX = -1f; pointerY = -1f }
+    fun releaseInput() { edgeLogical = emptySet(); previousEdgeLogical = emptySet(); edgeKeyboard = emptySet(); previousEdgeKeyboard = emptySet(); edgeController = emptySet(); previousEdgeController = emptySet(); keys.clear(); newKeys.clear(); releasedKeys.clear(); queuedKeyPresses.clear(); queuedKeyReleases.clear(); queuedPhysicalPresses.clear(); queuedPadPresses.clear(); queuedPointerPress = false; queuedPointerRelease = false; physicalKeys.clear(); newPhysicalKeys.clear(); physicalPadButtons.clear(); newPhysicalPadButtons.clear(); keyRepeats.reset(); nextAutomaticScanKeys.clear(); automaticScanKeys.clear(); nextAutomaticKeys.clear(); nextAutomaticRawKeys.clear(); automaticRawKeys.clear(); nextAutomaticPointer = null; targetTile = null; pointerPressed = false; pointerNewPress = false; pointerNewRelease = false; pointerX = -1f; pointerY = -1f }
 
     /** Coordinates are inverse-transformed by the host from the visible viewport. */
     fun pointer(x: Float, y: Float, pressed: Boolean = true) {
@@ -309,6 +315,9 @@ class WolfRuntime private constructor(
             }
             nextAutomaticPointer?.let { (x, y, press) -> pointerX = x; pointerY = y; if (press) pointerNewPress = true }; nextAutomaticPointer = null
             val heldReaders = (keys + newKeys + logicalPhysicalState(false)).filterNot { it in bannedKeys }.toSet()
+            previousEdgeLogical = edgeLogical; edgeLogical = heldReaders
+            previousEdgeKeyboard = edgeKeyboard; edgeKeyboard = (physicalKeys + newPhysicalKeys + automaticScanKeys).toSet()
+            previousEdgeController = edgeController; edgeController = (physicalPadButtons + newPhysicalPadButtons).toSet()
             val repeatDx = if (NativeKey.LEFT in heldReaders) -1 else if (NativeKey.RIGHT in heldReaders) 1 else 0
             val repeatDy = if (NativeKey.UP in heldReaders) -1 else if (NativeKey.DOWN in heldReaders) 1 else 0
             keyRepeats.tick(NativeKey.ACCEPT in heldReaders, NativeKey.BACK in heldReaders,
@@ -2676,8 +2685,9 @@ class WolfRuntime private constructor(
             }
     private fun pressed(key: NativeKey) = key in newKeys + logicalPhysicalState(true) && key !in movementBannedKeys
     private fun down(key: NativeKey) = key in keys + newKeys + logicalPhysicalState(false) && key !in movementBannedKeys
-    private fun physicalKeyboard(invocation: Invocation, waiting: Boolean, specific: Int): Int {
-        val held = (physicalKeys + newPhysicalKeys + automaticScanKeys).filterNot { variables.system[-2_000_000 - it] == 1 }.toSet()
+    private fun physicalKeyboard(invocation: Invocation, waiting: Boolean, specific: Int, edge: Int = 0): Int {
+        val state = when (edge) { 2 -> edgeKeyboard - previousEdgeKeyboard; 3 -> previousEdgeKeyboard - edgeKeyboard; else -> physicalKeys + newPhysicalKeys + automaticScanKeys }
+        val held = state.filterNot { variables.system[-2_000_000 - it] == 1 }.toSet()
         if (specific in 100..355) return if (specific - 100 in held) specific else 0
         // W2 0042bab0 scans indices 2..146 and reserves the engine's built-in control keys.
         val scan = held.filter { it in 2..146 && it !in setOf(28, 1, 42, 54, 14, 57, 58, 112) }.minOrNull()
@@ -2687,8 +2697,9 @@ class WolfRuntime private constructor(
         invocation.lastPhysicalKey = if (waiting) code else 0
         return code
     }
-    private fun physicalController(invocation: Invocation, waiting: Boolean, specific: Int): Int {
-        val held = (physicalPadButtons + newPhysicalPadButtons).filter { variables.system[-2_100_000] != 1 }.toSet()
+    private fun physicalController(invocation: Invocation, waiting: Boolean, specific: Int, edge: Int = 0): Int {
+        val state = when (edge) { 2 -> edgeController - previousEdgeController; 3 -> previousEdgeController - edgeController; else -> physicalPadButtons + newPhysicalPadButtons }
+        val held = state.filter { variables.system[-2_100_000] != 1 }.toSet()
         val button = if (specific in 300..320) specific.takeIf { it in held } else held.minOrNull()
         if (button == null) { invocation.lastPhysicalPadButton = 0; return 0 }
         if (waiting && invocation.lastPhysicalPadButton == button) return 0
@@ -2698,10 +2709,12 @@ class WolfRuntime private constructor(
     private fun inputValue(flags: Int, waiting: Boolean = flags and 128 != 0, invocation: Invocation? = null, specific: Int = 0): Int {
         val typing = pendingTextInputs.isNotEmpty()
         val typingPermissions = variables.system[38] ?: 0
+        val edge = flags ushr 16 and 15
+        if (edge >= 2) require((game.config.engineCompatibilityVersion ?: 0) >= 350) { "Mode de bord récent absent de ce profil Wolf" }
         if (typing && flags and 0xf00 == 0x100) return 0
         if (typing && flags and 0xf00 == 0x200 && typingPermissions and 2 == 0) return 0
-        if (flags and 0xf00 == 0x100) return physicalKeyboard(invocation ?: error("Contexte clavier absent"), waiting, specific)
-        if (flags and 0xf00 == 0x200) return physicalController(invocation ?: error("Contexte manette absent"), waiting, specific)
+        if (flags and 0xf00 == 0x100) return physicalKeyboard(invocation ?: error("Contexte clavier absent"), waiting, specific, edge)
+        if (flags and 0xf00 == 0x200) return physicalController(invocation ?: error("Contexte manette absent"), waiting, specific, edge)
         val state = if (typing) emptySet() else if (waiting) newKeys else keys + newKeys
         fun held(key: NativeKey) = key in state + logicalPhysicalState(waiting, !typing, !typing || typingPermissions and 2 != 0) && key !in bannedKeys
         if (flags and 0xf00 == 0x300) {
@@ -2709,12 +2722,35 @@ class WolfRuntime private constructor(
             if (mouseMode != 0) require((game.config.engineCompatibilityVersion ?: 0) >= 350) { "Mode souris récent absent de ce profil Wolf" }
             return when (flags and 15) {
                 0 -> {
-                    val active = when (mouseMode) { 0 -> if (waiting) pointerNewPress else pointerPressed || pointerNewPress; 2 -> pointerNewPress; 3 -> pointerNewRelease; else -> error("Mode de bord souris non porté : $mouseMode") }
+                    val active = when (mouseMode) { 0, 1 -> if (waiting) pointerNewPress else pointerPressed || pointerNewPress; 2 -> pointerNewPress; 3 -> pointerNewRelease; else -> error("Mode de bord souris non porté : $mouseMode") }
                     if ((!typing || typingPermissions and 1 != 0) && !mouseLeftBanned && flags and 16 != 0 && active) 20 else 0
                 }
                 1 -> pointerX.toInt(); 2 -> pointerY.toInt()
                 else -> error("Entrée souris non portée : $flags")
             }
+        }
+        if (edge in 2..3) {
+            // W3 a06cf0 reads pressed actions, or a previous action released to zero.
+            // Combined directions compare their resolved value, not individual keys.
+            val current = if (typing) emptySet() else edgeLogical.filterNot { it in bannedKeys }.toSet()
+            val previous = if (typing) emptySet() else previousEdgeLogical.filterNot { it in bannedKeys }.toSet()
+            for ((flag, key, value) in listOf(Triple(16, NativeKey.ACCEPT, 10), Triple(32, NativeKey.BACK, 11), Triple(64, NativeKey.SHIFT, 12))) {
+                if (flags and flag != 0 && (if (edge == 2) key in current - previous else key in previous - current)) return value
+            }
+            fun resolved(state: Set<NativeKey>): Int {
+                val dx = if (NativeKey.LEFT in state) -1 else if (NativeKey.RIGHT in state) 1 else 0
+                val dy = if (NativeKey.UP in state) -1 else if (NativeKey.DOWN in state) 1 else 0
+                return when (flags and 15) {
+                    0 -> 0; 1 -> if (dy != 0) direction(0, dy) else if (dx != 0) direction(dx, 0) else 0
+                    2 -> if (dx != 0 || dy != 0) direction(dx, dy) else 0
+                    3 -> if (NativeKey.UP in state) 8 else 0; 4 -> if (NativeKey.DOWN in state) 2 else 0
+                    5 -> if (NativeKey.LEFT in state) 4 else 0; 6 -> if (NativeKey.RIGHT in state) 6 else 0
+                    7 -> if (dy != 0) direction(0, dy) else 0; 8 -> if (dx != 0) direction(dx, 0) else 0
+                    else -> error("Direction d'entrée non portée : $flags")
+                }
+            }
+            val now = resolved(current); val before = resolved(previous)
+            return if (edge == 2) now.takeIf { it != before } ?: 0 else before.takeIf { now == 0 } ?: 0
         }
         var allowRepeat = true
         fun downReader(key: NativeKey) = key in keys + newKeys + logicalPhysicalState(false, !typing, !typing || typingPermissions and 2 != 0) && key !in bannedKeys
@@ -3257,8 +3293,7 @@ class WolfRuntime private constructor(
                 }
                 123 -> when {
                     a.size < 2 || a[1] and 0xfffce000.toInt() != 0 || a[1] and 0xf00 !in setOf(0, 0x100, 0x200, 0x300) -> "Mode d'entrée non pris en charge"
-                    a[1] and 0x30000 != 0 && !(a[1] and 0xf00 == 0 && a[1] ushr 16 and 15 == 1) &&
-                        (a[1] and 0xf00 != 0x300 || a[1] ushr 16 and 15 !in setOf(2, 3) || a[1] and 0x80 != 0) -> "Mode de bord d'entrée non pris en charge"
+                    a[1] ushr 16 and 15 in 2..3 && a[1] and 0x80 != 0 -> "Attente avec mode de bord non prise en charge"
                     a[1] and 0xf00 == 0 && (a[1] and 15 !in 0..8 || a[1] and 0x1000 != 0) -> "Mode d'entrée directionnelle non pris en charge"
                     a[1] and 0xf00 == 0x300 && (a[1] and 15 !in 0..2 || a[1] and 0x1060 != 0) -> "Bouton ou mode souris non porté"
                     a[1] and 0x1000 != 0 && a.size < 3 -> "Filtre physique sans code de touche"

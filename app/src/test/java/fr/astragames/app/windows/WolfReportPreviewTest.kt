@@ -23,6 +23,11 @@ class WolfReportPreviewTest {
             assertTrue(preview.contains("===== $name ====="))
     }
     @Test fun shortReportsAreUnchanged() { assertEquals("small report", wolfReportPreview("small report")) }
+    @Test fun moduleRegistrationFailureSuggestsStableWithoutDeclaringItTheProvenCause() {
+        val hint = requireNotNull(wolfRuntimeFailureHint("57626.196:0020:00c0:err:module:alloc_module rtl_rb_tree_put failed."))
+        assertTrue(hint.contains("peut être en cause")); assertTrue(hint.contains("Stable"))
+        assertNull(wolfRuntimeFailureHint("Error loading needed lib libgcrypt.so"))
+    }
     @Test fun onlyTheSpecificServerErrorIsPresentedAsACause() {
         assertNotNull(wolfRuntimeFailureHint("wine: a wine server seems to be running, but I cannot connect to it."))
         assertNull(wolfRuntimeFailureHint("Warning, cannot pre-load libastra_exec_bridge.so"))
