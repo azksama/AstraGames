@@ -2,6 +2,8 @@
 
 Le moteur Kotlin exécute les événements et rend les cartes directement dans Android. Les archives sont lues à la demande dans le dossier choisi : aucune copie générale de ses dizaines de milliers de fichiers n'est nécessaire. Winlator reste disponible pour les fonctions ou protections non prises en charge. La [couverture](RUNTIME_COVERAGE.md) et la [validation de la bêta 15](../VALIDATION_1.12.0-beta.15.md) distinguent les contrats portés, les parcours réellement exécutés et les limites.
 
+La [validation de la bêta 16](../VALIDATION_1.12.0-beta.16.md) couvre une correction du lecteur des bases : un type sans colonnes ne consomme aucun octet par ligne dans le DAT. Les noms restent lus dans le PROJECT ; le lecteur conserve les limites de ressources, le contrôle du nombre de définitions et celui du footer, indépendamment de la taille des types suivants.
+
 ## Choisir le moteur
 
 **Outils → Réglages Wolf RPG → Moteur** conserve les trois choix par jeu :

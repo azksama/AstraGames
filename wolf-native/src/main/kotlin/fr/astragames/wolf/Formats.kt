@@ -237,9 +237,14 @@ object WolfFormats {
                     type.metadata.getOrElse(fieldIndex) { "" }, type.stringOptions.getOrElse(fieldIndex) { emptyList() },
                     type.numericOptions.getOrElse(fieldIndex) { IntArray(0) }, type.defaults.getOrElse(fieldIndex) { 0 })
             }
-            val rows = List(reader.count("database row", (numbers * 4 + strings * 5).coerceAtLeast(1))) { row ->
+            // Name-only types (e.g. system-variable registries) consume zero DAT
+            // bytes per row: their names live in PROJECT. WolfTL Data::ReadDat
+            // iterates the numeric/string fields only. Do not borrow a byte
+            // from a subsequent type or the footer to bound these valid rows.
+            val rowCount = reader.count("database row", numbers * 4 + strings * 5)
+            reader.require(rowCount <= type.rowNames.size, "database rows exceed project row definitions")
+            val rows = List(rowCount) { row ->
                 reader.allocate(48 + numbers.toLong() * 4 + strings.toLong() * 8 + 48)
-                reader.require(row < type.rowNames.size, "database rows exceed project row definitions")
                 WolfDatabaseRow(row, type.rowNames[row], IntArray(numbers) { reader.int() }, List(strings) { reader.string() })
             }
             WolfDatabaseType(index, type.name, type.description, fields, rows, idMethod, idString)

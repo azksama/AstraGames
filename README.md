@@ -193,9 +193,9 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.15](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.15). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.16](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.16). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
-**Outils → Réglages Wolf RPG → Moteur** permet de choisir Automatique, Natif expérimental ou Winlator. Automatique conserve le moteur Windows des jeux déjà joués et utilise le secours Winlator si une fonction du jeu n'est pas portée. Le moteur Android lit les ressources dans le dossier d'origine, sans transfert général, et conserve ses sauvegardes séparément. Les parcours des exemples officiels et les limites sont détaillés dans la [couverture réelle](docs/wolf-native/RUNTIME_COVERAGE.md) et la [validation de la bêta 15](docs/VALIDATION_1.12.0-beta.15.md).
+**Outils → Réglages Wolf RPG → Moteur** permet de choisir Automatique, Natif expérimental ou Winlator. Automatique conserve le moteur Windows des jeux déjà joués et utilise le secours Winlator si une fonction du jeu n'est pas portée. Le moteur Android lit les ressources dans le dossier d'origine, sans transfert général, et conserve ses sauvegardes séparément. Les parcours des exemples officiels et les limites sont détaillés dans la [couverture réelle](docs/wolf-native/RUNTIME_COVERAGE.md) et la [validation de la bêta 15](docs/VALIDATION_1.12.0-beta.15.md). La [bêta 16](docs/VALIDATION_1.12.0-beta.16.md) corrige le chargement des tables système contenant des noms de lignes sans colonnes, dont le cas de 701 lignes signalé dans un diagnostic.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;

@@ -484,6 +484,62 @@ class WolfFormatsTest {
         assertNull(type.string(0, 1))
     }
 
+    @Test fun databaseNameOnlyRowsDoNotRequireBytesFromTheNextTypeOrFooter() {
+        for (encoding in WolfEncoding.entries) for (version in 0xc1..0xc4) for (followingValues in listOf(false, true)) {
+            val (project, data) = nameOnlyDatabase(encoding, version, followingValues = followingValues)
+            val originalProject = project.copyOf(); val originalData = data.copyOf()
+            val database = WolfFormats.parseDatabase(project, data, "SysDatabase")
+            val names = database.types[0]
+            assertEquals(701, names.rows.size)
+            assertTrue(names.fields.isEmpty())
+            names.rows.forEachIndexed { index, row ->
+                assertEquals(index, row.id); assertEquals("名前$index", row.name)
+                assertTrue(row.numbers.isEmpty()); assertTrue(row.strings.isEmpty())
+            }
+            if (followingValues) {
+                assertEquals(42, database.types[1].number(0, 0))
+                assertEquals("値", database.types[1].string(0, 1))
+            }
+            assertArrayEquals(originalProject, project); assertArrayEquals(originalData, data)
+        }
+    }
+
+    @Test fun databaseNameOnlyRowsStillRequireProjectDefinitionsAndBoundedCounts() {
+        for (version in 0xc1..0xc4) {
+            for (declared in listOf(702, WolfFormats.MAX_RECORDS + 1, Int.MAX_VALUE, -1)) {
+                val (project, data) = nameOnlyDatabase(WolfEncoding.CP932, version, declaredRows = declared)
+                rejects { WolfFormats.parseDatabase(project, data, "SysDatabase") }
+            }
+            // A project may retain additional names when fewer rows are stored in the DAT.
+            val (project, data) = nameOnlyDatabase(WolfEncoding.CP932, version, declaredRows = 2)
+            val database = WolfFormats.parseDatabase(project, data)
+            assertEquals(listOf("名前0", "名前1"), database.types[0].rows.map { it.name })
+            assertEquals(42, database.types[1].number(0, 0))
+        }
+    }
+
+    @Test fun databaseNameOnlyRowsStillValidateExactFooterAndPayloadBounds() {
+        for (version in 0xc1..0xc4) {
+            val (project, data) = nameOnlyDatabase(WolfEncoding.UTF8, version, followingValues = false)
+            rejects { WolfFormats.parseDatabase(project, data.copyOf(data.size - 1)) }
+            rejects { WolfFormats.parseDatabase(project, data + byteArrayOf(0)) }
+            val (_, wrongFooter) = nameOnlyDatabase(WolfEncoding.UTF8, version, followingValues = false, footer = 0)
+            rejects { WolfFormats.parseDatabase(project, wrongFooter) }
+        }
+        // A real numeric/string row still needs its own payload, even after an empty type.
+        val (project, data) = nameOnlyDatabase(WolfEncoding.CP932, 0xc1)
+        rejects { WolfFormats.parseDatabase(project, data.copyOf(data.size - 6) + byteArrayOf(0xc1.toByte())) }
+    }
+
+    @Test fun databaseNameOnlyRowsAreChargedToTheSharedAllocationBudget() {
+        val (project, data) = nameOnlyDatabase(WolfEncoding.CP932, 0xc1)
+        val failure = assertThrows(WolfFormatException::class.java) {
+            WolfFormats.parseDatabase(project, data, "SysDatabase", WolfParseBudget(maxAllocationBytes = 80_000))
+        }
+        assertTrue(failure.message.orEmpty().contains("SysDatabase.dat:payload"))
+        assertTrue(failure.message.orEmpty().contains("cumulative allocations"))
+    }
+
     @Test fun databaseRejectsDuplicateSlotsAndOutOfRangeRows() {
         val (project, dat) = minimalDatabase()
         // Second numeric slot duplicates slot zero (the first field is a string).
@@ -606,6 +662,36 @@ class WolfFormatsTest {
             int(11); int(22); string("hello"); int(-3); int(-7); string(""); write(0xc1); toByteArray()
         }
         return project to data
+    }
+
+    /** WolfTL Data::ReadDat reads zero values when fieldsSize is zero; names are in PROJECT. */
+    private fun nameOnlyDatabase(
+        encoding: WolfEncoding,
+        version: Int,
+        declaredRows: Int = 701,
+        followingValues: Boolean = true,
+        footer: Int = version,
+    ): Pair<ByteArray, ByteArray> {
+        val project = WireWriter(encoding).run {
+            int(if (followingValues) 2 else 1)
+            string("名前のみ"); int(0); int(701); repeat(701) { string("名前$it") }
+            string(""); repeat(5) { int(0) }
+            if (followingValues) {
+                string("値付き"); int(2); string("number"); string("text"); int(1); string("row")
+                string(""); int(2); write(ByteArray(2)); repeat(4) { int(0) }
+            }
+            toByteArray()
+        }
+        val payload = WireWriter(encoding).run {
+            int(if (followingValues) 2 else 1)
+            int(-2); int(0); int(0); int(declaredRows) // No per-row bytes for a name-only type.
+            if (followingValues) {
+                int(-2); int(0); int(2); int(1000); int(2000); int(1); int(42); string("値")
+            }
+            write(footer); toByteArray()
+        }
+        val header = byteArrayOf(0, 87, 0, 0, 79, 76, if (encoding == WolfEncoding.UTF8) 0x55 else 0, 70, 77, 0, version.toByte())
+        return project to (header + if (version == 0xc4) packedPayload(payload) else payload)
     }
 
     private fun loopRegistryFixture(loops: IntArray): Pair<ByteArray, ByteArray> {

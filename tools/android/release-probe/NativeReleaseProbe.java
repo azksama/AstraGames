@@ -39,11 +39,29 @@ public final class NativeReleaseProbe extends Instrumentation {
             evidence.put("abi", android.os.Build.SUPPORTED_ABIS[0]);
             testJni();
             String root = arguments.getString("nativeOfficialRoot");
-            check(root != null, "nativeOfficialRoot is required; no skipped corpus tests");
+            String nameOnlyRoot = arguments.getString("nativeNameOnlyRoot");
+            check(root != null || nameOnlyRoot != null, "A native fixture root is required; no skipped corpus tests");
             JSONArray journeys = new JSONArray(); evidence.put("journeys", journeys);
-            journeys.put(journey(new File(root, "22961"), "22961"));
-            journeys.put(journey(new File(root, "3729"), "3729"));
-            evidence.put("result", "PASS"); result.putString("stream", "Native R8 release: JNI frames/PCM and two original game journeys PASS\n");
+            if (root != null) {
+                journeys.put(journey(new File(root, "22961"), "22961"));
+                journeys.put(journey(new File(root, "3729"), "3729"));
+            }
+            if (nameOnlyRoot != null) {
+                File fixture = new File(nameOnlyRoot);
+                check(new String(bytes(new FileInputStream(new File(fixture, ".astra-test-fixture"))), "UTF-8").equals("AUTHORED_DB701"),
+                    "The name-only registry probe requires the authored 701-row fixture");
+                File project = new File(fixture, "Data/BasicData/SysDatabase.project");
+                File data = new File(fixture, "Data/BasicData/SysDatabase.dat");
+                String projectBefore = digest(bytes(new FileInputStream(project)));
+                String dataBefore = digest(bytes(new FileInputStream(data)));
+                JSONObject regression = journey(fixture, "authored-db701", 2);
+                check(projectBefore.equals(digest(bytes(new FileInputStream(project)))) &&
+                    dataBefore.equals(digest(bytes(new FileInputStream(data)))), "Authored database changed");
+                regression.put("nameOnlyRows", 701).put("systemProjectSha256", projectBefore).put("systemDataSha256", dataBefore);
+                journeys.put(regression);
+            }
+            evidence.put("result", "PASS");
+            result.putString("stream", "Native R8 release: JNI frames/PCM and " + journeys.length() + " requested game journey(s) PASS\n");
         } catch (Throwable failure) {
             try { evidence.put("result", "FAIL").put("error", failure.toString()); } catch (Exception ignored) { }
             StringWriter trace = new StringWriter(); failure.printStackTrace(new PrintWriter(trace));
@@ -88,6 +106,10 @@ public final class NativeReleaseProbe extends Instrumentation {
     }
 
     private JSONObject journey(File root, String version) throws Exception {
+        return journey(root, version, 28);
+    }
+
+    private JSONObject journey(File root, String version, int acknowledgements) throws Exception {
         File original = new File(root, "Data/BasicData/Game.dat");
         check(original.isFile(), "Missing corpus " + version);
         String before = digest(bytes(new FileInputStream(original)));
@@ -95,7 +117,7 @@ public final class NativeReleaseProbe extends Instrumentation {
         String hash = digest(id.getBytes("UTF-8"));
         File owned = new File(target.getFilesDir(), "wolf-native/" + hash);
         File saved = new File(owned, "saves/slot-0.astrawolf");
-        String label = "R8 native official " + version;
+        String label = "R8 native " + version;
         target.getSharedPreferences("wolf_game_options", Context.MODE_PRIVATE).edit()
             .putString(hash, "{\"runtime\":\"NATIVE\",\"showFps\":false}").commit();
         JSONObject record = new JSONObject().put("corpus", version).put("metadataSha256", before);
@@ -113,12 +135,13 @@ public final class NativeReleaseProbe extends Instrumentation {
                 check(activity != null, "Native release activity did not start");
             } finally { removeMonitor(monitor); }
             await("first native image", 30000, () -> events(label).contains("Première image native affichée"));
+            record.put("firstImageMs", SystemClock.elapsedRealtime() - started);
             SystemClock.sleep(2000);
             save(saved); Snapshot title = snapshot(saved);
             screenshot("release-" + version + "-title");
             button("Valider", false);
-            // Real tutorial acknowledgements, through the application's controls.
-            for (int i = 0; i < 28; i++) { SystemClock.sleep(650); button("Valider", false); checkSession(label); }
+            // Real game acknowledgements, through the application's controls.
+            for (int i = 0; i < acknowledgements; i++) { SystemClock.sleep(650); button("Valider", false); checkSession(label); }
             save(saved); Snapshot game = snapshot(saved);
             check(game.map != title.map, "New game did not leave the title map");
             screenshot("release-" + version + "-map");

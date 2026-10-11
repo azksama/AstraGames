@@ -73,10 +73,14 @@ class WolfNativeLaunchTest {
         } finally { clearOptions(id); check(root.canonicalFile.parentFile == context.cacheDir.canonicalFile); root.deleteRecursively() }
     }
 
-    @Test fun authoredBinaryGameDisplaysItsFirstFrameWithoutWineOrGameTransfer() {
+    @Test fun authoredBinaryGameDisplaysItsFirstFrameWithoutWineOrGameTransfer() = assertFirstNativeFrame()
+
+    @Test fun systemRegistryWith701NameOnlyRowsReachesItsFirstNativeFrame() = assertFirstNativeFrame(nameOnlyRows = 701)
+
+    private fun assertFirstNativeFrame(nameOnlyRows: Int = 0) {
         val id = "native-boot-${UUID.randomUUID()}"
         val root = File(context.cacheDir, id).apply { mkdirs() }
-        NativeGameFixture.write(root)
+        NativeGameFixture.write(root, nameOnlyRows = nameOnlyRows)
         WolfGameOptions(context, id).save(WolfOptions(runtime = WolfRuntimeMode.NATIVE, showFps = false))
         val before = File(root, "Save/original.sav").readBytes()
         try {
@@ -96,10 +100,12 @@ class WolfNativeLaunchTest {
                     File(context.getExternalFilesDir(null), "native-boot-report.txt").writeText(diagnostics.report(report))
                 }
                 if (InstrumentationRegistry.getArguments().getString("nativeReleaseFixture") == "true") {
-                    val destination = File(context.filesDir, "wolf-probe/native-authored-beta14")
-                    check(!destination.exists() || File(destination, ".astra-test-fixture").readText() == "AUTHORED_BETA14")
+                    val fixtureName = if (nameOnlyRows == 701) "native-name-only-701" else "native-authored-beta14"
+                    val marker = if (nameOnlyRows == 701) "AUTHORED_DB701" else "AUTHORED_BETA14"
+                    val destination = File(context.filesDir, "wolf-probe/$fixtureName")
+                    check(!destination.exists() || File(destination, ".astra-test-fixture").readText() == marker)
                     root.copyRecursively(destination, overwrite = true)
-                    File(destination, ".astra-test-fixture").writeText("AUTHORED_BETA14")
+                    File(destination, ".astra-test-fixture").writeText(marker)
                 }
             }
             assertArrayEquals(before, File(root, "Save/original.sav").readBytes())

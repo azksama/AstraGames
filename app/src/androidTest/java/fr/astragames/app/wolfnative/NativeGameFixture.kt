@@ -19,13 +19,15 @@ internal object NativeGameFixture {
     private data class Command(val opcode: Int, val args: IntArray = intArrayOf(), val strings: List<String> = emptyList(), val depth: Int = 0)
     private data class Type(val fields: List<Boolean> = emptyList(), val rows: List<List<Any>> = emptyList()) // true = string
 
-    fun write(root: File, hero: Boolean = true) {
+    fun write(root: File, hero: Boolean = true, nameOnlyRows: Int = 0) {
+        require(nameOnlyRows in 0..10_000)
         fun file(path: String, bytes: ByteArray) { File(root, path).apply { parentFile!!.mkdirs(); writeBytes(bytes) } }
         file("Data/BasicData/Game.dat", game(hero))
         file("Data/BasicData/CommonEvent.dat", Writer().run { write(byteArrayOf(0, 87, 0, 0, 79, 76, 0, 70, 67, 0)); write(0x8f); int(0); write(0x8f); toByteArray() })
         for (name in listOf("DataBase", "CDataBase", "SysDatabase")) {
             val types = if (name == "SysDatabase") List(8) { i -> when (i) {
                 0 -> Type(listOf(true), listOf(listOf("MapData/title.mps"), listOf("MapData/field.mps")))
+                6 -> Type(rows = List(nameOnlyRows) { emptyList() })
                 7 -> Type(listOf(false, false, false), listOf(listOf(0, 1, 1)))
                 else -> Type()
             } } else listOf(Type())
