@@ -36,6 +36,7 @@ internal class AppUpdateManager(
     private val directory = File(context.cacheDir, "app-updates")
     private val apk get() = File(directory, "update.apk")
     private val mutex = Mutex()
+    private var lastOpeningCheck: Long? = null
     private val saved = runCatching { GitHubRelease.fromCache(JSONObject(preferences.getString("release", "")!!)) }.getOrNull()
         ?.takeIf { newerVersion(it.version, BuildConfig.VERSION_NAME) && it.allowedInChannel(preferences.getBoolean("includePrereleases", false)) }
     private val mutableState = MutableStateFlow(AppUpdateState(
@@ -58,10 +59,24 @@ internal class AppUpdateManager(
         check(preferences.edit().putBoolean("includePrereleases", enabled).remove("release").remove("ready").remove("notified").commit())
         mutableState.update { it.copy(includePrereleases = enabled, release = null, ready = false, message = null, error = null) }
         apk.delete()
+        lastOpeningCheck = null
         context.getSystemService(android.app.NotificationManager::class.java).cancel(811)
     } }
 
-    suspend fun check(downloadAutomatically: Boolean = false) = operation {
+    /** Foreground metadata check, independent of downloads and notification permission. */
+    suspend fun checkOnOpen() {
+        if (!state.value.automatic) return
+        operation {
+            val now = android.os.SystemClock.elapsedRealtime()
+            if (!mutableState.value.automatic || lastOpeningCheck?.let { now - it < 60_000 } == true) return@operation
+            lastOpeningCheck = now
+            checkLocked(downloadAutomatically = false)
+        }
+    }
+
+    suspend fun check(downloadAutomatically: Boolean = false) = operation { checkLocked(downloadAutomatically) }
+
+    private suspend fun checkLocked(downloadAutomatically: Boolean) {
         val release = latestRelease(BuildConfig.DEBUG, mutableState.value.includePrereleases)
         preferences.edit { putLong("lastCheck", System.currentTimeMillis()) }
         if (!newerVersion(release.version, BuildConfig.VERSION_NAME)) {

@@ -8,6 +8,8 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import android.hardware.input.InputManager
+import android.view.InputDevice
 import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
@@ -52,6 +54,13 @@ class WolfNativeActivity : FragmentActivity() {
     }
     private val owner = Executors.newSingleThreadScheduledExecutor { Thread(it, "wolf-native-session").apply { isDaemon = true } }
     private val main = Handler(Looper.getMainLooper())
+    private val inputManager by lazy { getSystemService(InputManager::class.java) }
+    private var inputDevicesObserved = false
+    private val inputDeviceListener = object : InputManager.InputDeviceListener {
+        override fun onInputDeviceAdded(deviceId: Int) = updateControllerDevice()
+        override fun onInputDeviceChanged(deviceId: Int) = updateControllerDevice()
+        override fun onInputDeviceRemoved(deviceId: Int) { releaseInput(); updateControllerDevice() }
+    }
     private val inputs = ConcurrentLinkedQueue<(WolfRuntime) -> Unit>()
     private val heldInputs = mutableMapOf<NativeKey, MutableSet<String>>() // Main-thread sources.
     private val heldPhysicalInputs = mutableMapOf<Int, MutableSet<String>>()
@@ -104,6 +113,7 @@ class WolfNativeActivity : FragmentActivity() {
     private val dialogs = mutableSetOf<AlertDialog>()
     private val blockingDialogs = mutableSetOf<AlertDialog>()
     private val textInputConfirmations = mutableMapOf<Long, () -> Unit>()
+    private val textInputEdits = mutableMapOf<Long, (String) -> Unit>()
     private val pictureMeasurements = mutableMapOf<Long, Runnable>() // Main-thread requests.
     private val exportPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null && !closed) onOwner {
@@ -127,6 +137,8 @@ class WolfNativeActivity : FragmentActivity() {
         }
         options = WolfGameOptions(this, intent.getStringExtra("id").orEmpty())
         currentOptions = options.read()
+        inputManager.registerInputDeviceListener(inputDeviceListener, main)
+        inputDevicesObserved = true
         root = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
         loading = WolfLoadingView(this, ::closeSession, ::showDiagnostic)
         controls = WolfTouchControls(this, { code, pressed ->
@@ -181,13 +193,18 @@ class WolfNativeActivity : FragmentActivity() {
             val fileSource = WolfNativeFiles(this, requireNotNull(intent.getStringExtra("id")), assets).also { files = it }
             downloads = WolfNativeDownloads(fileSource)
             val vm = WolfRuntime.load(fileSource) { stage((phase + 1).coerceAtMost(5), it) }.also { runtime = it }
+            vm.windowActive(focused && !paused)
+            updateControllerDevice()
             launchPreferences = WolfNativeLaunchPreferences(this, requireNotNull(intent.getStringExtra("id"))).also {
                 vm.initialNextLaunchScale(it.nextWindowScalePermille)
             }
             stage(6, "Vérification des fonctions du jeu…")
-            if (currentOptions.runtime == WolfRuntimeMode.AUTO) {
-                val capabilities = vm.inspectCapabilities(includeAllMaps = true)
-                if (!capabilities.supported) { fallback("Fonctions non encore compatibles :\n${capabilities.description()}"); return }
+            val capabilities = vm.inspectCapabilities(includeAllMaps = true)
+            diagnostic?.event("Audit natif : ${capabilities.scannedMapCount} cartes inspectées ; ${capabilities.issues.size} incompatibilités ; complet=${capabilities.inspectedAllMaps}")
+            if (!capabilities.supported) {
+                diagnostic?.event("Incompatibilités natives détectées avant lancement :\n${capabilities.description(Int.MAX_VALUE)}")
+                if (currentOptions.runtime == WolfRuntimeMode.AUTO) { fallback("Fonctions non encore compatibles :\n${capabilities.description()}"); return }
+                fail("Fonctions non encore compatibles :\n${capabilities.description()}"); return
             }
             saves = WolfNativeSaveStore(this, requireNotNull(intent.getStringExtra("id")), assets.metadataFingerprint)
             gameFps = vm.game.config.fps
@@ -237,6 +254,7 @@ class WolfNativeActivity : FragmentActivity() {
                     notice = { message -> onOwner { diagnostic?.event(message) } },
                     videoState = { id, state -> input { it.videoState(id, state) } },
                     renderMetrics = { fps, drawMs ->
+                        onOwner { runtime?.renderedFps(fps.coerceAtLeast(0.0).toInt()) }
                         val now = SystemClock.elapsedRealtime()
                         if (now >= nextRenderMetricAt) {
                             nextRenderMetricAt = now + 10_000
@@ -289,7 +307,9 @@ class WolfNativeActivity : FragmentActivity() {
                     if (!failed && runtime === vm) try { vm.completeFileOperation(effect.requestId, result.getOrThrow()) }
                     catch (error: Exception) { diagnostic?.failure("Fichier Wolf ${effect.path}", error); fail(error.message ?: "Opération de fichier Wolf échouée") }
                 } }
-                is NativeEffect.Download -> downloads?.execute(effect) { result -> onOwner {
+                is NativeEffect.Download -> downloads?.execute(effect, progress = { progress -> onOwner {
+                    if (!failed && runtime === vm) vm.downloadProgress(effect.requestId, progress)
+                } }) { result -> onOwner {
                     if (!failed && runtime === vm) vm.completeDownload(effect.requestId, result)
                 } }
                 is NativeEffect.CancelDownload -> downloads?.cancel(effect.requestId)
@@ -314,6 +334,12 @@ class WolfNativeActivity : FragmentActivity() {
                 }
                 is NativeEffect.TextInput -> textInput(vm, effect)
                 is NativeEffect.ConfirmTextInput -> main.post { textInputConfirmations[effect.requestId]?.invoke() }
+                is NativeEffect.UpdateTextInput -> main.post { textInputEdits[effect.requestId]?.invoke(effect.text) }
+                is NativeEffect.WindowTitle -> main.post {
+                    title = effect.title
+                    @Suppress("DEPRECATION")
+                    setTaskDescription(android.app.ActivityManager.TaskDescription(effect.title))
+                }
                 is NativeEffect.Save -> try {
                     saves!!.writeData(effect.key ?: "slot:${effect.slot}", WolfSaveData(snapshot = vm.snapshot()))
                     vm.completeHostRequest(true)
@@ -411,7 +437,7 @@ class WolfNativeActivity : FragmentActivity() {
     }
     private fun textInput(vm: WolfRuntime, effect: NativeEffect.TextInput) = main.post {
         if (closed || failed || isDestroyed) return@post
-        val editor = EditText(this).apply {
+        val editor = WolfDialogs.field(this, "Texte du jeu").apply {
             effect.fontName?.let { name -> this@WolfNativeActivity.resources?.namedTypeface(name)?.let { typeface = it } }
             setText(effect.initialText)
             setSelectAllOnFocus(true)
@@ -430,18 +456,36 @@ class WolfNativeActivity : FragmentActivity() {
             if (answered) return
             answered = true
             textInputConfirmations.remove(effect.requestId)
+            textInputEdits.remove(effect.requestId)
             onOwner { if (!failed && runtime === vm) try { vm.completeTextInput(effect.requestId, value) }
             catch (error: Exception) { diagnostic?.failure("Saisie du jeu", error); fail(error.message ?: "Saisie impossible") } }
         }
-        val builder = AlertDialog.Builder(this).setTitle("Saisie du jeu").setView(editor)
+        val content = WolfDialogs.column(this).apply { addView(editor, LinearLayout.LayoutParams(-1, -2)) }
+        val builder = WolfDialogs.builder(this, "Saisie du jeu").setView(content)
             .setCancelable(effect.cancellable).setPositiveButton("Valider") { _, _ -> complete(editor.text.toString()) }
         if (effect.cancellable) builder.setNegativeButton("Annuler") { _, _ -> complete(null) }
             .setOnCancelListener { complete(null) }
         val dialog = trackDialog(builder.create(), pauseGame = false)
         textInputConfirmations[effect.requestId] = { complete(editor.text.toString()); dialog.dismiss() }
+        textInputEdits[effect.requestId] = { value ->
+            if (editor.text.toString() != value) {
+                val atEnd = editor.selectionEnd == editor.length()
+                val cursor = editor.selectionStart.coerceAtLeast(0)
+                editor.setText(value)
+                editor.setSelection(if (atEnd) editor.length() else cursor.coerceAtMost(editor.length()))
+            }
+        }
+        editor.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                val value = s?.toString().orEmpty()
+                onOwner { if (!failed && runtime === vm) vm.editedText(effect.requestId, value) }
+            }
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
         textInputActive = true
         dialog.setOnShowListener { editor.requestFocus(); dialog.window?.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_VISIBLE) }
-        dialog.show()
+        WolfDialogs.show(dialog)
     }
     private fun cancelPictureMeasurements() {
         pictureMeasurements.values.forEach(main::removeCallbacks)
@@ -504,8 +548,8 @@ class WolfNativeActivity : FragmentActivity() {
     private fun showMenu() {
         if (closed || failed || !ready || lockOverlay != null) return
         releaseInput()
-        showDialog(AlertDialog.Builder(this).setTitle("Wolf · moteur Android")
-            .setItems(arrayOf("Réglages du jeu", "Sauvegarder · emplacement 0", "Charger une sauvegarde native", "Exporter les sauvegardes natives", "Diagnostic", "Relancer avec Winlator")) { _, index -> when (index) {
+        showDialog(WolfDialogs.builder(this, "Wolf · moteur Android")
+            .setAdapter(WolfDialogs.rows(this, listOf("Réglages du jeu", "Sauvegarder · emplacement 0", "Charger une sauvegarde native", "Exporter les sauvegardes natives", "Diagnostic", "Relancer avec Winlator"))) { _, index -> when (index) {
                 0 -> trackDialog(showWolfOptions(this, options, ::configureView))
                 1 -> onOwner { try { saves!!.write(0, runtime!!.snapshot()); notice("Sauvegarde native", "Emplacement 0 enregistré dans Astra.") } catch (error: Exception) { notice("Sauvegarde impossible", error.message.orEmpty()) } }
                 2 -> onOwner {
@@ -513,7 +557,7 @@ class WolfNativeActivity : FragmentActivity() {
                     main.post {
                         if (closed || lockOverlay != null) return@post
                         if (slots.isEmpty()) notice("Sauvegardes natives", "Aucune sauvegarde native pour ce jeu.")
-                        else showDialog(AlertDialog.Builder(this).setTitle("Charger une sauvegarde native").setItems(slots.map { "Emplacement $it" }.toTypedArray()) { _, row ->
+                        else showDialog(WolfDialogs.builder(this, "Charger une sauvegarde native").setAdapter(WolfDialogs.rows(this, slots.map { "Emplacement $it" })) { _, row ->
                             onOwner { try { runtime!!.restoreSaveData(saves!!.readData("slot:${slots[row]}")); publish(runtime!!.frame()) } catch (error: Exception) { notice("Chargement impossible", error.message.orEmpty()) } }
                         }.setNegativeButton("Annuler", null))
                     }
@@ -546,13 +590,13 @@ class WolfNativeActivity : FragmentActivity() {
             audio?.resume(); display?.suspendVideo(false)
         }
     }
-    private fun showDialog(builder: AlertDialog.Builder) { trackDialog(builder.create()).show() }
+    private fun showDialog(builder: AlertDialog.Builder) { WolfDialogs.show(trackDialog(builder.create())) }
     private fun dismissDialogs() {
-        textInputConfirmations.clear(); textInputActive = false
+        textInputConfirmations.clear(); textInputEdits.clear(); textInputActive = false
         dialogs.toList().forEach { it.dismiss() }; dialogs.clear(); blockingDialogs.clear(); menuOverlayShown = false; menuPaused = false
     }
     private fun notice(title: String, message: String) = main.post {
-        if (!closed && !isDestroyed && lockOverlay == null) showDialog(AlertDialog.Builder(this).setTitle(title).setMessage(message).setPositiveButton("Fermer", null))
+        if (!closed && !isDestroyed && lockOverlay == null) showDialog(WolfDialogs.builder(this, title).setMessage(message).setPositiveButton("Fermer", null))
     }
     private fun showDiagnostic() {
         if (lockOverlay != null) return
@@ -560,7 +604,7 @@ class WolfNativeActivity : FragmentActivity() {
         lifecycleScope.launch(Dispatchers.IO) {
             val text = runCatching { WolfDiagnostics(this@WolfNativeActivity).report(report.directory) }.getOrElse { it.message.orEmpty() }
             main.post {
-                if (!closed && !isDestroyed && lockOverlay == null) showDialog(AlertDialog.Builder(this@WolfNativeActivity).setTitle("Diagnostic Wolf natif")
+                if (!closed && !isDestroyed && lockOverlay == null) showDialog(WolfDialogs.builder(this@WolfNativeActivity, "Diagnostic Wolf natif")
                     .setMessage(text.take(24_000)).setPositiveButton("Fermer", null)
                     .setNeutralButton("Partager le rapport complet") { _, _ -> startActivity(Intent.createChooser(WolfDiagnostics(this@WolfNativeActivity).shareIntent(report.directory), "Diagnostic Wolf")) })
             }
@@ -591,6 +635,7 @@ class WolfNativeActivity : FragmentActivity() {
     private fun closeResources(result: String) {
         if (closed) return
         closed = true; tickTask?.cancel(false); phaseCounter?.let(main::removeCallbacks); cancelPictureMeasurements(); dismissDialogs(); releaseInput()
+        if (inputDevicesObserved) { inputManager.unregisterInputDeviceListener(inputDeviceListener); inputDevicesObserved = false }
         downloads?.close(); files?.close()
         source?.close()
         display?.close(); resources?.close()
@@ -621,10 +666,11 @@ class WolfNativeActivity : FragmentActivity() {
         ViewCompat.requestApplyInsets(root)
     }
     private fun unlockRuntime() { lockOverlay?.let(root::removeView); lockOverlay = null; paused = false; resumeAudioIfActive() }
-    override fun onPause() { paused = true; releaseInput(); suspendMedia(); speech?.stop(); super.onPause() }
-    override fun onResume() { super.onResume(); if (lockOverlay == null) { paused = false; resumeAudioIfActive() } }
+    override fun onPause() { paused = true; onOwner { runtime?.windowActive(false) }; releaseInput(); suspendMedia(); speech?.stop(); super.onPause() }
+    override fun onResume() { super.onResume(); if (lockOverlay == null) { paused = false; onOwner { runtime?.windowActive(focused) }; resumeAudioIfActive() } }
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus); focused = hasFocus
+        onOwner { runtime?.windowActive(hasFocus && !paused) }
         if (!hasFocus) { releaseInput(); if (!textInputActive) suspendMedia() } else resumeAudioIfActive()
     }
     override fun onStop() { if (!isChangingConfigurations && settings?.lockOnBackground == true) lockRuntime(); super.onStop() }
@@ -648,6 +694,13 @@ class WolfNativeActivity : FragmentActivity() {
         scan?.let { physicalKey(origin, it, pressed) }
         button?.let { input { runtime -> runtime.controllerButton(it, pressed) } }
         return true
+    }
+    private fun updateControllerDevice() {
+        val pad = InputDevice.getDeviceIds().sorted().asSequence().mapNotNull(InputDevice::getDevice)
+            .firstOrNull { !it.isVirtual && (it.supportsSource(InputDevice.SOURCE_GAMEPAD) || it.supportsSource(InputDevice.SOURCE_JOYSTICK)) }
+        // Android provides the device name, not Wolf's Windows driver classification.
+        // UNKNOWN is the documented value for an unclassified attached controller.
+        onOwner { runtime?.controllerDevice(pad?.name.orEmpty(), if (pad == null) "" else "UNKNOWN") }
     }
     private fun nativeKey(code: XKeycode): NativeKey? = when (code) {
         XKeycode.KEY_UP -> NativeKey.UP; XKeycode.KEY_DOWN -> NativeKey.DOWN; XKeycode.KEY_LEFT -> NativeKey.LEFT; XKeycode.KEY_RIGHT -> NativeKey.RIGHT

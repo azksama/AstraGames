@@ -76,13 +76,16 @@ internal class WolfVariables(
                 require(id != 140 || compatibilityVersion >= 355 && value in 0..1) { "Filtre d'affichage système invalide ou absent du profil Wolf : $value" }
                 require(id != 148 || compatibilityVersion >= 330) { "Échelle du prochain lancement absente de ce profil Wolf" }
                 require(id != 150 || compatibilityVersion >= 350) { "Conversion de texte150 absente de ce profil Wolf" }
-                require(id !in 129..130 || compatibilityVersion >= 350) { "Facteur diagonal absent de ce profil Wolf" }
+                require(id !in 129..132 || compatibilityVersion >= 300) { "Correction de mouvement/caméra absente de ce profil Wolf" }
                 // W2 setter4425d0 stores Sys102 signed, but clamps Sys100/101 at zero.
                 // W3 applies that lower clamp to all three gains; neither profile caps at100.
                 val stored = when {
                     id in 15..16 -> value.coerceAtLeast(1)
                     id in 100..101 || id == 102 && compatibilityVersion >= 300 -> value.coerceAtLeast(0)
                     id in 129..130 -> value.coerceIn(0, 10_000)
+                    id in 131..132 -> value.coerceIn(-99_999, 99_999)
+                    id in 93..94 -> value.coerceIn(-255, 255)
+                    id == 120 -> value.coerceIn(0, 2)
                     id == 150 -> value.coerceIn(0, 1)
                     else -> value
                 }
@@ -102,7 +105,11 @@ internal class WolfVariables(
         in 1_600_000..1_699_999 -> commonStrings[address.common to (code % 100)] ?: ""
         in 3_000_000..3_999_999 -> strings[code - 3_000_000] ?: ""
         in 15_000_000..15_999_999 -> commonStrings[((code - 15_000_000) / 100) to (code % 100)] ?: ""
-        in 9_900_000..9_999_999 -> systemString(code % 100_000, address) ?: systemStrings[code % 100_000] ?: error("Chaîne système non prise en charge : $code")
+        in 9_900_000..9_999_999 -> {
+            val id = code % 100_000
+            require(id in SUPPORTED_SYSTEM_STRING_READS) { "Chaîne système non prise en charge : $code" }
+            systemString(id, address) ?: systemStrings[id] ?: error("Valeur initiale de chaîne système non établie : $code")
+        }
         in 1_000_000_000..1_099_999_999, in 1_100_000_000..1_199_999_999, in 1_300_000_000..1_399_999_999 -> {
             val base = code / 100_000_000 * 100_000_000
             val kind = when (base) { 1_000_000_000 -> WolfDatabaseKind.USER; 1_100_000_000 -> WolfDatabaseKind.MUTABLE; else -> WolfDatabaseKind.SYSTEM }
@@ -218,10 +225,11 @@ internal class WolfVariables(
 
     companion object {
         /** Only fields with explicit runtime effects are admitted, never arbitrary zero defaults. */
-        val SUPPORTED_SYSTEM_READS = (0..29).toSet() + (52..57).toSet() + (61..68).toSet() + setOf(35, 36, 37, 38, 39, 48, 59, 60, 71, 72, 73, 84, 95, 96, 97, 98, 99, 100, 101, 102, 104, 105, 108, 115, 116, 117, 118, 119, 125, 129, 130, 140, 148, 150, 155)
-        val SUPPORTED_SYSTEM_WRITES = (0..11).toSet() + (14..19).toSet() + (52..57).toSet() + (61..68).toSet() + setOf(21, 22, 23, 25, 26, 27, 28, 29, 36, 37, 38, 59, 60, 73, 95, 96, 97, 98, 99, 100, 101, 102, 104, 105, 125, 129, 130, 140, 148, 150)
-        val FONT_SYSTEM_STRINGS = (62..65).toSet() + 67
-        val SUPPORTED_SYSTEM_STRING_WRITES = (10..15).toSet() + setOf(26, 27, 30, 31) + FONT_SYSTEM_STRINGS
+        val SUPPORTED_SYSTEM_READS = WolfSystemSupport.numericReads
+        val SUPPORTED_SYSTEM_WRITES = WolfSystemSupport.numericWrites
+        val FONT_SYSTEM_STRINGS = WolfSystemSupport.fontStrings
+        val SUPPORTED_SYSTEM_STRING_READS = WolfSystemSupport.stringReads
+        val SUPPORTED_SYSTEM_STRING_WRITES = WolfSystemSupport.stringWrites
         fun numericPrefix(text: String): Int {
             val prefix = Regex("^[\\t ]*[+-]?[0-9]+").find(text)?.value?.trim() ?: return 0
             return prefix.toLongOrNull()?.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())?.toInt()

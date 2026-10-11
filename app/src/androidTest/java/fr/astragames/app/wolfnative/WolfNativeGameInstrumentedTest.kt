@@ -67,6 +67,11 @@ class WolfNativeGameInstrumentedTest {
             tap(65f, 45f); vm.tick()
             assertEquals(1, vm.mapId); assertEquals("Bienvenue !", vm.frame().dialog!!.text)
             // The pointer uses inverse viewport coordinates and the game's Sys73 message option.
+            draw().recycle(); tap(20f, 80f); vm.tick()
+            // Wolf's normal cold speed is progressive: the first click completes
+            // the line, then a distinct second click closes the finished message.
+            assertEquals("Bienvenue !", vm.frame().dialog!!.text)
+            assertEquals(11, vm.frame().dialog!!.visibleCharacters)
             draw().recycle(); tap(20f, 80f); vm.tick(); assertNull(vm.frame().dialog)
             val savedPosition = hero().x to hero().y
             saves.write(0, vm.snapshot())

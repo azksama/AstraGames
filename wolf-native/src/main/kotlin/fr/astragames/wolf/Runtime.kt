@@ -87,6 +87,9 @@ class WolfRuntime private constructor(
     private var pointerNewRelease = false
     private var targetTile: Pair<Int, Int>? = null
     private var randomState = 0x13579bdf
+    private val telemetry = WolfSystemTelemetry()
+    private var lastDiagnostic = ""
+    private var downloadProgress = WolfDownloadProgress()
     private var timerFrameOrigin = 0L
     private var timerSecondOrigin = 0L
     private var instructionBudget = 50_000
@@ -126,7 +129,8 @@ class WolfRuntime private constructor(
     private var activeSpeechId: Long? = null
     private var activeSpeechPlaying = false
     private val pendingMaskImages = linkedMapOf<Long, Pair<Invocation, NativeEffect.MaskingImage>>()
-    private data class PendingTextInput(val invocation: Invocation, val destination: Int, val maxLength: Int, val cancellable: Boolean, var confirmationRequested: Boolean = false)
+    private data class PendingTextInput(val invocation: Invocation, val destination: Int, val maxLength: Int, val cancellable: Boolean,
+        var text: String, var confirmationRequested: Boolean = false)
     private val player = Actor(-2, game.start.x.toFloat(), game.start.y.toFloat(), game.config.defaultHeroGraphic,
         pattern = initialCharacterPattern(), flags = initialCharacterFlags())
     private val companions = (0 until 5).map { Actor(-3 - it, game.start.x.toFloat(), game.start.y.toFloat(), "",
@@ -159,12 +163,27 @@ class WolfRuntime private constructor(
         variables.system, variables.systemStrings, game.databases,
         { type, row, field -> variables.databaseNumber(WolfDatabaseKind.SYSTEM, type, row, field) },
         { type, row, field -> variables.databaseString(WolfDatabaseKind.SYSTEM, type, row, field) },
-        { notice -> effects.add(NativeEffect.Diagnostic(notice)) })
+        ::runtimeNotice)
     private var choiceFinishedTick = -1L
     private var choiceFinishedValue = -1
     /** The 104 command is a deferred request consumed by the next choice update (973b50). */
     private var forceChoiceFinish = false
     private var dialogText: WolfTextProgram? = null
+
+    init { variables.system.putAll(WolfSystemSupport.initial(game.config)) }
+
+    /** Called on the VM owner, never from a UI or decode worker directly. */
+    fun windowActive(active: Boolean) = telemetry.focus(active)
+    fun renderedFps(fps: Int) = telemetry.rendered(fps)
+    fun controllerDevice(name: String, kind: String) = telemetry.controller(name, kind)
+    fun downloadProgress(requestId: Long, value: WolfDownloadProgress) {
+        if (requestId == lastDownloadRequest && requestId in pendingDownloads) downloadProgress = value
+    }
+    fun editedText(requestId: Long, value: String) {
+        pendingTextInputs[requestId]?.let { pending -> pending.text = limitedInput(value, pending.maxLength) }
+    }
+    private fun limitedInput(value: String, limit: Int) =
+        if (value.codePointCount(0, value.length) <= limit) value else value.substring(0, value.offsetByCodePoints(0, limit))
 
     private data class Actor(
         val id: Int, var x: Float, var y: Float, var path: String,
@@ -305,6 +324,7 @@ class WolfRuntime private constructor(
             screenEffects.tick()
             mapShake.tick(fps)
             instructionBudget = 50_000
+            telemetry.tick()
             newKeys.addAll(nextAutomaticKeys); nextAutomaticKeys.clear()
             automaticRawKeys.addAll(nextAutomaticRawKeys); nextAutomaticRawKeys.clear()
             newKeys.addAll(automaticRawKeys)
@@ -347,7 +367,8 @@ class WolfRuntime private constructor(
             val previousHeroX = heroQuarter(player.x); val previousHeroY = heroQuarter(player.y)
             updateWorld()
             mapCamera.follow(previousHeroX, previousHeroY, heroQuarter(player.x), heroQuarter(player.y),
-                game.config.width, game.config.height, game.config.tileSize, cameraMaxX(), cameraMaxY(), cameraLoopX(), cameraLoopY())
+                game.config.width, game.config.height, game.config.tileSize, cameraMaxX(), cameraMaxY(), cameraLoopX(), cameraLoopY(),
+                variables.system[131] ?: 0, variables.system[132] ?: 0)
             mapTextures.advance(::mapTextureParameters)
             schedule()
             // Parallel common initializers run before the map's automatic title event.
@@ -369,13 +390,13 @@ class WolfRuntime private constructor(
             if (foreground?.stack?.isEmpty() == true) foreground = null
             completed = true
         } catch (failure: WolfRuntimeException) {
-            failed = failure; releaseInput(); effects.add(NativeEffect.Diagnostic(failure.message.orEmpty())); throw failure
+            failed = failure; releaseInput(); lastDiagnostic = failure.message.orEmpty(); effects.add(NativeEffect.Diagnostic(lastDiagnostic)); throw failure
         } catch (failure: Exception) {
             val current = foreground?.stack?.lastOrNull() ?: parallel.values.firstOrNull()?.stack?.lastOrNull()
             val c = current?.command
             val address = current?.address ?: EventAddress(mapId)
             val wrapped = WolfRuntimeException(address.map, address.event, address.common, c?.opcode ?: -1, c?.offset ?: 0, failure.message ?: failure.javaClass.simpleName)
-            failed = wrapped; releaseInput(); effects.add(NativeEffect.Diagnostic(wrapped.message.orEmpty())); throw wrapped
+            failed = wrapped; releaseInput(); lastDiagnostic = wrapped.message.orEmpty(); effects.add(NativeEffect.Diagnostic(lastDiagnostic)); throw wrapped
         } finally { if (completed || failed != null) { tickExecutions = null; tickExecutionIndex = 0; newKeys.clear(); releasedKeys.clear(); newPhysicalKeys.clear(); newPhysicalPadButtons.clear(); automaticRawKeys.clear(); automaticScanKeys.clear(); pointerNewPress = false; pointerNewRelease = false } }
     }
 
@@ -385,7 +406,7 @@ class WolfRuntime private constructor(
         val characters = (listOf(player) + companions + actors.values).filter { it.opacity > 0 && (it.path.isNotBlank() || it.tileId >= 0) }.map {
             NativeCharacter(it.id, asset(it.path), (it.x + .5f) * tile, (it.y + 1f) * tile,
                 0f, 0f, it.direction, it.pattern, it.opacity, it.flags and 16 != 0, it.tileId, it.moving, it.flags and 8 != 0,
-                if (it.tileId >= 0 || game.config.byteSettings.getOrNull(5)?.toInt() == 1) null else game.databases[WolfDatabaseKind.SYSTEM]?.types?.getOrNull(9)?.string(if (it.id == -2) variables.system[36] ?: it.shadow else it.shadow, 0)?.takeIf { path -> path.isNotBlank() }?.let(::asset), it.blend, characterHeight(it).toFloat(), characterBush(it), maskEnabled = it.id in maskedCharacters).let(characterEffects::character)
+                if (it.tileId >= 0 || game.config.byteSettings.getOrNull(5)?.toInt() == 1) null else game.databases[WolfDatabaseKind.SYSTEM]?.types?.getOrNull(9)?.string(shadowNumber(it), 0)?.takeIf { path -> path.isNotBlank() }?.let(::asset), it.blend, characterHeight(it).toFloat(), characterBush(it), maskEnabled = it.id in maskedCharacters).let(characterEffects::character)
         }
         val tileset = currentTileset()
             ?: WolfTileset(map.tilesetId, "", "", emptyList(), byteArrayOf(), intArrayOf())
@@ -521,7 +542,7 @@ class WolfRuntime private constructor(
         }
         if (requestId == lastDownloadRequest) variables.system[48] = if (response.isSuccess) 1 else -1
         if (request.waitForCompletion) invocation.waitHost = false
-        response.exceptionOrNull()?.let { effects.add(NativeEffect.Diagnostic("Téléchargement260 échoué : ${it.message ?: it.javaClass.simpleName}")) }
+        response.exceptionOrNull()?.let { runtimeNotice("Téléchargement260 échoué : ${it.message ?: it.javaClass.simpleName}") }
         return true
     }
 
@@ -558,6 +579,7 @@ class WolfRuntime private constructor(
     }
 
     fun savedNumber(snapshot: ByteArray, code: Int): Int {
+        require(WolfSystemSupport.savedReferenceProblem(code) == null) { WolfSystemSupport.savedReferenceProblem(code).orEmpty() }
         val saved = isolatedSaveState(snapshot)
         return when (code) {
             in 2_000_000..2_999_999 -> saved.numbers[code - 2_000_000] ?: 0
@@ -566,20 +588,34 @@ class WolfRuntime private constructor(
                 24 -> 1
                 28 -> ((saved.ticks - saved.timerFrameOrigin + (saved.system[28] ?: 0)) % 10_000_000).toInt()
                 29 -> ((saved.ticks - saved.timerSecondOrigin) / fps + (saved.system[29] ?: 0)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+                30 -> (((saved.ticks - saved.timerSecondOrigin) % fps) * 1000 / fps).toInt()
                 35 -> if ((saved.hero?.moveTicks ?: 0) > 0) 1 else 0
                 38 -> saved.system[38] ?: 0
+                48 -> saved.system[48] ?: -1
+                in 52..57 -> WolfControlBindings.read(saved.system, id, game.config.engineCompatibilityVersion ?: 0)
                 61, 66 -> saved.system[id] ?: -1
                 62, 63, 64, 67, 68 -> saved.system[id] ?: 0
                 65 -> saved.system[id] ?: 255
                 95, 97 -> saved.system[id] ?: saved.audio.firstOrNull { it.channel == (id - 95) / 2 }?.volume ?: 0
                 96, 98 -> saved.system[id] ?: saved.audio.firstOrNull { it.channel == (id - 96) / 2 }?.pitch ?: 100
-                115 -> game.config.engineCompatibilityVersion ?: error("Version de compatibilité absente de Game.dat")
+                99 -> saved.system[99] ?: 0
+                93, 94 -> saved.audio.firstOrNull { it.channel == id - 93 && it.voice == if (id == 94) saved.system[99] ?: 0 else 0 }?.pan ?: saved.system[id] ?: 0
+                104 -> (saved.camera?.x ?: 0) / 4
+                105 -> (saved.camera?.y ?: 0) / 4
+                110 -> saved.randomState
+                112, 143 -> 0
+                114 -> game.config.engineCompatibilityVersion?.takeIf { it > 0 } ?: SYSTEM_ENGINE_VERSION
+                115 -> SYSTEM_ENGINE_VERSION
                 116 -> game.config.width
                 117 -> game.config.height
                 118 -> game.config.tileSize
                 119 -> logicalScreenScale()
                 155 -> game.config.characterDirectionsMove
-                else -> saved.system[id] ?: error("Variable système absente de la sauvegarde : $code")
+                156 -> game.config.byteSettings.getOrNull(8)?.toInt()?.and(255) ?: 0
+                in 157..159 -> game.config.byteSettings.getOrNull(id - 147)?.toInt() ?: 0
+                160 -> game.config.byteSettings.getOrNull(36)?.toInt()?.and(255)?.takeIf { it in 3..5 } ?: 3
+                140 -> saved.system[140] ?: 0
+                else -> saved.system[id] ?: WolfSystemSupport.initial(game.config)[id] ?: error("Variable système absente de la sauvegarde : $code")
             }
             in 1_100_000_000..1_199_999_999 -> {
                 if (isStringValueCode(code)) return 0 // 4772c0 rejects a non-numeric field before reading its row.
@@ -593,6 +629,7 @@ class WolfRuntime private constructor(
     }
 
     fun savedString(snapshot: ByteArray, code: Int): String {
+        require(WolfSystemSupport.savedReferenceProblem(code) == null) { WolfSystemSupport.savedReferenceProblem(code).orEmpty() }
         val saved = isolatedSaveState(snapshot)
         return when (code) {
             in 3_000_000..3_999_999 -> saved.strings[code - 3_000_000] ?: ""
@@ -602,7 +639,13 @@ class WolfRuntime private constructor(
                 10 -> saved.hero?.path ?: saved.path
                 in 11..15 -> saved.companions.getOrNull(id - 11)?.path ?: ""
                 30, 31 -> saved.systemStrings[id].orEmpty()
-                33, 34 -> saved.audio.firstOrNull { it.channel == id - 33 }?.path.orEmpty()
+                33, 34 -> saved.audio.firstOrNull { it.channel == id - 33 && it.voice == if (id == 34) saved.system[99] ?: 0 else 0 }?.path.orEmpty()
+                19 -> "Astra Wolf Native"
+                25, 26, 27, in 40..49, in 62..65, 67 -> saved.systemStrings[id].orEmpty()
+                60 -> saved.systemStrings[id] ?: game.config.title
+                52 -> "Data/"
+                73 -> "BasicData"
+                75 -> ""
                 else -> saved.systemStrings[id] ?: error("Chaîne système absente de la sauvegarde : $code")
             }
             in 1_100_000_000..1_199_999_999 -> {
@@ -794,6 +837,7 @@ class WolfRuntime private constructor(
                 require(choices.isNotEmpty()) { "Choix sans options" }
                 forceChoiceFinish = false
                 val size = (variables.system[8] ?: 16).toFloat()
+                repeat(10) { variables.systemStrings[40 + it] = choices.getOrNull(it).orEmpty() }
                 dialog = NativeDialog("", choices, (variables.system[7] ?: 0).coerceIn(choices.indices), fontSize = size,
                     choiceSkinPath = windowAsset(1), choiceCursorPath = windowAsset(2), choiceCursorFrames = windowFrames(2),
                     choiceX = variables.system[3]?.takeUnless { it == -1 }?.toFloat(), choiceY = variables.system[4]?.takeUnless { it == -1 }?.toFloat(),
@@ -803,7 +847,7 @@ class WolfRuntime private constructor(
             }
             104 -> { forceChoiceFinish = true }
             105 -> { dialog = null; dialogOwner = null; dialogText = null; forceChoiceFinish = false }
-            106 -> effects.add(NativeEffect.Diagnostic(text(c.strings.firstOrNull().orEmpty(), frame.address)))
+            106 -> runtimeNotice(text(c.strings.firstOrNull().orEmpty(), frame.address))
             107 -> Unit // Clear debug-text state; diagnostics remain in the host report.
             111 -> {
                 val count = raw(0) and 15
@@ -954,14 +998,14 @@ class WolfRuntime private constructor(
             260 -> {
                 // Both original workers reject a second request before changing its wait pointer.
                 if (pendingDownloads.isNotEmpty()) {
-                    effects.add(NativeEffect.Diagnostic("Téléchargement260 ignoré : une réception est déjà en cours"))
+                    runtimeNotice("Téléchargement260 ignoré : une réception est déjà en cours")
                     return false
                 }
                 val request = WolfDownloadRequest.parse(c.arguments, c.strings.map { text(it, frame.address) },
                     if ((game.config.engineCompatibilityVersion ?: 0) >= 300) WolfDownloadProfile.W3 else WolfDownloadProfile.W2,
                     frame.address.common)
                 val id = nextHostRequestId++
-                lastDownloadRequest = id; variables.system[48] = 0
+                lastDownloadRequest = id; variables.system[48] = 0; downloadProgress = WolfDownloadProgress()
                 pendingDownloads[id] = frame to request
                 effects.add(NativeEffect.Download(id, request))
                 if (request.waitForCompletion) { frame.waitHost = true; return true }
@@ -1161,10 +1205,10 @@ class WolfRuntime private constructor(
             val maximum = variables.read(c.args.getOrElse(2) { error("Longueur de saisie absente") }, frame.address).coerceIn(2, 500)
             val initial = if (flags and 0x2000 != 0) variables.readString(destination, frame.address) else ""
             val requestId = nextHostRequestId++
-            pendingTextInputs[requestId] = PendingTextInput(frame, destination, maximum, flags and 0x1000 != 0)
+            pendingTextInputs[requestId] = PendingTextInput(frame, destination, maximum, flags and 0x1000 != 0, limitedInput(initial, maximum))
             frame.waitHost = true
             frame.waitInteractiveHost = true
-            effects.add(NativeEffect.TextInput(requestId, initial, maximum, flags and 0x1000 != 0, fontOverrides()[5]))
+            effects.add(NativeEffect.TextInput(requestId, limitedInput(initial, maximum), maximum, flags and 0x1000 != 0, fontOverrides()[5]))
             return
         }
         val sourceCode = if (sourceMode == 1) c.args.getOrElse(2) { error("Source de chaîne absente") }
@@ -2667,9 +2711,9 @@ class WolfRuntime private constructor(
     private fun cameraMaxY() = maxOf(0, map.height * game.config.tileSize - game.config.height) * 4
     private fun cameraLoopX() = if (map.loopX) map.width * game.config.tileSize * 4 else 0
     private fun cameraLoopY() = if (map.loopY) map.height * game.config.tileSize * 4 else 0
-    private fun centredCameraX() = (heroQuarter(player.x) - (game.config.width - game.config.tileSize) * 2).let {
+    private fun centredCameraX() = (heroQuarter(player.x) - (game.config.width - game.config.tileSize) * 2 - (variables.system[131] ?: 0) * 4).let {
         if (map.loopX) Math.floorMod(it, cameraLoopX()) else it.coerceIn(0, cameraMaxX()) }
-    private fun centredCameraY() = (heroQuarter(player.y) - (game.config.height - game.config.tileSize) * 2).let {
+    private fun centredCameraY() = (heroQuarter(player.y) - (game.config.height - game.config.tileSize) * 2 - (variables.system[132] ?: 0) * 4).let {
         if (map.loopY) Math.floorMod(it, cameraLoopY()) else it.coerceIn(0, cameraMaxY()) }
     private fun cameraX() = mapCamera.state.x / 4f - mapShake.offsetX(game.config.tileSize)
     private fun cameraY() = mapCamera.state.y / 4f - mapShake.offsetY(game.config.tileSize)
@@ -2797,6 +2841,22 @@ class WolfRuntime private constructor(
 
     private fun windowAsset(row: Int): String? = game.databases[WolfDatabaseKind.SYSTEM]?.types?.getOrNull(10)?.string(row, 0)?.takeIf { it.isNotBlank() }?.let(::asset)
     private fun windowFrames(row: Int): Int = maxOf(1, game.databases[WolfDatabaseKind.SYSTEM]?.types?.getOrNull(10)?.number(row, 1) ?: 1)
+    private fun shadowNumber(actor: Actor): Int = when (actor.id) {
+        -2 -> variables.system[36] ?: actor.shadow
+        in -7..-3 -> (variables.system[84 - actor.id] ?: -1).takeIf { it >= 0 } ?: variables.system[36] ?: player.shadow
+        else -> actor.shadow
+    }
+    private fun executionPath(address: EventAddress): String {
+        val current = dispatchInvocation
+        val execution = (listOfNotNull(foreground) + parallel.values).firstOrNull { current != null && current in it.stack }
+        val stack = execution?.stack?.toList() ?: listOfNotNull(current)
+        if (stack.isEmpty()) return if (address.common >= 0) "Common${address.common} line0" else "Map${address.map} Ev${address.event} line0"
+        return stack.joinToString(" ->\n") { invocation ->
+            val a = invocation.address
+            val label = if (a.common >= 0) "Common${a.common}" else "Map${a.map} Ev${a.event}"
+            "$label line${(invocation.pc - 1).coerceAtLeast(0)}"
+        }
+    }
 
     private fun systemValue(code: Int, address: EventAddress): Int? = when (code) {
         7 -> variables.system[7] ?: 0
@@ -2805,13 +2865,17 @@ class WolfRuntime private constructor(
         13 -> if (foreground != null) 1 else 0
         20 -> dialog?.takeIf { it.choices.isNotEmpty() }?.selectedChoice ?: if (choiceFinishedTick == ticks) choiceFinishedValue else -1
         24 -> variables.system[24] ?: 0
-        25 -> variables.system[25] ?: 0
+        25 -> variables.system[25] ?: -1
         28 -> ((ticks - timerFrameOrigin + (variables.system[28] ?: 0)) % 10_000_000).toInt()
         29 -> ((ticks - timerSecondOrigin) / fps + (variables.system[29] ?: 0)).coerceAtMost(Int.MAX_VALUE.toLong()).toInt()
+        30 -> telemetry.millis((((ticks - timerSecondOrigin) % fps) * 1000 / fps).toInt(), (game.config.engineCompatibilityVersion ?: 0) >= 300)
+        31 -> telemetry.internalFps
+        32 -> telemetry.renderFps
         35 -> if (player.moveTicks > 0) 1 else 0
         37 -> variables.system[37] ?: 2 // Documented engine default: two steps.
         38 -> variables.system[38] ?: 0 // Documented: keyboard input initially blocks mouse/touch/pad reads.
         39 -> variables.system[39] ?: 0
+        in 43..47 -> downloadProgress.number(code)
         48 -> variables.system[48] ?: -1
         in 52..57 -> WolfControlBindings.read(variables.system, code, game.config.engineCompatibilityVersion ?: 0)
         in 61..68 -> mapTextures.number(code)
@@ -2820,11 +2884,15 @@ class WolfRuntime private constructor(
         105 -> mapCamera.state.y / 4
         125 -> variables.system[125] ?: 5
         129, 130 -> {
-            require((game.config.engineCompatibilityVersion ?: 0) >= 350) { "Facteur diagonal absent de ce profil Wolf" }
+            require((game.config.engineCompatibilityVersion ?: 0) >= 300) { "Facteur diagonal absent de ce profil Wolf" }
             variables.system[code] ?: 100 //959ec0 initializes both numeric fields to100.
         }
         71 -> pointerX.toInt(); 72 -> pointerY.toInt()
+        in 77..82 -> java.time.LocalDateTime.now().let { now -> when (code) {
+            77 -> now.year; 78 -> now.monthValue; 79 -> now.dayOfMonth; 80 -> now.hour; 81 -> now.minute; else -> now.second } }
         84 -> when (game.config.width to game.config.height) { 320 to 240 -> 0; 640 to 480 -> 1; 800 to 600 -> 2; else -> -1 }
+        85 -> 0 // The Android host uses the hardware-accelerated game surface.
+        93, 94 -> activeAudio[audioKey(code - 93)]?.pan ?: variables.system[code] ?: 0
         // W2 nominal volume aa6940 is zero in the initialized image; the independent
         // audio container 47a5a0 initializes pitch (this+8c, aab184) to100.
         95, 97 -> variables.system[code] ?: 0
@@ -2832,12 +2900,18 @@ class WolfRuntime private constructor(
         98 -> variables.system[code] ?: if ((variables.system[99] ?: 0) == 0) 100 else 0
         99 -> variables.system[99] ?: 0
         108 -> 50_000 - instructionBudget
-        115 -> game.config.engineCompatibilityVersion ?: error("Version de compatibilité absente de Game.dat")
+        110 -> randomState
+        111 -> if (telemetry.active) 1 else 0
+        // Sys112 is the editor's test-play flag, unrelated to Astra's diagnostic mode.
+        // Astra launches player data, never the Wolf editor's test-play session.
+        112 -> 0
+        114 -> game.config.engineCompatibilityVersion?.takeIf { it > 0 } ?: SYSTEM_ENGINE_VERSION
+        115 -> SYSTEM_ENGINE_VERSION
         116 -> game.config.width; 117 -> game.config.height; 118 -> game.config.tileSize
         119 -> logicalScreenScale()
         140 -> {
             require((game.config.engineCompatibilityVersion ?: 0) >= 355) { "Filtre d'affichage140 absent de ce profil Wolf" }
-            variables.system[140]
+            variables.system[140] ?: 0
         }
         148 -> {
             require((game.config.engineCompatibilityVersion ?: 0) >= 330) { "Échelle du prochain lancement absente de ce profil Wolf" }
@@ -2847,7 +2921,11 @@ class WolfRuntime private constructor(
             require((game.config.engineCompatibilityVersion ?: 0) >= 350) { "Conversion de texte150 absente de ce profil Wolf" }
             variables.system[150] ?: 0
         }
+        143 -> 0 // Pro is a complete feature set, not inferred from supporting a few Pro operations.
         155 -> game.config.characterDirectionsMove
+        156 -> game.config.byteSettings.getOrNull(8)?.toInt()?.and(255) ?: 0
+        in 157..159 -> game.config.byteSettings.getOrNull(code - 147)?.toInt() ?: 0
+        160 -> game.config.byteSettings.getOrNull(36)?.toInt()?.and(255)?.takeIf { it in 3..5 } ?: 3
         in 9_100_000..9_199_999 -> {
             val relative = code - 9_100_000
             val event = relative / 10
@@ -2864,6 +2942,20 @@ class WolfRuntime private constructor(
         in 11..15 -> companions[code - 11].path
         19 -> "Astra Wolf Native"
         25, 26, 27 -> variables.systemStrings[code] ?: ""
+        in 40..49 -> variables.systemStrings[code].orEmpty()
+        52 -> "Data/"
+        54 -> lastDiagnostic
+        55 -> executionPath(address)
+        60 -> variables.systemStrings[60] ?: game.config.title
+        68 -> pendingTextInputs.values.firstOrNull()?.text ?: "<<NoData>>"
+        70 -> telemetry.controllerName
+        71 -> telemetry.controllerKind
+        73 -> "BasicData"
+        75 -> "" // Native player data launches have no Game.exe command line.
+        76 -> java.util.Locale.getDefault().let { locale -> when {
+            locale.language == "zh" && (locale.script == "Hant" || locale.country in setOf("TW", "HK", "MO")) -> "Chinese (Traditional)"
+            locale.language == "zh" -> "Chinese (Simplified)"
+            else -> locale.getDisplayLanguage(java.util.Locale.ENGLISH) } }
         30, 31 -> mapTextures.string(code)
         33, 34 -> activeAudio[audioKey(code - 33)]?.path.orEmpty()
         in 62..65, 67 -> {
@@ -2893,10 +2985,28 @@ class WolfRuntime private constructor(
         if (code == 105) mapCamera.position(y = Math.multiplyExact(value, 4), maxX = cameraMaxX(), maxY = cameraMaxY(), loopX = cameraLoopX(), loopY = cameraLoopY())
         if (code == 28) timerFrameOrigin = ticks
         if (code == 29) timerSecondOrigin = ticks
+        if (code == 71) pointerX = value.coerceIn(0, game.config.width).toFloat()
+        if (code == 72) pointerY = value.coerceIn(0, game.config.height).toFloat()
+        if (code == 110) randomState = if (value == 0) (System.nanoTime().toInt() and Int.MAX_VALUE).coerceAtLeast(1) else value
+        if (code in 93..94) activeAudio[audioKey(code - 93)]?.let { playing ->
+            val updated = playing.copy(pan = value); activeAudio[audioKey(code - 93)] = updated
+            effects.add(updated.copy(path = null, fadeTicks = 0, position = 0))
+        }
         if (code == 148) { nextLaunchScale = value; effects.add(NativeEffect.NextLaunchScale(value)) }
     }
 
     private fun systemStringWrite(code: Int, value: String): Boolean {
+        if (code == 68) {
+            pendingTextInputs.entries.firstOrNull()?.let { (id, pending) ->
+                pending.text = limitedInput(value, pending.maxLength)
+                effects.add(NativeEffect.UpdateTextInput(id, pending.text))
+            }
+            return true
+        }
+        if (code == 60) {
+            val title = value.replace("<TITLE_PLUS>", game.config.subtitle).replace("<TITLE>", game.config.title).replace("<SOFT>", "")
+            variables.systemStrings[60] = title; effects.add(NativeEffect.WindowTitle(title)); return true
+        }
         if (code in 30..31) mapTextures.writeString(code)
         if (code in 10..15) {
             asset(value)
@@ -2924,7 +3034,7 @@ class WolfRuntime private constructor(
         // 948960 removes CR before the conversion flag and before recursively expanding variables.
         var result = input.replace("\r", "")
         if (variables.system[150] == 1) return result
-        val variableEscape = Regex("""\\(cself|self|sysS|sys|[ucs]db|v[0-9]?|s)\[([^\[\]]*)]""")
+        val variableEscape = WolfTextCodes.variableToken
         repeat(100) {
             val source = result
             var expansions = 0
@@ -2937,8 +3047,8 @@ class WolfRuntime private constructor(
                     "cself" -> { val id = index(); variables.commonStrings[address.common to id] ?: (variables.common[address.common to id] ?: 0).toString() }
                     "self" -> variables.read(1_100_000 + index(), address).toString()
                     "s" -> variables.readString(3_000_000 + index(), address)
-                    "sys" -> variables.read(9_000_000 + index(), address).toString()
-                    "sysS" -> variables.readString(9_900_000 + index(), address)
+                    "sys" -> variables.read(WolfTextCodes.systemReference(index(), string = false), address).toString()
+                    "sysS" -> variables.readString(WolfTextCodes.systemReference(index(), string = true), address)
                     "udb", "cdb", "sdb" -> {
                         val kind = when (code) { "udb" -> WolfDatabaseKind.USER; "cdb" -> WolfDatabaseKind.MUTABLE; else -> WolfDatabaseKind.SYSTEM }
                         val parameters = argument.split(':'); require(parameters.size in 1..3) { "Référence DB texte invalide" }
@@ -2975,18 +3085,20 @@ class WolfRuntime private constructor(
         return WolfParser.imageAssetPath(path)
     }
     private fun random(low: Int, high: Int): Int {
-        randomState = randomState xor (randomState shl 13); randomState = randomState xor (randomState ushr 17); randomState = randomState xor (randomState shl 5)
+        randomState = wolfRandomNext(randomState).takeUnless { it == 0 } ?: (System.nanoTime().toInt() and Int.MAX_VALUE).coerceAtLeast(1)
         val width = high.toLong() - low + 1
         return (low + (randomState.toLong() and 0xffffffffL) % width).toInt()
     }
-    private fun resetToTitle() {
+    private fun runtimeNotice(message: String) { lastDiagnostic = message; effects.add(NativeEffect.Diagnostic(message)) }
+    private fun resetToTitle(resetReason: Int = 2) {
         tickExecutions = null; tickExecutionIndex = 0
         pendingStringFiles.clear(); pendingDatabaseFiles.clear()
         pendingDownloads.keys.forEach { effects.add(NativeEffect.CancelDownload(it)) }
         pendingDownloads.clear(); lastDownloadRequest = 0L
         stopSpeech()
         resetAudio()
-        variables.clear(); pictures.clear(); tweens.clear(); delayedPictures.clear(); parallel.clear(); foreground = null; bannedKeys.clear(); movementBannedKeys.clear(); mouseLeftBanned = false
+        variables.clear(); variables.system.putAll(WolfSystemSupport.initial(game.config)); variables.system[120] = resetReason
+        pictures.clear(); tweens.clear(); delayedPictures.clear(); parallel.clear(); foreground = null; bannedKeys.clear(); movementBannedKeys.clear(); mouseLeftBanned = false
         reserved.clear(); erasedEvents.clear(); actors.clear(); dialog = null; dialogOwner = null; forceChoiceFinish = false; pendingSaveValues.clear(); pendingPictureMeasures.clear(); pendingFontOverrides.clear(); pendingTextInputs.clear(); pendingMaskImages.clear(); pictureMeasures.clear(); textPicturePrograms.clear()
         mapId = game.start.mapId; map = mapLoader(mapId); mapChanges = WolfMapChanges(map, game.tilesets); mapEpoch++
         mapAudioPending = true
@@ -3002,7 +3114,7 @@ class WolfRuntime private constructor(
         mapCamera.reset(centredCameraX(), centredCameraY(), cameraMaxX(), cameraMaxY(), cameraLoopX(), cameraLoopY())
         mapZoom = 1f; mapZoomCenterX = 0f; mapZoomCenterY = 0f; mapZoomTween = null
         mapTextures.reset()
-        timerFrameOrigin = ticks; timerSecondOrigin = ticks
+        timerFrameOrigin = ticks; timerSecondOrigin = ticks; downloadProgress = WolfDownloadProgress()
         allowMovement = false; freezeWorld = false; releaseInput(); refreshActors()
     }
     private fun skipToBranch(frame: Invocation, depth: Int, desired: Int) {
@@ -3051,25 +3163,61 @@ class WolfRuntime private constructor(
         val mutableNumberOverrides = linkedMapOf<Triple<Int, Int, Int>, Int>()
         val mutableStringOverrides = linkedMapOf<Triple<Int, Int, Int>, String>()
         val mutableRows = state.mutableRows.toMutableMap()
+        val prospective = WolfVariables(game.databases, { _, _ -> null }, compatibilityVersion = game.config.engineCompatibilityVersion ?: 0)
+        prospective.system.putAll(WolfSystemSupport.initial(game.config) + state.system)
         fun growSaved(cell: Triple<Int, Int, Int>) {
             val initialRows = game.databases.getValue(WolfDatabaseKind.MUTABLE).types[cell.first].rows.size
             mutableRows[cell.first] = maxOf(mutableRows[cell.first] ?: initialRows, cell.second + 1)
         }
         data.numbers.forEach { (code, value) -> when (code) {
             in 2_000_000..2_999_999 -> numberOverrides[code - 2_000_000] = value
-            in 9_000_000..9_099_999 -> { require(code % 100_000 in WolfVariables.SUPPORTED_SYSTEM_WRITES); systemOverrides[code % 100_000] = value }
+            in 9_000_000..9_099_999 -> {
+                require(WolfSystemSupport.savedReferenceProblem(code, write = true) == null)
+                prospective.write(code, value, EventAddress(state.mapId))
+                systemOverrides[code % 100_000] = prospective.system.getValue(code % 100_000)
+            }
             in 1_100_000_000..1_199_999_999 -> { val cell = mutableCell(code, WolfValueType.NUMBER); mutableNumberOverrides[cell] = value; growSaved(cell) }
             else -> error("Destination de sauvegarde isolée invalide : $code")
         } }
         data.strings.forEach { (code, value) -> when (code) {
             in 3_000_000..3_999_999 -> stringOverrides[code - 3_000_000] = value
-            in 9_900_000..9_999_999 -> { require(code % 100_000 in WolfVariables.SUPPORTED_SYSTEM_STRING_WRITES); systemStringOverrides[code % 100_000] = value }
+            in 9_900_000..9_999_999 -> { require(WolfSystemSupport.savedReferenceProblem(code, write = true) == null); systemStringOverrides[code % 100_000] = value }
             in 1_100_000_000..1_199_999_999 -> { val cell = mutableCell(code, WolfValueType.STRING); mutableStringOverrides[cell] = value; growSaved(cell) }
             else -> error("Destination de chaîne sauvegardée invalide : $code")
         } }
         var combined = state.copy(numbers = state.numbers + numberOverrides, system = state.system + systemOverrides,
             strings = state.strings + stringOverrides, systemStrings = state.systemStrings + systemStringOverrides,
             mutableNumbers = state.mutableNumbers + mutableNumberOverrides, mutableStrings = state.mutableStrings + mutableStringOverrides, mutableRows = mutableRows)
+        systemOverrides[110]?.let { seed -> combined = combined.copy(randomState = if (seed == 0) (System.nanoTime().toInt() and Int.MAX_VALUE).coerceAtLeast(1) else seed) }
+        if (systemOverrides.keys.any { it == 104 || it == 105 }) {
+            val scene = mapLoader(combined.mapId)
+            val camera = WolfMapCamera().apply { combined.camera?.let(::restore) }
+            camera.position(systemOverrides[104]?.let { Math.multiplyExact(it, 4) } ?: camera.state.x,
+                systemOverrides[105]?.let { Math.multiplyExact(it, 4) } ?: camera.state.y,
+                maxOf(0, scene.width * game.config.tileSize - game.config.width) * 4,
+                maxOf(0, scene.height * game.config.tileSize - game.config.height) * 4,
+                if (scene.loopX) scene.width * game.config.tileSize * 4 else 0,
+                if (scene.loopY) scene.height * game.config.tileSize * 4 else 0)
+            combined = combined.copy(camera = camera.state)
+        }
+        if (systemOverrides.keys.any { it in 93..99 }) {
+            val bgsVoice = combined.system[99] ?: 0
+            val playing = combined.audio.map { audio ->
+                if (audio.channel in 0..1 && (audio.channel == 0 || audio.voice == bgsVoice)) audio.copy(
+                    pan = systemOverrides[93 + audio.channel] ?: audio.pan,
+                    volume = systemOverrides[95 + audio.channel * 2] ?: audio.volume,
+                    pitch = systemOverrides[96 + audio.channel * 2] ?: audio.pitch)
+                else audio
+            }
+            val volumes = combined.bgsVolumes + listOfNotNull(systemOverrides[97]?.let { bgsVoice to it }).toMap()
+            val pitches = combined.bgsPitches + listOfNotNull(systemOverrides[98]?.let { bgsVoice to it }).toMap()
+            val system = combined.system.toMutableMap()
+            if (99 in systemOverrides) {
+                system[97] = volumes[bgsVoice] ?: playing.firstOrNull { it.channel == 1 && it.voice == bgsVoice }?.volume ?: 0
+                system[98] = pitches[bgsVoice] ?: playing.firstOrNull { it.channel == 1 && it.voice == bgsVoice }?.pitch ?: if (bgsVoice == 0) 100 else 0
+            }
+            combined = combined.copy(system = system, audio = playing, bgsVolumes = volumes, bgsPitches = pitches)
+        }
         val textureNotices = mutableListOf<String>()
         if (systemOverrides.keys.any { it == 61 || it == 66 } || systemStringOverrides.keys.any { it == 30 || it == 31 }) {
             // Isolated writes change the serialized variables independently of the
@@ -3106,7 +3254,7 @@ class WolfRuntime private constructor(
             combined = combined.copy(system = numbers, systemStrings = strings, mapTextures = textures.state)
         }
         restoreState(combined)
-        textureNotices.forEach { effects.add(NativeEffect.Diagnostic(it)) }
+        textureNotices.forEach(::runtimeNotice)
     }
 
     internal fun snapshotState(): WolfSnapshot.State = WolfSnapshot.State(game.config.title, ticks, mapId, player.x, player.y, player.direction, player.path, randomState,
@@ -3198,13 +3346,14 @@ class WolfRuntime private constructor(
             state.bgsPitches.all { (voice, value) -> voice in 0..999_999 && value in 0..400 }) { "Paramètres BGS sauvegardés invalides" }
         require(state.companions.all { it.id in -7..-3 } && state.companions.map { it.id }.distinct().size == state.companions.size) { "Partie sauvegardée invalide" }
         state.tweens.forEach { tween -> require(tween.from.id == tween.to.id && tween.length > 0 && tween.elapsed in 0..tween.length); tween.from.path?.let(WolfParser::rootAssetPath); tween.to.path?.let(WolfParser::rootAssetPath) }
-        resetToTitle(); mapAudioPending = false; mapId = state.mapId; mapChanges = restoredMapChanges; map = restoredMapChanges.map; mapEpoch++; actors.clear()
+        resetToTitle(resetReason = 0); mapAudioPending = false; mapId = state.mapId; mapChanges = restoredMapChanges; map = restoredMapChanges.map; mapEpoch++; actors.clear()
         textPicturePrograms.putAll(restoredTextPrograms)
         ticks = state.ticks; player.x = state.x; player.y = state.y; player.targetX = state.x; player.targetY = state.y
         player.direction = state.direction; player.path = state.path; randomState = state.randomState
         variables.numbers.putAll(state.numbers); variables.strings.putAll(state.strings); variables.self.putAll(state.self)
         variables.common.putAll(state.common); variables.commonStrings.putAll(state.commonStrings)
         variables.system.putAll(state.system.filterKeys { it > -1_000_000 || it in -2_000_255..-2_000_000 || it == -2_100_000 }); variables.systemStrings.putAll(state.systemStrings)
+        variables.systemStrings[60]?.let { effects.add(NativeEffect.WindowTitle(it)) }
         // The reception thread and its wait pointer are not serialized in a save.
         if (variables.system[48] == 0) variables.system[48] = -1
         variables.mutableNumbers.putAll(state.mutableNumbers); variables.mutableStrings.putAll(state.mutableStrings); variables.mutableRows.putAll(state.mutableRows)
@@ -3249,6 +3398,8 @@ class WolfRuntime private constructor(
     }
 
     companion object {
+        /** Numeric API revision of the qualified W3.729 contract; compatibility remains Sys114. */
+        const val SYSTEM_ENGINE_VERSION = 372
         fun load(source: WolfAssetSource, progress: (String) -> Unit = {}): WolfRuntime {
             progress("Lecture des données Wolf")
             val parser = WolfParser(source)

@@ -7,6 +7,7 @@ Travail du 10 octobre 2026 pour Astra. **État : interpréteur Kotlin et hôte A
 - [Architecture et jalons Android](RECONSTRUCTION.md) : cœur C++, VM, rendu, accès direct, sauvegardes et validation.
 - [Implémentation Android](IMPLEMENTATION.md) : architecture effectivement livrée, choix du moteur, accès aux fichiers, contrôles et sauvegardes privées.
 - [Couverture et refus réels](RUNTIME_COVERAGE.md) : fonctions admises, commandes expérimentales, erreurs des deux jeux officiels et limites de compatibilité.
+- [Catalogue des variables système](SYSTEM_VARIABLE_COVERAGE.md) : les 182 identifiants documentés, Sys119, admissions de session et opérations isolées de sauvegarde ; [preuves REA](SYSTEM_VARIABLE_REA.md) des valeurs et effets corrigés.
 - [Manifeste des 34 fichiers](fixtures.json), [synthèse du corpus](corpus-summary.json), [mesure hôte](parse-benchmark.json) et [index REA dérivé](evidence-index.json) : 91 preuves et cinq inconnues ouvertes.
 
 Les exécutables, archives téléchargées, textes complets des jeux, pseudo-code et dossiers REA complets restent sous `build/`, ignoré par Git. Les fichiers suivis contiennent la recherche et ses références. Les EXE n’ont pas été exécutés pendant cette analyse statique ni modifiés.

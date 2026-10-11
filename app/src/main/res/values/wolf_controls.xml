@@ -5,10 +5,14 @@
         <item name="android:colorBackgroundFloating">#191E29</item>
         <item name="android:windowBackground">@drawable/wolf_control_dialog_background</item>
         <item name="android:textColorPrimary">#F5F2FA</item>
-        <item name="android:textColorSecondary">#ABA8B8</item>
+        <item name="android:textColorSecondary">#C9B7FF</item>
         <item name="android:colorAccent">#C9B7FF</item>
-        <item name="android:colorControlNormal">#ABA8B8</item>
+        <item name="android:colorControlNormal">#C9B7FF</item>
         <item name="android:colorControlActivated">#C9B7FF</item>
         <item name="android:colorButtonNormal">#302147</item>
+        <item name="android:popupMenuStyle">@style/Widget.AstraGames.WolfPopupMenu</item>
+    </style>
+    <style name="Widget.AstraGames.WolfPopupMenu" parent="android:style/Widget.Material.PopupMenu">
+        <item name="android:popupBackground">@drawable/wolf_control_dialog_background</item>
     </style>
 </resources>

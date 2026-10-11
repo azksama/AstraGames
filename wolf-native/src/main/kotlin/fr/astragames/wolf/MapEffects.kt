@@ -75,19 +75,19 @@ internal class WolfMapCamera {
     }
 
     fun follow(previousX: Int, previousY: Int, heroX: Int, heroY: Int,
-        width: Int, height: Int, tile: Int, maxX: Int, maxY: Int, loopX: Int = 0, loopY: Int = 0) {
+        width: Int, height: Int, tile: Int, maxX: Int, maxY: Int, loopX: Int = 0, loopY: Int = 0, centreOffsetX: Int = 0, centreOffsetY: Int = 0) {
         if (!state.followsHero) return
-        fun axis(position: Int, oldHero: Int, hero: Int, screen: Int, maximum: Int, period: Int): Int {
+        fun axis(position: Int, oldHero: Int, hero: Int, screen: Int, maximum: Int, period: Int, offset: Int): Int {
+            val centre = (screen - tile) * 2 + offset * 4
             val delta = if (period == 0) hero - oldHero else Math.floorMod(hero - oldHero + period / 2, period) - period / 2
             val projected = if (period == 0) hero.toLong() else hero.toLong() +
-                kotlin.math.round((position.toDouble() + (screen - tile) * 2 - hero) / period).toLong() * period
+                kotlin.math.round((position.toDouble() + centre - hero) / period).toLong() * period
             val screenHero = projected / 4 - position / 4
-            val beyondCentre = if (delta < 0) screenHero * 4 < (screen - tile) * 2
-                else screenHero * 4 > (screen - tile) * 2
+            val beyondCentre = if (delta < 0) screenHero * 4 < centre else screenHero * 4 > centre
             return if (delta != 0 && beyondCentre) bounded(position.toLong() + delta, maximum, period) else position
         }
-        state = state.copy(x = axis(state.x, previousX, heroX, width, maxX, loopX),
-            y = axis(state.y, previousY, heroY, height, maxY, loopY))
+        state = state.copy(x = axis(state.x, previousX, heroX, width, maxX, loopX, centreOffsetX),
+            y = axis(state.y, previousY, heroY, height, maxY, loopY, centreOffsetY))
     }
 
     fun followsHero(value: Boolean) { state = state.copy(followsHero = value) }

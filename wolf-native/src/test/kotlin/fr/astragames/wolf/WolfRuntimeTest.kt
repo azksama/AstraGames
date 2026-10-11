@@ -6,6 +6,164 @@ import org.junit.Assume.assumeTrue
 import org.junit.Test
 
 class WolfRuntimeTest {
+    @Test fun legacySavesAcquireMissingColdDefaultsAndEveryAdmittedSaveReadIsDefined() {
+        val old = fixture(emptyList(), compatibilityVersion = 369).snapshotState().copy(system = emptyMap())
+        val runtime = fixture(emptyList(), compatibilityVersion = 369)
+        runtime.restoreState(old)
+        assertEquals(12, runtime.snapshotState().system[8]); assertEquals(-1, runtime.snapshotState().system[25])
+        assertEquals(0, runtime.snapshotState().system[120])
+        val saved = runtime.snapshot()
+        WolfSystemSupport.numericSaveReads.forEach { runtime.savedNumber(saved, 9_000_000 + it) }
+        WolfSystemSupport.stringSaveReads.forEach { runtime.savedString(saved, 9_900_000 + it) }
+        assertThrows(IllegalArgumentException::class.java) { runtime.savedNumber(saved, 9_000_111) }
+        assertThrows(IllegalArgumentException::class.java) { runtime.savedString(saved, 9_900_068) }
+    }
+
+    @Test fun pointerWritesClampToTheActualViewportAndFocusAndControllerReadsComeFromTheHost() {
+        val runtime = fixture(listOf(command(121, intArrayOf(9_000_071, 999, 0, 0)), command(121, intArrayOf(9_000_072, -4, 0, 0)),
+            command(121, intArrayOf(2_000_000, 9_000_071, 0, 0)), command(121, intArrayOf(2_000_001, 9_000_072, 0, 0)),
+            command(121, intArrayOf(2_000_002, 9_000_111, 0, 0)), command(122, intArrayOf(3_000_000, 1, 9_900_070)),
+            command(122, intArrayOf(3_000_001, 1, 9_900_071)), command(173)), compatibilityVersion = 369)
+        runtime.windowActive(false); runtime.controllerDevice("USB test controller", "UNKNOWN"); runtime.tick()
+        assertEquals(mapOf(0 to 96, 1 to 0, 2 to 0), runtime.snapshotState().numbers)
+        assertEquals(mapOf(0 to "USB test controller", 1 to "UNKNOWN"), runtime.snapshotState().strings)
+    }
+
+    @Test fun companionShadowOverridesAndHeroCameraCorrectionsAffectTheirRenderedWorld() {
+        val shadow = WolfDatabaseType(9, "shadows", "", listOf(WolfDatabaseField("image", WolfValueType.STRING, 0, 0, "", emptyList(), intArrayOf(), 0)),
+            listOf(WolfDatabaseRow(0, "first", intArrayOf(), listOf("System/first.png")), WolfDatabaseRow(1, "second", intArrayOf(), listOf("System/second.png"))), 0, null)
+        val db = WolfDatabase("system", WolfEncoding.UTF8, 1, List(9) { shadow.copy(id = it, rows = emptyList()) } + shadow)
+        val script = listOf(command(122, intArrayOf(9_900_011, 0), listOf("Comp.png")), command(121, intArrayOf(9_000_036, 1, 0, 0)),
+            command(121, intArrayOf(9_000_131, 8, 0, 0)), command(121, intArrayOf(9_000_132, -6, 0, 0)),
+            command(281, intArrayOf(0x81, 0, 0)), command(180, intArrayOf(1)), command(121, intArrayOf(9_000_087, 0, 0, 0)), command(173))
+        val runtime = fixture(script, initialMap = map("wide", listOf(WolfEvent(0, "start", 5, 5, listOf(page(script)))), 20, 20),
+            start = WolfStartPosition(0, 5, 5), databases = mapOf(WolfDatabaseKind.SYSTEM to db), compatibilityVersion = 369)
+        runtime.tick(); assertEquals("Data/System/second.png", runtime.frame().map!!.characters.single { it.id == -3 }.shadowPath)
+        runtime.tick(); assertEquals(32f, runtime.frame().map!!.cameraX); assertEquals(46f, runtime.frame().map!!.cameraY)
+        repeat(2) { runtime.tick() }; assertEquals("Data/System/first.png", runtime.frame().map!!.characters.single { it.id == -3 }.shadowPath)
+        val saved = runtime.snapshot(); assertEquals(32, runtime.savedNumber(saved, 9_000_104))
+        runtime.restoreSaveData(WolfSaveData(saved, numbers = mapOf(9_000_104 to 20, 9_000_105 to 24)))
+        assertEquals(20f, runtime.frame().map!!.cameraX); assertEquals(24f, runtime.frame().map!!.cameraY)
+    }
+
+    @Test fun systemDiagnosticPathAndTitleExposeUsefulStateWithoutInventingWindowsArguments() {
+        val trace = common(0, listOf(command(106, strings = listOf("Last green notice")),
+            command(122, intArrayOf(3_000_000, 1, 9_900_054)), command(122, intArrayOf(3_000_001, 1, 9_900_055)),
+            command(122, intArrayOf(9_900_060, 0), listOf("<TITLE>")), command(173)))
+        val runtime = fixture(listOf(command(210, intArrayOf(500_000, 0)), command(173)), commons = listOf(trace), compatibilityVersion = 369)
+        runtime.tick()
+        assertEquals("Last green notice", runtime.snapshotState().strings[0])
+        assertTrue(runtime.snapshotState().strings[1]!!.contains("Map0 Ev0")); assertTrue(runtime.snapshotState().strings[1]!!.contains("Common0"))
+        assertEquals("Native fixture", runtime.drainEffects().filterIsInstance<NativeEffect.WindowTitle>().single().title)
+        runtime.restore(runtime.snapshot()); assertEquals("Native fixture", runtime.drainEffects().filterIsInstance<NativeEffect.WindowTitle>().single().title)
+    }
+
+    @Test fun quotedTextDoesNotCreateFalseIncompatibilitiesAndIsolatedHostStateIsReportedBeforeExecution() {
+        val quoted = fixture(listOf(command(122, intArrayOf(3_000_000, 0), listOf("\\\\sys[199] \\\\sysS[57]")), command(173)), compatibilityVersion = 369)
+        assertTrue(quoted.inspectCapabilities().description(), quoted.inspectCapabilities().supported)
+        val isolated = fixture(listOf(command(221, intArrayOf(2_000_000, 0, 9_000_111)),
+            command(221, intArrayOf(3_000_000, 0, 9_900_068)), command(173)), compatibilityVersion = 369)
+        assertEquals(2, isolated.inspectCapabilities().issues.size)
+        assertTrue(isolated.inspectCapabilities().issues.all { "État de session" in it.reason })
+        val many = WolfCapabilities(List(20) { WolfCapabilityIssue("map$it", it, 121, it, "missing") })
+        assertTrue(many.description().contains("8 autres")); assertEquals(20, many.description(Int.MAX_VALUE).lineSequence().count())
+    }
+    @Test fun everyAdmittedSystemReferenceHasAColdValueAndAReadablePersistedConfiguration() {
+        val numbers = WolfSystemSupport.numericReads.sorted()
+        val strings = WolfSystemSupport.stringReads.sorted()
+        val commands = numbers.mapIndexed { index, id -> command(121, intArrayOf(2_000_000 + index, 9_000_000 + id, 0, 0)) } +
+            strings.mapIndexed { index, id -> command(122, intArrayOf(3_000_000 + index, 1, 9_900_000 + id)) } + command(173)
+        val runtime = fixture(commands, compatibilityVersion = 369)
+        assertTrue(runtime.inspectCapabilities().description(), runtime.inspectCapabilities().supported)
+        runtime.tick()
+        assertEquals(numbers.size, runtime.snapshotState().numbers.size)
+        assertEquals(strings.size, runtime.snapshotState().strings.size)
+        assertEquals(369, runtime.snapshotState().numbers[numbers.indexOf(114)])
+        assertEquals(372, runtime.snapshotState().numbers[numbers.indexOf(115)])
+        assertEquals(0, runtime.snapshotState().numbers[numbers.indexOf(112)])
+        assertEquals(-1, runtime.snapshotState().numbers[numbers.indexOf(25)])
+        assertEquals("Data/", runtime.snapshotState().strings[strings.indexOf(52)])
+        assertEquals("<<NoData>>", runtime.snapshotState().strings[strings.indexOf(68)])
+        val bytes = runtime.snapshot()
+        for (id in WolfSystemSupport.initial(runtime.game.config).keys)
+            assertEquals("saved Sys$id", runtime.snapshotState().system[id], runtime.savedNumber(bytes, 9_000_000 + id))
+        for (id in listOf(19, 25, 26, 27, 40, 49, 60, 62, 67))
+            assertEquals(runtime.snapshotState().strings[strings.indexOf(id)], runtime.savedString(bytes, 9_900_000 + id))
+    }
+
+    @Test fun seededRandomSequenceSurvivesSavingAndReassigningItsSeed() {
+        val script = listOf(command(121, intArrayOf(9_000_110, 1, 0, 0)),
+            command(121, intArrayOf(2_000_000, 8_999_999, 0, 0)), command(180, intArrayOf(1)),
+            command(121, intArrayOf(2_000_001, 8_999_999, 0, 0)), command(173))
+        val runtime = fixture(script, compatibilityVersion = 369)
+        runtime.tick(); assertEquals(16807, runtime.snapshotState().numbers[0])
+        assertEquals(16807, runtime.snapshotState().randomState)
+        val bytes = runtime.snapshot(); repeat(3) { runtime.tick() }
+        assertEquals(16807, runtime.savedNumber(bytes, 9_000_110))
+        val next = runtime.snapshotState().numbers[1]
+        val restored = fixture(script, compatibilityVersion = 369); restored.restore(bytes); repeat(3) { restored.tick() }
+        assertEquals(next, restored.snapshotState().numbers[1])
+    }
+
+    @Test fun choiceHistoryKeepsEachDisplayedOptionAfterTheChoiceEnds() {
+        val runtime = fixture(listOf(command(102, intArrayOf(0), listOf("One", "Two")),
+            command(401, intArrayOf(1)), command(420), command(499),
+            command(122, intArrayOf(3_000_000, 1, 9_900_040)), command(122, intArrayOf(3_000_001, 1, 9_900_041)),
+            command(122, intArrayOf(3_000_002, 1, 9_900_049)), command(173)))
+        runtime.tick(); runtime.choose(0); runtime.tick()
+        assertEquals("One", runtime.snapshotState().strings[0]); assertEquals("Two", runtime.snapshotState().strings[1])
+        assertEquals("", runtime.snapshotState().strings[2])
+    }
+
+    @Test fun liveTextInputSystemStringIsEditableAndDisappearsAfterCompletion() {
+        val observer = common(1, listOf(command(122, intArrayOf(3_000_001, 1, 9_900_068)),
+            command(122, intArrayOf(9_900_068, 0), listOf("😺abcdef")), command(173))).copy(conditionWord = 3)
+        val runtime = fixture(listOf(command(122, intArrayOf(3_000_000, 0x1003, 4)),
+            command(122, intArrayOf(3_000_002, 1, 9_900_068)), command(173)), commons = listOf(observer), compatibilityVersion = 369)
+        runtime.tick()
+        val input = runtime.drainEffects().filterIsInstance<NativeEffect.TextInput>().single()
+        runtime.editedText(input.requestId, "hi"); runtime.tick()
+        assertEquals("hi", runtime.snapshotState().strings[1])
+        assertEquals("😺abc", runtime.drainEffects().filterIsInstance<NativeEffect.UpdateTextInput>().last().text)
+        runtime.completeTextInput(input.requestId, "😺abc"); runtime.tick()
+        assertEquals("😺abc", runtime.snapshotState().strings[0]); assertEquals("<<NoData>>", runtime.snapshotState().strings[2])
+        runtime.editedText(input.requestId, "late"); assertEquals("😺abc", runtime.snapshotState().strings[0])
+    }
+
+    @Test fun aFullCapabilityAuditCollectsMissingVariablesAcrossAllMapsAndTextReferences() {
+        val first = listOf(command(121, intArrayOf(2_000_000, 9_000_033, 0, 0)), command(173))
+        val second = map("second", listOf(WolfEvent(0, "check", 2, 2, listOf(page(listOf(
+            command(122, intArrayOf(3_000_000, 1, 9_900_057)),
+            command(122, intArrayOf(3_000_001, 0), listOf("\\sys[74] \\sysS[82] \\v[9000199] \\sys[\\v[9000138]]")), command(173)))))))
+        val runtime = fixture(first, extraMaps = mapOf(1 to second))
+        val report = runtime.inspectCapabilities(includeAllMaps = true)
+        assertFalse(report.supported); assertTrue(report.inspectedAllMaps); assertEquals(2, report.scannedMapCount)
+        assertTrue(report.issues.any { "9000033" in it.reason }); assertTrue(report.issues.any { "9900057" in it.reason })
+        for (code in listOf(9_000_074, 9_900_082, 9_000_199, 9_000_138)) assertTrue("missing $code", report.issues.any { code.toString() in it.reason })
+    }
+
+    @Test fun playerLaunchReportsNotEditorTestPlayThroughTheReportedNumericBranch() {
+        val runtime = fixture(listOf(
+            command(111, intArrayOf(1, 9_000_112, 1, 18), offset = 0x1e0), command(401, intArrayOf(1)),
+            command(121, intArrayOf(2_000_000, -1, 0, 0), indent = 1), command(420),
+            command(121, intArrayOf(2_000_000, 7, 0, 0), indent = 1), command(499),
+            command(121, intArrayOf(2_000_001, 9_000_112, 0, 0)), command(173)))
+        assertTrue(runtime.inspectCapabilities().supported)
+        runtime.tick()
+        assertEquals(7, runtime.snapshotState().numbers[0])
+        assertEquals(0, runtime.snapshotState().numbers[1])
+        assertNull(runtime.frame().diagnostic)
+    }
+
+    @Test fun editorTestPlayFlagStaysReadOnlyAndOtherUnknownSystemReadsStillFail() {
+        val vars = WolfVariables(emptyMap()) { id, _ -> if (id == 112) 0 else null }
+        val address = EventAddress(0, -1, 0)
+        assertEquals(0, vars.read(9_000_112, address))
+        try { vars.write(9_000_112, 1, address); fail("Sys112 is read-only") } catch (_: IllegalArgumentException) { }
+        try { vars.read(9_000_199, address); fail("Unknown fields must not silently return zero") } catch (_: IllegalArgumentException) { }
+        assertTrue(vars.system.isEmpty())
+    }
+
     @Test fun isolatedSaveReadCacheOwnsItsBytesAndRejectsMutationBeforeAnyReuse() {
         val runtime = fixture(listOf(command(121, intArrayOf(2_000_000, 7, 0, 0)),
             command(122, intArrayOf(3_000_000, 0), listOf("saved")), command(173)))
@@ -176,7 +334,7 @@ class WolfRuntimeTest {
 
     @Test fun specialConversionIsCapturedForEachPictureAndDialogAndAlsoControlsStringExpansion() {
         val literal = "\\v[0]\\c[1]A"
-        val runtime = fixture(listOf(command(121, intArrayOf(2_000_000, 7, 0, 0)), command(121, intArrayOf(9_000_150, 17, 0, 0)),
+        val runtime = fixture(instantMessages() + listOf(command(121, intArrayOf(2_000_000, 7, 0, 0)), command(121, intArrayOf(9_000_150, 17, 0, 0)),
             command(122, intArrayOf(3_000_000, 0), listOf(literal)), textPicture(1, literal),
             command(101, strings = listOf(literal)), command(121, intArrayOf(9_000_150, -3, 0, 0)),
             command(122, intArrayOf(3_000_001, 0), listOf("\\v[0]")), textPicture(2, literal), command(173)), compatibilityVersion = 369)
@@ -253,7 +411,7 @@ class WolfRuntimeTest {
     }
 
     @Test fun eventRunningRemainsTrueAfterAMessageAndIsCurrentEvenForAFrozenFrame() {
-        val runtime = fixture(listOf(command(101, strings = listOf("End of introduction")), command(180, intArrayOf(2)),
+        val runtime = fixture(instantMessages() + listOf(command(101, strings = listOf("End of introduction")), command(180, intArrayOf(2)),
             command(161), command(180, intArrayOf(2)), command(173)))
         runtime.tick(); assertTrue(runtime.frame().eventRunning)
         runtime.key(NativeKey.ACCEPT, true); runtime.key(NativeKey.ACCEPT, false); runtime.tick()
@@ -381,7 +539,7 @@ class WolfRuntimeTest {
         val restored = fixture(emptyList(), compatibilityVersion = 369)
         restored.restore(filter.snapshot()); assertEquals(true, restored.frame().windowSmooth)
         val cold = fixture(listOf(command(121, intArrayOf(2_000_000, 9_000_140, 0, 0))), compatibilityVersion = 369)
-        assertTrue(rejectsRuntime { cold.tick() }.message!!.contains("Valeur initiale système"))
+        cold.tick(); assertEquals(0, cold.snapshotState().numbers[0])
         val invalid = fixture(listOf(command(121, intArrayOf(9_000_140, 2, 0, 0))), compatibilityVersion = 369)
         assertTrue(rejectsRuntime { invalid.tick() }.message!!.contains("Filtre d'affichage"))
     }
@@ -665,7 +823,7 @@ class WolfRuntimeTest {
             command(173, indent = 1),
             command(401, intArrayOf(3)), command(175, indent = 1), command(499),
         )
-        val runtime = fixture(title, extraMaps = mapOf(1 to map("field", emptyList(), width = 8, height = 6)))
+        val runtime = fixture(instantMessages() + title, extraMaps = mapOf(1 to map("field", emptyList(), width = 8, height = 6)))
         runtime.tick()
         assertEquals("Data/Picture/title.png", runtime.frame().pictures.single().path)
         assertEquals(listOf("New game", "Quit"), runtime.frame().dialog!!.choices)
@@ -1020,7 +1178,7 @@ class WolfRuntimeTest {
     }
 
     @Test fun heroControlBansDoNotBlockTheMessageReaderAndSelectedPermissionsRemainSeparate() {
-        val runtime = fixture(listOf(command(126, intArrayOf(0x101)), command(101, strings = listOf("one")),
+        val runtime = fixture(instantMessages() + listOf(command(126, intArrayOf(0x101)), command(101, strings = listOf("one")),
             command(126, intArrayOf(0x301)), command(101, strings = listOf("two")), command(173)))
         runtime.tick(); runtime.key(NativeKey.ACCEPT, true); runtime.key(NativeKey.ACCEPT, false); runtime.tick()
         assertEquals("two", runtime.frame().dialog!!.text)
@@ -1358,18 +1516,18 @@ class WolfRuntimeTest {
         assertEquals(32, rejectsRuntime { read.tick() }.offset)
         val write = fixture(listOf(command(121, intArrayOf(9_000_084, 4, 0, 0))))
         assertTrue(rejectsRuntime { write.tick() }.message!!.contains("Écriture système"))
-        val undefined = fixture(listOf(command(121, intArrayOf(2_000_000, 9_000_008, 0, 0))))
-        assertTrue(rejectsRuntime { undefined.tick() }.message!!.contains("Valeur initiale"))
+        val initialized = fixture(listOf(command(121, intArrayOf(2_000_000, 9_000_008, 0, 0))))
+        initialized.tick(); assertEquals(12, initialized.snapshotState().numbers[0])
     }
 
     @Test fun variableExpansionPreservesRichTextAndDoesNotAlterStoredStrings() {
         val formatted = "\\c[1]Salut \\v[0] \\f[22]\\r[漢字,かんじ]"
-        val runtime = fixture(listOf(command(121, intArrayOf(2_000_000, 7, 0, 0)),
+        val runtime = fixture(instantMessages() + listOf(command(121, intArrayOf(2_000_000, 7, 0, 0)),
             command(122, intArrayOf(3_000_000, 0), listOf(formatted)), command(101, strings = listOf("\\s[0]"))))
         runtime.tick()
         val expected = "\\c[1]Salut 7 \\f[22]\\r[漢字,かんじ]"
         assertEquals(expected, runtime.snapshotState().strings[0]); assertEquals(expected, runtime.frame().dialog!!.text)
-        val timing = fixture(listOf(command(101, strings = listOf("Wait\\!now"))))
+        val timing = fixture(instantMessages() + listOf(command(101, strings = listOf("Wait\\!now"))))
         timing.tick(); assertEquals(4, timing.frame().dialog!!.visibleCharacters); assertTrue(timing.frame().dialog!!.waiting)
         repeat(10) { timing.tick() }; assertEquals(4, timing.frame().dialog!!.visibleCharacters)
         timing.key(NativeKey.ACCEPT, true); timing.tick(); timing.key(NativeKey.ACCEPT, false)
@@ -1378,7 +1536,7 @@ class WolfRuntimeTest {
     }
 
     @Test fun pointerEdgesAdvanceExactlyOnceAndReleaseCancelsTargetAndCoordinates() {
-        val runtime = fixture(listOf(command(121, intArrayOf(9_000_073, 1, 0, 0)), command(121, intArrayOf(9_000_008, 22, 0, 0)),
+        val runtime = fixture(instantMessages() + listOf(command(121, intArrayOf(9_000_073, 1, 0, 0)), command(121, intArrayOf(9_000_008, 22, 0, 0)),
             command(101, strings = listOf("First")), command(101, strings = listOf("Second")), command(173)))
         runtime.tick(); assertEquals(22f, runtime.frame().dialog!!.fontSize)
         runtime.pointer(10f, 10f, true); runtime.tick()
@@ -1386,7 +1544,7 @@ class WolfRuntimeTest {
         runtime.pointer(11f, 11f, true); runtime.tick(); assertEquals("Second", runtime.frame().dialog!!.text)
         runtime.pointer(11f, 11f, false); runtime.pointer(11f, 11f, true); runtime.tick(); assertNull(runtime.frame().dialog)
         runtime.releaseInput()
-        val input = fixture(listOf(command(101, strings = listOf("Pulse")), command(173)))
+        val input = fixture(instantMessages() + listOf(command(101, strings = listOf("Pulse")), command(173)))
         input.tick(); input.key(NativeKey.Z, true); input.key(NativeKey.Z, false); input.tick(); assertNull(input.frame().dialog)
     }
 
@@ -1708,6 +1866,8 @@ class WolfRuntimeTest {
     private fun map(name: String, events: List<WolfEvent>, width: Int = 6, height: Int = 6) = WolfMap(name, name, 103, WolfEncoding.UTF8, 0, width, height, 3, IntArray(width * height * 3) { 100000 }, events, 0x69, 0)
     private fun page(commands: List<WolfCommand>, trigger: Int = 1, index: Int = 0, conditions: ByteArray = ByteArray(37).also { it[0] = trigger.toByte() }) = WolfPage(index, -1, "", 2, 1, 255, 0, conditions, byteArrayOf(3, 3, 3, 0), 3, WolfRoute(2, emptyList()), commands, 3, byteArrayOf(0, 0, 0), null, 0)
     private fun command(opcode: Int, args: IntArray = intArrayOf(), strings: List<String> = emptyList(), indent: Int = 0, offset: Int = 0) = WolfCommand(opcode, args, indent, strings, offset = offset)
+    /** These interaction fixtures explicitly choose immediate text; the engine's cold defaults are timed. */
+    private fun instantMessages() = listOf(command(121, intArrayOf(9_000_009, 0, 0, 0)), command(121, intArrayOf(9_000_010, 0, 0, 0)))
     private fun textPicture(id: Int, text: String, duration: Int = 0, delay: Int = 0) = command(150,
         intArrayOf(0x20, id, duration, 1, 1, 1, 255, 0, 0, 100, 0, 0, 0x646464, delay), listOf(text))
     private fun common(id: Int, commands: List<WolfCommand>, returnValue: Int? = null) = WolfCommon(id, id, "common$id", 0, ByteArray(7), commands, "", "", emptyList(), byteArrayOf(), emptyList(), emptyList(), intArrayOf(), 0, emptyList(), "", null, returnValue, 0)

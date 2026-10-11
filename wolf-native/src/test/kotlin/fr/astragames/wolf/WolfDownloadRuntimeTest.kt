@@ -4,6 +4,17 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WolfDownloadRuntimeTest {
+    @Test fun downloadCountersUseTheActiveWorkerAndAbandonedCallbacksCannotChangeThem() {
+        val readers = (43..47).map { WolfCommand(121, intArrayOf(2_000_000 + it - 43, 9_000_000 + it, 0, 0), 0, emptyList()) }
+        val vm = wolfHostRuntimeFixture(listOf(request()) + readers + end(), "download")
+        vm.tick(); val active = vm.drainEffects().filterIsInstance<NativeEffect.Download>().single()
+        vm.downloadProgress(active.requestId, WolfDownloadProgress(1024, 2048, 512, 2, 2))
+        vm.downloadProgress(active.requestId + 1, WolfDownloadProgress(999, 999))
+        vm.completeDownload(active.requestId, Result.success("complete")); vm.tick()
+        assertEquals(listOf(1024, 2048, 512, 2, 2), (0..4).map { vm.snapshotState().numbers[it] })
+        val before = vm.snapshotState(); vm.downloadProgress(active.requestId, WolfDownloadProgress(0, 0))
+        assertEquals(before, vm.snapshotState())
+    }
     private fun request(flags: Int = 3, target: Int = 3_000_000) = WolfCommand(260,
         intArrayOf(0, flags, target, 0x100), 0, listOf("https://example.org/result.txt", "Save/result.txt"))
     private fun assign(value: Int) = WolfCommand(121, intArrayOf(2_000_000, value, 0, 0), 0, emptyList())

@@ -55,7 +55,7 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
             setOnClickListener { anchor ->
                 releaseAll(); clearInput()
                 if (editing) { setEditing(false); return@setOnClickListener }
-                PopupMenu(context, anchor).apply {
+                PopupMenu(WolfDialogs.context(context), anchor).apply {
                     menu.add("Réglages du jeu").setOnMenuItemClickListener { settings(); true }
                     menu.add("Modifier les touches").setOnMenuItemClickListener { setEditing(true); true }
                     if (store != null) {
@@ -183,10 +183,7 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
     private fun publishMenu() { menuVisibility(editing || popupVisible || dialogs.isNotEmpty()) }
     private fun present(dialog: AlertDialog) {
         releaseAll(); clearInput(); dialogs += dialog; publishMenu()
-        dialog.setOnDismissListener { dialogs -= dialog; publishMenu() }; dialog.show()
-        listOf(AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEGATIVE, AlertDialog.BUTTON_NEUTRAL).forEach { which ->
-            dialog.getButton(which)?.apply { isAllCaps = false; setTextColor(WolfViewStyle.accent); typeface = WolfViewStyle.font(context); minHeight = dp(48) }
-        }
+        dialog.setOnDismissListener { dialogs -= dialog; publishMenu() }; WolfDialogs.show(dialog)
     }
     private fun press(def: Control) {
         if (def.id in held) return

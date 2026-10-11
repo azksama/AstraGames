@@ -4,6 +4,22 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WolfSystemAudioTest {
+    @Test fun panWritesUpdateOnlyThePlayingBgmAndSelectedBgsAndSurviveSaving() {
+        fun c(op: Int, vararg args: Int, path: String? = null) = WolfCommand(op, args, 0, listOfNotNull(path))
+        val runtime = fixture(listOf(c(140, 0x02000000, 0, 0, 0, 80, 120, 0, 64, path = "Music/field.ogg"),
+            c(140, 0x02000010, 0, 0, 0, 70, 110, 0, -128, 3, path = "Sound/rain.ogg"),
+            c(121, 9_000_093, -999, 0, 0), c(121, 9_000_094, 999, 0, 0),
+            c(121, 2_000_000, 9_000_093, 0, 0), c(121, 2_000_001, 9_000_094, 0, 0), c(173)), compatibility = 350)
+        runtime.tick()
+        assertEquals(mapOf(0 to -255, 1 to 255), runtime.snapshotState().numbers)
+        val updates = runtime.drainEffects().filterIsInstance<NativeEffect.Audio>().filter { it.path == null }
+        assertEquals(listOf(-255, 255), updates.map { it.pan }); assertEquals(listOf(80, 70), updates.map { it.volume })
+        assertEquals(3, updates.last().voice)
+        val bytes = runtime.snapshot(); assertEquals(-255, runtime.savedNumber(bytes, 9_000_093)); assertEquals(255, runtime.savedNumber(bytes, 9_000_094))
+        runtime.restoreSaveData(WolfSaveData(bytes, numbers = mapOf(9_000_093 to 64)))
+        assertEquals(64, runtime.snapshotState().audio.single { it.channel == 0 }.pan)
+        assertEquals(255, runtime.snapshotState().audio.single { it.channel == 1 }.pan)
+    }
     @Test fun signedAllOnesSourceModesStopTheThreeAudioChannelsWithoutDatabaseReads() {
         val runtime = fixture(listOf(
             WolfCommand(140, intArrayOf(-256, 7, 0, 0), 0, emptyList()),

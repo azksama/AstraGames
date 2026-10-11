@@ -216,6 +216,8 @@ sealed interface NativeEffect {
         val fontName: String? = null) : NativeEffect
     /** The host confirms its currently edited text; the VM never substitutes an old initial value. */
     data class ConfirmTextInput(val requestId: Long) : NativeEffect
+    data class UpdateTextInput(val requestId: Long, val text: String) : NativeEffect
+    data class WindowTitle(val title: String) : NativeEffect
     /** Wolf's SAPI speed (-10..10), and volume after its optional Sys102 correction. */
     data class Speech(val requestId: Long, val text: String, val speed: Int = 0, val volume: Int = 100,
         val voice: String? = null) : NativeEffect
@@ -243,8 +245,12 @@ data class WolfCapabilityIssue(
 
 data class WolfCapabilities(val issues: List<WolfCapabilityIssue>, val scannedMapCount: Int = 0, val inspectedAllMaps: Boolean = false) {
     val supported: Boolean get() = issues.isEmpty()
-    fun description(): String = issues.take(12).joinToString("\n") {
-        "${it.file} / événement ${it.eventId} / commande ${it.opcode} @0x${it.offset.toString(16)} : ${it.reason}"
+    fun description(limit: Int = 12): String {
+        require(limit > 0)
+        val shown = issues.take(limit).joinToString("\n") {
+            "${it.file} / événement ${it.eventId} / commande ${it.opcode} @0x${it.offset.toString(16)} : ${it.reason}"
+        }
+        return shown + if (issues.size > limit) "\n… ${issues.size - limit} autres incompatibilités dans le rapport complet." else ""
     }
 }
 

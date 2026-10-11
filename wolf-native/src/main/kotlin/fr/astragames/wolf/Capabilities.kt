@@ -156,6 +156,7 @@ internal object WolfCapabilityInspector {
                         if (stored !in 2_000_000..3_999_999 && stored !in 9_000_000..9_099_999 && stored !in 9_900_000..9_999_999 && stored !in 1_100_000_000..1_199_999_999)
                             issue(file, event, c.opcode, c.offset, "Variable exclue des opérations isolées de sauvegarde : $stored")
                         value(file, event, c.opcode, c.offset, stored, write = c.opcode == 222, string = isString(stored))
+                        issue(file, event, c.opcode, c.offset, WolfSystemSupport.savedReferenceProblem(stored, write = c.opcode == 222))
                     }
                 }
                 250 -> {
@@ -201,11 +202,26 @@ internal object WolfCapabilityInspector {
                 }
             }
             c.strings.forEach { s ->
-                Regex("\\\\(?:v|self|cself)\\[([0-9]+)]", RegexOption.IGNORE_CASE).findAll(s).forEach { match ->
+                WolfTextCodes.variableToken.findAll(s).forEach { match ->
                     if (WolfTextCodes.quotedEscape(s, match.range.first)) return@forEach
-                    val id = match.groupValues[1].toIntOrNull()
-                    if (id == null) issue(file, event, c.opcode, c.offset, "Référence de texte hors capacité")
-                    else if (match.value.startsWith("\\v", true)) value(file, event, c.opcode, c.offset, if (id >= 1_000_000) id else 2_000_000 + id)
+                    val family = match.groupValues[1]
+                    val argument = match.groupValues[2]
+                    // Nested/dynamic indices and database names resolve at execution. Static
+                    // indices use exactly the same lexer and namespace as the interpreter.
+                    if (!argument.matches(Regex("[+-]?[0-9]+"))) return@forEach
+                    val id = argument.toIntOrNull()
+                    if (id == null) { issue(file, event, c.opcode, c.offset, "Référence de texte hors capacité"); return@forEach }
+                    val code = runCatching { when (family) {
+                        "sys" -> WolfTextCodes.systemReference(id, string = false)
+                        "sysS" -> WolfTextCodes.systemReference(id, string = true)
+                        "self" -> Math.addExact(1_100_000, id)
+                        "cself" -> Math.addExact(1_600_000, id)
+                        "s" -> Math.addExact(3_000_000, id)
+                        "udb", "cdb", "sdb" -> return@forEach
+                        else -> if (id >= 1_000_000) id else Math.addExact(2_000_000 + (family.drop(1).toIntOrNull() ?: 0) * 100_000, id)
+                    } }.getOrNull()
+                    if (code == null || id < 0) issue(file, event, c.opcode, c.offset, "Référence de texte hors capacité : ${match.value}")
+                    else value(file, event, c.opcode, c.offset, code, string = family in setOf("sysS", "s", "cself"))
                 }
             }
         }
@@ -252,14 +268,16 @@ internal object WolfCapabilityInspector {
             return WolfCapabilities(result, mapCount, complete)
         }
         inspectMap(currentMap)
-        // A definite refusal needs no enumeration of the rest of a large game. Positive admission
-        // still requires every map; each is read sequentially and no list of maps is retained.
-        if (!allMaps || issues.isNotEmpty()) return result(1, false)
+        // A full audit aggregates every map's references, including failures. Keep the
+        // bounded issue budget and stream maps rather than retaining the whole game.
+        if (!allMaps) return result(1, false)
         var mapCount = 1
         for (reference in game.maps) {
             if (reference.id == currentMapId) continue
-            inspectMap(mapLoader(reference.id)); mapCount++
-            if (issues.isNotEmpty()) return result(mapCount, false)
+            try { inspectMap(mapLoader(reference.id)) }
+            catch (error: Exception) { issue(reference.file, -1, -1, 0, "Carte non inspectable : ${error.message ?: error.javaClass.simpleName}") }
+            mapCount++
+            if (issues.size >= MAX_ISSUES) { truncated = true; return result(mapCount, false) }
         }
         return result(mapCount, true)
     }
@@ -270,7 +288,7 @@ internal object WolfCapabilityInspector {
                 in 1_600_000..1_699_999, in 3_000_000..3_999_999, in 15_000_000..15_999_999, in 1_100_000_000..1_199_999_999 -> true
                 in 1_000_000_000..1_099_999_999, in 1_300_000_000..1_399_999_999 -> !write
                 in 9_900_000..9_999_999 -> code % 100_000 in if (write) WolfVariables.SUPPORTED_SYSTEM_STRING_WRITES
-                    else (1..6).toSet() + setOf(10,11,12,13,14,15,19,25,26,27,30,31,33,34) + WolfVariables.FONT_SYSTEM_STRINGS
+                    else WolfVariables.SUPPORTED_SYSTEM_STRING_READS
                 else -> false
             }
             code <= 999_999 -> !write
@@ -282,7 +300,14 @@ internal object WolfCapabilityInspector {
             code in 1_000_000_000..1_099_999_999 || code in 1_300_000_000..1_399_999_999 -> !write
             else -> false
         }
-        return if (supported) null else "${if (write) "Destination" else "Référence"} ${if (string) "texte" else "numérique"} non certifiée : $code"
+        if (supported) return null
+        val feature = when (code) {
+            in 9_000_000..9_099_999 -> WolfSystemSupport.unsupportedNumbers[code % 100_000]
+            in 9_900_000..9_999_999 -> WolfSystemSupport.unsupportedStrings[code % 100_000]
+            else -> null
+        }
+        return "${if (write) "Destination" else "Référence"} ${if (string) "texte" else "numérique"} non certifiée : $code" +
+            (feature?.let { " ($it)" } ?: "")
     }
 
     private fun intAt(b: ByteArray, i: Int): Int = (b[i].toInt() and 255) or ((b[i + 1].toInt() and 255) shl 8) or ((b[i + 2].toInt() and 255) shl 16) or (b[i + 3].toInt() shl 24)
@@ -300,6 +325,10 @@ internal object WolfCapabilityInspector {
 
 /** Shared lexer: formatting stays intact for the renderer and timing is executed by the VM. */
 internal object WolfTextCodes {
+    fun systemReference(id: Int, string: Boolean): Int {
+        require(id in 0..99_999) { "Identifiant de variable système texte hors capacité : $id" }
+        return (if (string) 9_900_000 else 9_000_000) + id
+    }
     val escape = Regex("""\\(imgS|img|isize|iS|space|font|cself|self|sysS|sys|[ucs]db|v[0-9]?|s|sp|se|wE|cE|cS|cR|mx|my|bx|ax|ay|f\+|fR|[cfimr-])\[([^]]*)]|\\([EN!.^><\\]|A[+-])""")
     /** 948960 consumes pairs of backslashes before expanding variable references. */
     fun quotedEscape(text: String, offset: Int): Boolean {
@@ -309,7 +338,7 @@ internal object WolfTextCodes {
     }
     /** Validate the surrounding syntax after replacing only variable tokens, including nested ones.
      * Actual values are expanded and checked again when the command executes. */
-    private val variableToken = Regex("""\\(cself|self|sysS|sys|[ucs]db|v[0-9]?|s)\[([^]]*)]""")
+    val variableToken = Regex("""\\(cself|self|sysS|sys|[ucs]db|v[0-9]?|s)\[([^\[\]]*)]""")
     fun staticExpansion(input: String): String = variableToken.replace(input) { match ->
         if (quotedEscape(input, match.range.first)) match.value else "16"
     }

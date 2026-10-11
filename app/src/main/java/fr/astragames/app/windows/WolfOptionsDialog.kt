@@ -2,22 +2,39 @@ package fr.astragames.app.windows
 
 import android.app.AlertDialog
 import android.content.Context
+import android.view.View
+import android.view.ViewGroup
 import android.widget.*
 
 /** Compact native controls shared by the game sheet and the in-session menu. */
 internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () -> Unit = {}): AlertDialog {
-    val context = android.view.ContextThemeWrapper(host, android.R.style.Theme_Material_Dialog_Alert)
-    fun dp(value: Int) = (value * context.resources.displayMetrics.density).toInt()
-    val accent = android.content.res.ColorStateList.valueOf(0xFFC9B7FF.toInt())
+    val context = WolfDialogs.context(host)
+    fun dp(value: Int) = WolfViewStyle.dp(context, value)
+    val accent = android.content.res.ColorStateList.valueOf(WolfViewStyle.accent)
     val original = store.read()
     val layout = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(8), dp(24), dp(16)) }
-    fun label(text: String) { layout.addView(TextView(context).apply { this.text = text; setPadding(0, 14, 0, 4) }) }
+    fun label(text: String, heading: Boolean = false) {
+        layout.addView(WolfViewStyle.label(context, text, if (heading) 16f else 14f,
+            if (heading) WolfViewStyle.text else WolfViewStyle.accent, title = heading).apply {
+            setPadding(0, dp(if (heading) 24 else 8), 0, dp(8))
+        })
+    }
     fun choice(title: String, values: List<String>, selected: Int): Spinner {
-        label(title)
+        label(title, heading = true)
         return Spinner(context).apply {
             contentDescription = title
-            adapter = ArrayAdapter(context, android.R.layout.simple_spinner_dropdown_item, values)
-            setSelection(selected); layout.addView(this)
+            adapter = object : ArrayAdapter<String>(context, android.R.layout.simple_spinner_item, values) {
+                init { setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item) }
+                fun style(view: View) = (view as TextView).apply {
+                    textSize = 15f; typeface = WolfViewStyle.font(context); setTextColor(WolfViewStyle.text)
+                    minHeight = dp(48); setPadding(dp(12), dp(12), dp(12), dp(12))
+                }
+                override fun getView(position: Int, recycled: View?, parent: ViewGroup): View = style(super.getView(position, recycled, parent))
+                override fun getDropDownView(position: Int, recycled: View?, parent: ViewGroup): View = style(super.getDropDownView(position, recycled, parent))
+            }
+            minimumHeight = dp(48); backgroundTintList = accent
+            setPopupBackgroundDrawable(androidx.core.content.ContextCompat.getDrawable(context, fr.astragames.app.R.drawable.wolf_control_dialog_background))
+            setSelection(selected); layout.addView(this, LinearLayout.LayoutParams(-1, -2))
         }
     }
     val runtime = choice("Moteur · au prochain lancement", WolfRuntimeMode.entries.map { it.label }, original.runtime.ordinal)
@@ -28,8 +45,7 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
     if (android.os.Build.VERSION.SDK_INT >= 30) {
         label(if (android.os.Environment.isExternalStorageManager()) "Accès direct au stockage local autorisé."
             else "Pour Winlator, Android demande l’accès à tous les fichiers pour lancer un jeu local sans copie. Cette autorisation est facultative : sans elle, Winlator utilise une copie privée. Le moteur Android lit le dossier sélectionné avec son autorisation existante.")
-        layout.addView(Button(context).apply {
-            text = "Accès à tous les fichiers · réglages Android"
+        layout.addView(WolfViewStyle.button(context, "Accès à tous les fichiers · réglages Android").apply {
             setOnClickListener {
                 val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
                     android.net.Uri.parse("package:${host.packageName}"))
@@ -40,12 +56,16 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
         })
     }
     fun toggle(title: String, selected: Boolean) = Switch(context).apply {
-        text = title; isChecked = selected; thumbTintList = accent; minHeight = dp(48); layout.addView(this)
+        text = title; textSize = 15f; typeface = WolfViewStyle.font(context); setTextColor(WolfViewStyle.text)
+        isChecked = selected; thumbTintList = accent; minHeight = dp(48)
+        setPadding(0, dp(12), 0, dp(12)); layout.addView(this, LinearLayout.LayoutParams(-1, -2))
     }
     fun slider(title: String, minimum: Int, maximum: Int, value: Int): SeekBar {
-        val caption = TextView(context).apply { text = "$title : $value %"; setPadding(0, 14, 0, 4); layout.addView(this) }
+        val caption = WolfViewStyle.label(context, "$title : $value %", 16f, title = true).apply {
+            setPadding(0, dp(24), 0, dp(8)); layout.addView(this)
+        }
         return SeekBar(context).apply {
-            contentDescription = title; max = maximum - minimum; progress = value - minimum; progressTintList = accent; thumbTintList = accent
+            contentDescription = title; minimumHeight = dp(48); max = maximum - minimum; progress = value - minimum; progressTintList = accent; thumbTintList = accent
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(bar: SeekBar?, progress: Int, user: Boolean) { caption.text = "$title : ${progress + minimum} %" }
                 override fun onStartTrackingTouch(bar: SeekBar?) {}
@@ -74,7 +94,7 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
     val opacity = slider("Opacité des touches", 15, 100, original.opacity)
     val size = slider("Taille des touches", 70, 150, original.size)
     label("Menu → Modifier les touches : faites glisser chaque touche ; touchez-la pour changer son action. Positions séparées en portrait et paysage.")
-    val dialog = AlertDialog.Builder(context).setTitle("Réglages Wolf RPG")
+    val dialog = WolfDialogs.builder(context, "Réglages Wolf RPG")
         .setView(ScrollView(context).apply { addView(layout) })
         .setNegativeButton("Annuler", null)
         .setPositiveButton("Enregistrer") { _, _ ->
@@ -83,10 +103,6 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
                 opacity.progress + 15, size.progress + 70, WolfImageMode.entries[imageMode.selectedItemPosition],
                 WolfStorageMode.entries[storage.selectedItemPosition], zoom.isChecked, WolfRuntimeMode.entries[runtime.selectedItemPosition])); changed()
         }.create()
-    dialog.setOnShowListener {
-        dialog.getButton(AlertDialog.BUTTON_POSITIVE).setTextColor(accent)
-        dialog.getButton(AlertDialog.BUTTON_NEGATIVE).setTextColor(accent)
-    }
-    dialog.show()
+    WolfDialogs.show(dialog)
     return dialog
 }

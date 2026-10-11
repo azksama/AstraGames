@@ -4,6 +4,14 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class WolfMapCameraTest {
+    @Test fun centreCorrectionsShiftTheFollowThresholdOnBothAxes() {
+        val camera = WolfMapCamera().apply { reset(0, 0, 1000, 1000) }
+        // 96px viewport, 16px tile: original centre is40px. Sys131=8 shifts it to48px.
+        camera.follow(160, 160, 176, 176, 96, 96, 16, 1000, 1000, centreOffsetX = 8, centreOffsetY = -8)
+        assertEquals(0, camera.state.x); assertEquals(16, camera.state.y)
+        camera.follow(176, 176, 200, 200, 96, 96, 16, 1000, 1000, centreOffsetX = 8, centreOffsetY = -8)
+        assertEquals(24, camera.state.x); assertEquals(40, camera.state.y)
+    }
     @Test fun loopingCameraWrapsItsNegativeEdgeAndKeepsPositiveScrollingUnbounded() {
         val camera = WolfMapCamera()
         camera.reset(-1, -641, 0, 0, 640, 640)

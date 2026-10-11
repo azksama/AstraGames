@@ -65,6 +65,17 @@ internal object NativeGameFixture {
         ), 1, 1, 1))
     }
 
+    fun writePlayerLaunchFlag(root: File) {
+        write(root)
+        File(root, "Data/MapData/title.mps").writeBytes(map("player launch", listOf(
+            Command(111, intArrayOf(1, 9_000_112, 1, 18)), Command(401, intArrayOf(1)),
+            Command(121, intArrayOf(2_000_000, -1, 0, 0), depth = 1), Command(420),
+            Command(121, intArrayOf(2_000_000, 0, 0, 0), depth = 1), Command(499),
+            Command(150, intArrayOf(0, 1, 0, 1, 1, 1, 255, 0, 0, 100, 0), listOf("Picture/title.png")),
+            Command(101, strings = listOf("Player launch: \\v[0]")), Command(173),
+        ), 1, 1, 1))
+    }
+
     fun writeKeyInput(root: File, flags: Int, specific: Int? = null, mappings: Map<Int, Int> = emptyMap()) {
         write(root)
         val args = if (specific == null) intArrayOf(2_000_000, flags) else intArrayOf(2_000_000, flags, specific)

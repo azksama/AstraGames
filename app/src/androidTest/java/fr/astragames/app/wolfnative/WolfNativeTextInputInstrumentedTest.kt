@@ -66,6 +66,14 @@ class WolfNativeTextInputInstrumentedTest {
             context.startActivity(WolfNativeActivity.intent(context, id, Uri.fromFile(root).toString(), "Game.exe", "Text input test")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
             await("native keyboard") { editable() != null }
+            if (!cancel && InstrumentationRegistry.getArguments().getString("wolfUiCapture") == "true") {
+                SystemClock.sleep(600)
+                val label = InstrumentationRegistry.getArguments().getString("captureLabel") ?: "phone"
+                val bitmap = requireNotNull(instrumentation.uiAutomation.takeScreenshot())
+                File(context.getExternalFilesDir(null), "wolf-native-text-input-$label.png").outputStream().use {
+                    bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+                }; bitmap.recycle()
+            }
             // The game keeps updating during text entry. Global Espresso idle waits
             // cannot settle here; use the SDK's actual accessibility text/click actions.
             val entered = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "😺abcd") }

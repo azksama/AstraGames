@@ -32,6 +32,7 @@ import com.canhub.cropper.CropImageView
 import fr.astragames.app.ui.AstraApp
 import fr.astragames.app.ui.AstraViewModel
 import fr.astragames.app.ui.AppUpdateScreen
+import fr.astragames.app.ui.AppUpdateNotice
 import fr.astragames.app.ui.LocalAppLanguage
 import fr.astragames.app.ui.theme.AstraTheme
 import kotlinx.coroutines.launch
@@ -126,7 +127,9 @@ class MainActivity : FragmentActivity() {
         setContent {
             val state by viewModel.uiState.collectAsStateWithLifecycle()
             val locked by viewModel.isLocked.collectAsStateWithLifecycle()
+            val appUpdate by viewModel.appUpdates.state.collectAsStateWithLifecycle()
             var showAppUpdates by rememberSaveable { mutableStateOf(intent.getBooleanExtra("openAppUpdates", false)) }
+            var dismissedUpdate by rememberSaveable { mutableStateOf<String?>(null) }
             AstraTheme(hue = state.settings.accentHue) {
                 AstraApp(
                     state = state,
@@ -145,6 +148,15 @@ class MainActivity : FragmentActivity() {
                 if (showAppUpdates && !locked && recoveredWolfReport == null) CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
                     AppUpdateScreen(viewModel.appUpdates, viewModel::prepareExternalPicker) { showAppUpdates = false }
                 }
+                if (state.settingsLoaded && !locked && recoveredWolfReport == null && !showAppUpdates && appUpdate.automatic) {
+                    appUpdate.release?.takeUnless { it.version == dismissedUpdate }?.let { release ->
+                        CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
+                            AppUpdateNotice(release, appUpdate.ready, onOpen = {
+                                dismissedUpdate = release.version; showAppUpdates = true
+                            }, onDismiss = { dismissedUpdate = release.version })
+                        }
+                    }
+                }
                 if (state.settingsLoaded && !locked) recoveredWolfReport?.let { report ->
                     CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
                         WolfDiagnosticsDialog(initialReport = report, recovered = true, beforeExternal = viewModel::prepareExternalPicker) {
@@ -157,6 +169,11 @@ class MainActivity : FragmentActivity() {
                 }
             }
         }
+    }
+
+    override fun onStart() {
+        super.onStart()
+        lifecycleScope.launch { viewModel.appUpdates.checkOnOpen() }
     }
 
     override fun onResume() {

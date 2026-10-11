@@ -5,7 +5,6 @@ import android.content.Context
 import android.text.Editable
 import android.text.InputFilter
 import android.text.TextWatcher
-import android.view.ContextThemeWrapper
 import android.view.View
 import android.view.ViewGroup
 import android.widget.ArrayAdapter
@@ -15,20 +14,13 @@ import android.widget.ListView
 import android.widget.ScrollView
 import android.widget.TextView
 import com.winlator.xserver.XKeycode
-import fr.astragames.app.R
 
 /** Focused native dialogs; the overlay owns modal lifetime and releases every held input. */
 internal class WolfControlDialogs(private val context: Context, private val store: WolfGameOptions,
     private val present: (AlertDialog) -> Unit, private val changed: () -> Unit) {
-    private val theme = ContextThemeWrapper(context, R.style.Theme_AstraGames_WolfControls)
+    private val theme = WolfDialogs.context(context)
     private val presets = WolfControlPresets(context)
-    // Explicit theme prevents AlertDialog's inherited alertDialogTheme overlay from
-    // replacing the scoped window surface with the platform's legacy gray panel.
-    private fun builder(title: String) = AlertDialog.Builder(theme, R.style.Theme_AstraGames_WolfControls).setCustomTitle(
-        WolfViewStyle.label(theme, title, 22f, title = true).apply {
-            setPadding(dp(24), dp(24), dp(24), dp(8))
-        }
-    )
+    private fun builder(title: String) = WolfDialogs.builder(theme, title)
     private fun column() = LinearLayout(theme).apply {
         orientation = LinearLayout.VERTICAL; setPadding(dp(24), dp(16), dp(24), dp(8))
     }
