@@ -87,6 +87,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val scanReports: StateFlow<List<ScanReport>> = mutableScanReports
     private val mutableCompatibility = MutableStateFlow<Map<String, GameCompatibilityReport>>(emptyMap())
     val compatibility: StateFlow<Map<String, GameCompatibilityReport>> = mutableCompatibility
+    internal val wolfCompatibility = fr.astragames.app.wolfnative.WolfCompatibilityController(app, viewModelScope)
     private val compatibilityDiagnostic = CompatibilityDiagnostic(app.container.launcher)
     val events = MutableSharedFlow<UiEvent>(extraBufferCapacity = 8)
     internal val translation = GameTranslationController(app, viewModelScope, beforeExternalPicker = { ignoreNextRelock = true })
@@ -1170,5 +1171,10 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun prepareExternalPicker() { ignoreNextRelock = true }
+
+    override fun onCleared() {
+        wolfCompatibility.cancel()
+        super.onCleared()
+    }
 
 }

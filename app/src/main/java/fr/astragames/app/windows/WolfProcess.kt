@@ -12,6 +12,7 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
     private val arm = android.os.Build.SUPPORTED_ABIS.first() == "arm64-v8a"
     private val wine = File(runtime, "proton/bin/wine")
     private val box = File(runtime, "box64/usr/bin/box64")
+    private val gameDrive = WolfWineDrive(storage.prefix, storage.game)
     private val temporary = File(context.cacheDir, "wolf-tmp").apply { mkdirs() }
     private val pulseSocket = File(temporary, "pulse.sock")
     private var audio: Process? = null
@@ -125,6 +126,7 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         val marker = File(storage.prefix, ".astra-ready")
         val kernel = File(storage.prefix, "drive_c/windows/syswow64/kernel32.dll")
         if (marker.isFile && marker.readText() == WolfRuntimeInstaller.REVISION && kernel.isFile && File(storage.prefix, "system.reg").isFile && File(storage.prefix, "user.reg").isFile) {
+            gameDrive.mount()
             stage(6, "Windows déjà initialisé · lancement imminent"); return
         }
         stage(6, "Initialisation de Windows · récupération d’une préparation interrompue si nécessaire…")
@@ -140,6 +142,9 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         } finally { if (boot.isAlive) boot.destroyForcibly() }
         check(File(storage.prefix, "drive_c/windows/syswow64/kernel32.dll").isFile) { "Composants Windows 32 bits manquants." }
         File(storage.prefix, ".astra-ready").writeText(WolfRuntimeInstaller.REVISION)
+        // Wine must create its default C:/Z: links before adding our game drive.
+        gameDrive.mount()
+        diagnostics?.event("Lecteur du jeu : G: → ${storage.game.canonicalPath}; Z: réservé aux chemins système")
     }
 
     fun launch(executable: String): Process {
@@ -147,9 +152,11 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         stage(7, if (arm) "Lancement du jeu via Box64 / Wine" else "Lancement du jeu via Wine x86_64")
         val file = safeFile(storage.game, executable)
         check(file.isFile && file.extension.equals("exe", true)) { "Exécutable Windows introuvable : $executable" }
-        diagnostics?.event("Espace disponible avant le jeu : ${storage.directory.usableSpace} octets")
+        gameDrive.mount()
+        val free = gameDrive.verifyWritable(requireNotNull(file.parentFile))
+        diagnostics?.event("Sauvegardes : écriture vérifiée dans le dossier du jeu ; espace disponible sur G: = $free octets ; stockage Astra = ${storage.directory.usableSpace} octets")
         diagnostics?.gameErrorLog(requireNotNull(file.parentFile), beforeLaunch = true)
-        return start(wine, listOf(file.path), workingDirectory = requireNotNull(file.parentFile))
+        return start(wine, listOf(gameDrive.executable(executable)), workingDirectory = requireNotNull(file.parentFile))
     }
     fun stop() {
         try {

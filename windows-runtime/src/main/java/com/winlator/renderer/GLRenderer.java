@@ -78,6 +78,9 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
     private final java.util.concurrent.atomic.AtomicBoolean readinessPollPending = new java.util.concurrent.atomic.AtomicBoolean();
     private String expectedGame = "";
     private long lastGameProbe;
+    private volatile int culledWindowCount, visibleWindowCount;
+    public int getCulledWindowCount() { return culledWindowCount; }
+    public int getVisibleWindowCount() { return visibleWindowCount; }
     public boolean hasPresentedGameFrame() { return gameFramePresented; }
     public void awaitGameFrame(String executable) {
         gameFramePresented = false;
@@ -96,7 +99,9 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
         xServerView.requestRender();
     }
     public long getContentFrameCount() { return contentFrames.get(); }
-    public String getPerformanceSnapshot() { return statistics.snapshotAndReset(); }
+    public String getPerformanceSnapshot() {
+        return statistics.snapshotAndReset() + " Fenêtres visibles=" + visibleWindowCount + ", masquées ignorées=" + culledWindowCount + ".";
+    }
     public void setSmoothScaling(boolean value) { smoothScaling = value; xServerView.requestRender(); }
     public void setImageScaleMode(int mode) {
         xServerView.queueEvent(() -> {
@@ -249,7 +254,10 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
 
     @Override
     public void onUpdateWindowAttributes(Window window, Bitmask mask) {
+        // Viewability/transparency changes can reveal pixels behind the window.
+        xServerView.queueEvent(this::updateScene);
         if (mask.isSet(WindowAttributes.FLAG_CURSOR)) xServerView.requestRender();
+        else xServerView.requestContentRender();
     }
 
     @Override
@@ -321,6 +329,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
             long lockStart = System.nanoTime();
             boolean shared = false;
             for (RenderableWindow window : renderableWindows) {
+                if (window.occluded) continue;
                 if (!window.content.isOffscreenStorage() && (window.content.getTexture() instanceof GPUImage ||
                     window.content.isUseSharedData() || window.content.getData() == null)) {
                     shared = true;
@@ -331,7 +340,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
                 // External writers and GPU images retain the complete synchronized path, including draw order.
                 beginWindowRendering();
                 for (RenderableWindow window : renderableWindows) {
-                    if (!window.content.isOffscreenStorage()) renderWindowDrawable(window.content, window.content.getTexture(),
+                    if (!window.occluded && !window.content.isOffscreenStorage()) renderWindowDrawable(window.content, window.content.getTexture(),
                         window.rootX, window.rootY, window.transparent, window.fullscreenTransformation, false, window.gameCandidate);
                 }
                 quadVertices.disable();
@@ -340,7 +349,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
             }
             for (RenderableWindow window : renderableWindows) {
                 Texture texture = null;
-                if (!window.content.isOffscreenStorage()) {
+                if (!window.occluded && !window.content.isOffscreenStorage()) {
                     texture = window.content.getTexture();
                     synchronized (window.content.renderLock) {
                         texture.captureUpdate();
@@ -405,8 +414,27 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
             renderableWindows.clear();
             imageWidth = imageHeight = 0;
             collectRenderableWindows(xServer.windowManager.rootWindow, xServer.windowManager.rootWindow.getX(), xServer.windowManager.rootWindow.getY());
+            cullCoveredWindows();
         }
         updateViewport();
+    }
+
+    private void cullCoveredWindows() {
+        int culled = 0, visible = 0, size = renderableWindows.size();
+        // The list is in painter order. A covered texture stays dirty until it becomes visible again.
+        // Bound candidate work in unusually large window trees; missing a cull is harmless.
+        int firstCandidate = Math.max(0, size - 256);
+        for (int i = 0; i < size; i++) {
+            RenderableWindow back = renderableWindows.get(i);
+            back.occluded = false;
+            if (back.content.isOffscreenStorage()) continue;
+            for (int j = Math.max(i + 1, firstCandidate); j < size; j++) {
+                RenderableWindow front = renderableWindows.get(j);
+                if (!front.content.isOffscreenStorage() && front.covers(back)) { back.occluded = true; break; }
+            }
+            if (back.occluded) culled++; else visible++;
+        }
+        culledWindowCount = culled; visibleWindowCount = visible;
     }
 
     private void collectRenderableWindows(Window window, int x, int y) {
@@ -477,6 +505,7 @@ public class GLRenderer implements GLSurfaceView.Renderer, WindowManager.OnWindo
                 break;
             }
         }
+        cullCoveredWindows();
     }
 
     public void setCursorVisible(boolean cursorVisible) {

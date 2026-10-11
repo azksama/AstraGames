@@ -8,9 +8,15 @@ internal enum class WolfPerformance(val label: String, val strongMemory: String,
     BALANCED("Équilibré", "1", "2", "0"),
     FAST("Rapide", "0", "3", "1"),
     STABLE("Stable", "2", "0", "0");
-    fun environment() = mapOf("BOX64_DYNAREC_SAFEFLAGS" to "2", "BOX64_DYNAREC_STRONGMEM" to strongMemory,
+    fun environment() = mapOf("BOX64_DYNAREC_SAFEFLAGS" to if (this == FAST) "1" else "2", "BOX64_DYNAREC_STRONGMEM" to strongMemory,
         "BOX64_DYNAREC_BIGBLOCK" to bigBlock, "BOX64_DYNAREC_NATIVEFLAGS" to nativeFlags,
-        "BOX64_DYNAREC_X87DOUBLE" to "1")
+        "BOX64_DYNAREC_X87DOUBLE" to "1",
+        // The faster profile reduces CALL/RET dispatch and Wine's server synchronization.
+        // Balanced/Stable retain the conservative settings for games that need them.
+        "BOX64_DYNAREC_CALLRET" to if (this == FAST) "1" else "0",
+        "BOX64_DYNAREC_FORWARD" to when (this) { FAST -> "1024"; BALANCED -> "128"; STABLE -> "0" },
+        "WINEESYNC" to if (this == FAST) "1" else "0",
+        "WINEFSYNC" to "0")
 }
 
 internal enum class WolfImageMode(val label: String) {
@@ -75,6 +81,8 @@ internal class WolfGameOptions(context: Context, id: String) {
             .put("runtime", options.runtime.name)
         prefs.edit().putString(key, data.toString()).apply()
     }
+    /** Changing only the engine preserves graphics settings, bindings and control presets. */
+    fun runtime(mode: WolfRuntimeMode) { write(json().put("runtime", mode.name)) }
     fun binding(id: String, fallback: XKeycode): XKeycode = WolfKeyboard.parse(json().optString("key_$id", fallback.name)) ?: fallback
     fun bind(id: String, code: XKeycode) {
         require(WolfControlLayout.validId(id) && WolfKeyboard.valid(code))

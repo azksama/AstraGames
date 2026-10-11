@@ -36,6 +36,9 @@ internal class NativeActivityScenario private constructor(private val activity: 
     companion object {
         fun launch(intent: Intent): NativeActivityScenario {
             val instrumentation = InstrumentationRegistry.getInstrumentation()
+            // Attach the SDK accessibility driver before an Activity opens its popup windows.
+            // Connecting for the first time inside an already open menu can omit its click actions.
+            instrumentation.uiAutomation
             val monitor = instrumentation.addMonitor(WolfNativeActivity::class.java.name, null, false)
             val activity = try {
                 instrumentation.targetContext.startActivity(Intent(intent).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))

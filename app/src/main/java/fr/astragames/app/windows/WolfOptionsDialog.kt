@@ -74,7 +74,7 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
         }
     }
     val performance = choice("Fluidité · au prochain lancement", WolfPerformance.entries.map { it.label }, original.performance.ordinal)
-    label("Rapide favorise la vitesse ; revenez à Stable si le jeu devient instable.")
+    label("Rapide réduit le travail de traduction Box64 et active la synchronisation Wine accélérée. Relancez le jeu pour l’appliquer ; revenez à Stable si le jeu devient instable.")
     val resolution = choice("Affichage Windows · au prochain lancement", WolfOptions.resolutions.map {
         if (it == "auto") "Automatique (orientation)" else it
     }, WolfOptions.resolutions.indexOf(original.resolution))

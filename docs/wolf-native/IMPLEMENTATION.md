@@ -6,13 +6,15 @@ La [validation de la bêta 16](../VALIDATION_1.12.0-beta.16.md) couvre une corre
 
 ## Choisir le moteur
 
-**Outils → Réglages Wolf RPG → Moteur** conserve les trois choix par jeu :
+**Fiche du jeu → Compatibilité → Moteur de lancement**, ainsi que **Outils → Réglages Wolf RPG → Moteur**, conserve les trois choix par jeu :
 
 - **Automatique** conserve le parcours Windows d'un jeu ayant déjà son préfixe ou son état Windows. Pour un nouveau jeu, il examine les métadonnées, cartes, pages, commandes et routes avant l'admission native. Un refus conserve son diagnostic et utilise Winlator.
 - **Natif Android · expérimental** lance directement le moteur natif. Une fonction inconnue arrête la session avec carte, événement, commun, opcode et offset, puis propose **Lancer avec Winlator**.
 - **Winlator / Windows** utilise le parcours Windows existant.
 
 L'admission statique examine tous les communs, conditions et cartes déclarées, même après une incompatibilité ou saturation du quota de512 diagnostics. Une liste tronquée est signalée comme incomplète. Les erreurs structurelles des métadonnées peuvent empêcher l'analyse des cartes. L'admission ne certifie pas la jouabilité de toutes les branches. La [validation beta.19](../VALIDATION_1.12.0-beta.19.md) décrit les lectures d'état Android, mouvements de page, macros et sauvegardes v23 ajoutés.
+
+Depuis beta.20, un appui long sur **Moteur / Wolf RPG** dans la fiche lance l’interface d’[analyse de compatibilité](COMPATIBILITY_ANALYSIS.md), indépendante du moteur de jeu. Son analyse explicite et annulable parcourt les cartes déclarées et tous les événements sans exécuter de VM. Les rapports persistants conservent jusqu’à 20 000 détails distincts et indiquent toute couverture incomplète ; les compteurs continuent après le quota. Le menu du moteur pendant le jeu ne déclenche pas cet outil.
 
 ## Architecture
 

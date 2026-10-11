@@ -5,7 +5,7 @@ API 36.1 x86_64. Les exemples officiels Wolf **2.2961 et 3.729** atteignent la p
 affichent personnages et dialogues japonais, et répondent au bouton Valider d'Astra.
 Le test ne couvre pas une partie complète, tous les jeux, ni un téléphone ARM64.
 
-Depuis la bêta 14, ce parcours reste le **secours Windows** du [moteur Android expérimental](wolf-native/IMPLEMENTATION.md). Le choix par jeu dans **Réglages Wolf RPG → Moteur** conserve Winlator pour les sessions Windows existantes et les données natives incompatibles. La progression Windows reste dans les emplacements décrits ici ; elle n'est pas convertie en sauvegarde native.
+Depuis la bêta 14, ce parcours reste le **secours Windows** du [moteur Android expérimental](wolf-native/IMPLEMENTATION.md). Le choix par jeu dans **Fiche → Compatibilité → Moteur de lancement**, aussi disponible dans les réglages Wolf RPG, conserve Winlator pour les sessions Windows existantes et les données natives incompatibles. La progression Windows reste dans les emplacements décrits ici ; elle n'est pas convertie en sauvegarde native.
 
 ## Utilisation
 
@@ -67,6 +67,10 @@ Les événements FocusIn/FocusOut et SetInputFocus du serveur X11 ont été corr
 les commandes tactiles atteignent réellement le jeu.
 
 ## Sauvegardes et récupération
+
+Depuis beta.20, le lien `prefix/dosdevices/g:` raccorde **G:** au dossier utilisé pour le jeu : dossier d’origine en mode direct, ou `game/` dans la copie privée. Wine reçoit l’exécutable sous `G:\…` ; son dossier de travail reste le parent réel de l’exécutable, y compris pour un jeu imbriqué. Les sauvegardes relatives restent aux mêmes endroits. Les liens C:/Z: sont créés par Wine avant d’ajouter G: à un nouveau préfixe ; aucun préfixe ou fichier de progression n’est supprimé pour appliquer ce changement.
+
+Android peut annoncer zéro octet libre sur son volume système `/`, alors que le dossier du jeu dispose d’espace. Un lancement depuis Z: peut donc faire échouer le contrôle Windows de place libre avec « Not enough space on HDD ». Le lecteur G: évite ce contrôle du mauvais volume. Avant le lancement, Astra vérifie une écriture temporaire dans le dossier de l’exécutable et les dossiers de sauvegarde existants, puis consigne l’espace réellement disponible dans le diagnostic. Un véritable manque d’espace ou un refus d’accès reste une erreur. Voir la [validation beta.20](VALIDATION_1.12.0-beta.20.md) pour la reproduction par les API Windows réelles.
 
 Après une fermeture normale, les fichiers changés sont réécrits vers la source si leur version
 source correspond à celle importée. Une ancienne version est gardée sous `.astra-wolf-backup-*`.
@@ -154,6 +158,14 @@ pour vérifier chaque fichier modifié avant remplacement. Les requêtes de cett
 acceptent un signal d’annulation. Les preuves de conservation, d’annulation, de migration de
 70 000 fichiers en cache et de reprise de l’APK optimisé figurent dans la
 [validation de la bêta 13](VALIDATION_1.12.0-beta.13.md).
+
+## Fluidité Wine en beta.20
+
+Le renderer repère les fenêtres rectangulaires entièrement couvertes par une fenêtre opaque dessinée au-dessus. Il évite leur capture CPU, transfert de texture et dessin GLES. Leurs pixels restent marqués comme modifiés et sont transférés quand elles redeviennent visibles. Les menus partiels, fenêtres transparentes et curseurs conservent leur rendu ; la définition du jeu et le filtre d’image ne sont pas réduits. Le diagnostic expose le nombre de fenêtres visibles et ignorées.
+
+**Outils → Réglages Wolf RPG → Fluidité → Rapide**, puis relancer le jeu, active des réglages Box64 supplémentaires : `SAFEFLAGS=1`, `CALLRET=1` et `FORWARD=1024` avec le profil rapide existant. Wine utilise eSync pour ce profil ; fSync reste désactivé. Équilibré et Stable conservent la synchronisation habituelle. Ces options correspondent à la [documentation Box64 v0.4.2](https://github.com/ptitSeb/box64/blob/v0.4.2/docs/USAGE.md) ; elles ne constituent pas une garantie de compatibilité de chaque jeu.
+
+La [validation beta.20](VALIDATION_1.12.0-beta.20.md) sépare le benchmark GLES, le parcours réel Wine de l’exemple officiel et les limites du téléphone ARM64. Le benchmark conserve les mêmes pixels, mesure un bureau statique puis un bureau modifié à chaque frame, et attend la fin du travail GPU. Il exclut la VM Wolf Windows, Box64, le décodage des images et la présentation à l’écran : son gain ne se transpose pas directement en FPS du jeu. Le compteur « Images modifiées » compte les images renouvelées ; une scène immobile peut avoir un faible compteur sans ralentissement.
 
 ## Provenance et reconstruction
 

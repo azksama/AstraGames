@@ -3,22 +3,31 @@ package fr.astragames.wolf
 /** Inspect every decoded mode; an opcode alone never establishes compatibility. */
 internal object WolfCapabilityInspector {
     private const val MAX_ISSUES = 512
-    fun inspect(game: WolfGameData, currentMapId: Int, currentMap: WolfMap, source: WolfAssetSource, mapLoader: (Int) -> WolfMap, allMaps: Boolean): WolfCapabilities {
+    fun inspect(game: WolfGameData, currentMapId: Int, currentMap: WolfMap?, source: WolfAssetSource, mapLoader: (Int) -> WolfMap,
+        allMaps: Boolean, observer: WolfCapabilityObserver? = null, issueLimit: Int = MAX_ISSUES): WolfCapabilities {
+        require(issueLimit in 1..20_000)
         val issues = linkedMapOf<List<Any>, WolfCapabilityIssue>()
         var truncated = false
+        var problemCount = 0L
+        var inspectedMapId: Int? = null
         var inspectedCommand: WolfCommand? = null
         var inspectedPage: WolfPage? = null
         fun issue(file: String, event: Int, opcode: Int, offset: Int, reason: String?, detail: String? = null) {
             if (reason == null) return
+            problemCount++
+            observer?.problem(WolfCapabilityIssue(file, event, opcode, offset, reason,
+                detail ?: inspectedCommand?.let(WolfDiagnosticOperands::command) ?: inspectedPage?.let(WolfDiagnosticOperands::page)),
+                inspectedMapId, inspectedPage?.index)
             val key = listOf(file, event, opcode, reason)
             if (key in issues) return
-            if (issues.size >= MAX_ISSUES) { truncated = true; return }
+            if (issues.size >= issueLimit) { truncated = true; return }
             // Format only retained diagnostics; no dialogue or whole command lists are kept.
             val operands = detail ?: inspectedCommand?.let(WolfDiagnosticOperands::command)
                 ?: inspectedPage?.let(WolfDiagnosticOperands::page)
             issues[key] = WolfCapabilityIssue(file, event, opcode, offset, reason, operands)
         }
         fun value(file: String, event: Int, opcode: Int, offset: Int, code: Int, write: Boolean = false, string: Boolean = false) {
+            val previousProblems = problemCount
             issue(file, event, opcode, offset, variableProblem(code, write, string))
             if (code in 1_000_000_000..1_199_999_999 || code in 1_300_000_000..1_399_999_999) {
                 val base = code / 100_000_000 * 100_000_000
@@ -41,6 +50,7 @@ internal object WolfCapabilityInspector {
                 issue(file, event, opcode, offset, "Conversion de texte150 absente de ce profil Wolf")
             if (string && code in 9_900_062..9_900_067 && (game.config.engineCompatibilityVersion ?: 0) < 300)
                 issue(file, event, opcode, offset, "Police système absente de ce profil Wolf")
+            observer?.reference(code, write, string, problemCount != previousProblems)
         }
         fun inspectCommand(file: String, event: Int, c: WolfCommand) {
             issue(file, event, c.opcode, c.offset, WolfRuntime.capabilityProblem(c))
@@ -237,9 +247,14 @@ internal object WolfCapabilityInspector {
             }
         }
         fun command(file: String, event: Int, c: WolfCommand) {
+            observer?.checkpoint()
             val previous = inspectedCommand
+            val previousProblems = problemCount
             inspectedCommand = c
-            try { inspectCommand(file, event, c) }
+            try {
+                inspectCommand(file, event, c)
+                observer?.command(c, problemCount != previousProblems)
+            }
             finally { inspectedCommand = previous }
         }
         val config = game.config
@@ -249,6 +264,7 @@ internal object WolfCapabilityInspector {
             issue("Game.dat", -1, -1, 0, "Disposition des sprites non prise en charge")
         if (config.fps !in setOf(30, 60)) issue("Game.dat", -1, -1, 0, "Cadence moteur non prise en charge")
         game.commonEvents.forEach { common ->
+            observer?.checkpoint()
             val run = common.conditionWord and 15
             if (run !in 0..3) issue("CommonEvent.dat", common.id, -1, common.offset, "Déclencheur de commun inconnu")
             if (run in 1..2 && common.argumentSettings.size == 7) {
@@ -264,7 +280,9 @@ internal object WolfCapabilityInspector {
             val tileset = game.tilesets.getOrNull(map.tilesetId)
             if (tileset == null) issue(map.name, -1, -1, 0, "Tileset absent")
             map.events.forEach { event -> event.pages.forEach { page ->
+                observer?.checkpoint()
                 val previous = inspectedPage
+                val previousProblems = problemCount
                 inspectedPage = page
                 try {
                     if (page.trigger !in 0..4) issue(map.name, event.id, -1, page.offset, "Déclencheur de page inconnu")
@@ -285,24 +303,33 @@ internal object WolfCapabilityInspector {
                         issue(map.name, event.id, -1, page.offset, "Fonction avancée de page ou transfert non implémenté")
                     if (page.route.commands.isNotEmpty()) issue(map.name, event.id, 201, page.offset, routeProblem(page.route))
                     page.commands.forEach { command(map.name, event.id, it) }
+                    observer?.page(page, problemCount != previousProblems)
                 } finally { inspectedPage = previous }
             } }
         }
         fun result(mapCount: Int, complete: Boolean): WolfCapabilities {
             val result = issues.values.toMutableList()
-            if (truncated) result += WolfCapabilityIssue("Jeu", -1, -1, 0, "Rapport limité à $MAX_ISSUES incompatibilités distinctes ; d'autres existent")
+            if (truncated) result += WolfCapabilityIssue("Jeu", -1, -1, 0, "Rapport limité à $issueLimit incompatibilités distinctes ; d'autres existent")
             return WolfCapabilities(result, mapCount, complete)
         }
-        inspectMap(currentMap)
+        if (currentMap != null) { inspectedMapId = currentMapId; inspectMap(currentMap) }
         // A full audit aggregates every map's references, including failures. Keep the
         // bounded issue budget and stream maps rather than retaining the whole game.
-        if (!allMaps) return result(1, false)
-        var mapCount = 1
+        if (!allMaps) return result(if (currentMap != null) 1 else 0, false)
+        var mapCount = if (currentMap != null) 1 else 0
         for (reference in game.maps) {
-            if (reference.id == currentMapId) continue
-            try { inspectMap(mapLoader(reference.id)) }
-            catch (error: Exception) { issue(reference.file, -1, -1, 0, "Carte non inspectable : ${error.message ?: error.javaClass.simpleName}") }
+            if (currentMap != null && reference.id == currentMapId) continue
+            observer?.checkpoint()
+            observer?.beforeMap(reference, mapCount, game.maps.size)
+            inspectedMapId = reference.id
+            var loaded = false
+            try { inspectMap(mapLoader(reference.id)); loaded = true }
+            catch (error: Exception) {
+                observer?.checkpoint() // Never turn cancellation into an incompatibility.
+                issue(reference.file, -1, -1, 0, "Carte non inspectable : ${error.message ?: error.javaClass.simpleName}")
+            }
             mapCount++
+            observer?.afterMap(reference, mapCount, game.maps.size, loaded)
         }
         // Limit retained diagnostics, never the number of maps actually inspected.
         // A truncated report must not advertise complete compatibility coverage.
@@ -355,7 +382,7 @@ internal object WolfCapabilityInspector {
     }
 
     private fun intAt(b: ByteArray, i: Int): Int = (b[i].toInt() and 255) or ((b[i + 1].toInt() and 255) shl 8) or ((b[i + 2].toInt() and 255) shl 16) or (b[i + 3].toInt() shl 24)
-    private fun routeProblem(route: WolfRoute?): String? {
+    internal fun routeProblem(route: WolfRoute?): String? {
         if (route == null) return "Route absente"
         if (route.flags and 7.inv() != 0) return "Options de route inconnues"
         // These five bytes are route-record metadata, not an instruction to change traits.

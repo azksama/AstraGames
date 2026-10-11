@@ -29,7 +29,9 @@ class WolfIntegratedRuntimeTest {
         val previousDebug = diagnostics.enabled
         val store = WolfGameOptions(context, "official-wolf-test-$sample-beta5")
         val previousOptions = store.read()
-        store.save(previousOptions.copy(resolution = "auto", imageMode = WolfImageMode.FIT))
+        val profile = InstrumentationRegistry.getArguments().getString("wolfPerformance")?.let(WolfPerformance::valueOf)
+            ?: previousOptions.performance
+        store.save(previousOptions.copy(resolution = "auto", imageMode = WolfImageMode.FIT, performance = profile))
         if (InstrumentationRegistry.getArguments().getString("wolfDebug") == "true") diagnostics.enabled = true
         try { ActivityScenario.launch<android.app.Activity>(intent).use { scenario ->
             scenario.onActivity { it.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
@@ -64,7 +66,7 @@ class WolfIntegratedRuntimeTest {
             val frameStart = android.os.SystemClock.elapsedRealtime()
             Thread.sleep(10_000)
             val fps = (renderer!!.contentFrameCount - firstFrame) * 1000.0 / (android.os.SystemClock.elapsedRealtime() - frameStart)
-            File(context.getExternalFilesDir(null), "wolf-fps.txt").writeText("Official Wolf sample; emulator x86_64; changed content images/s=$fps")
+            File(context.getExternalFilesDir(null), "wolf-fps.txt").writeText("Official Wolf sample; emulator x86_64; profile=$profile; changed content images/s=$fps")
             assertTrue("No game content frames were presented", fps > 0)
             // The official map starts with a multi-page explanation; finish it before walking.
             repeat(24) {

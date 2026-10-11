@@ -4,6 +4,8 @@ import androidx.compose.material3.Text as MaterialText
 import androidx.compose.foundation.background
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
@@ -71,6 +73,7 @@ internal fun GameDetailScreen(
     var showDiagnostic by rememberSaveable(id) { mutableStateOf(false) }
     var showLaunchProfile by rememberSaveable(id) { mutableStateOf(false) }
     var showCompatibilityActions by rememberSaveable(id) { mutableStateOf(false) }
+    var showWolfAnalysis by rememberSaveable(id) { mutableStateOf(false) }
     var descriptionExpanded by rememberSaveable(id) { mutableStateOf(true) }
     var informationExpanded by rememberSaveable(id) { mutableStateOf(false) }
     var pickFolder by rememberSaveable(id) { mutableStateOf(false) }
@@ -120,7 +123,9 @@ internal fun GameDetailScreen(
                     Row(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                         SummaryStat("Temps de jeu", state.playStats[item.id]?.totalDurationMs.asDuration(), Modifier.weight(1f))
                         SummaryStat("Lancements", item.playCount.toString(), Modifier.weight(1f))
-                        SummaryStat("Moteur", item.engine.readableEngine(), Modifier.weight(1f))
+                        if (item.engine == GameEngine.WOLF_RPG.name) WolfCompatibilityEntry(item.engine.readableEngine(),
+                            onAnalyze = { showWolfAnalysis = true }, modifier = Modifier.weight(1f))
+                        else SummaryStat("Moteur", item.engine.readableEngine(), Modifier.weight(1f))
                     }
                 }
                 if (latestUpdate != null && latestUpdate != item.version) item {
@@ -242,8 +247,12 @@ internal fun GameDetailScreen(
         icon = { Icon(Icons.Default.BuildCircle, null) },
         title = { Text("Compatibilité") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column(Modifier.heightIn(max = 420.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 Text(diagnostic?.summary ?: "Vérification en cours…")
+                if (item.engine == GameEngine.WOLF_RPG.name) {
+                    WolfRuntimePicker(item.id)
+                    HorizontalDivider(Modifier.padding(vertical = 8.dp))
+                }
                 FilledTonalButton(
                     onClick = { showCompatibilityActions = false; showDiagnostic = true; vm.diagnoseGame(item.id) },
                     modifier = Modifier.fillMaxWidth()
@@ -286,6 +295,8 @@ internal fun GameDetailScreen(
         dismissButton = { TextButton(onClick = { confirmCoverRemoval = false }) { Text("Annuler") } }
     )
     if (item != null && showTools) GameToolsSheet(item, vm) { showTools = false }
+    if (item != null && showWolfAnalysis && item.engine == GameEngine.WOLF_RPG.name)
+        WolfCompatibilityDialog(item, vm.wolfCompatibility, beforeExternal = vm::prepareExternalPicker) { showWolfAnalysis = false }
 }
 
 @Composable
