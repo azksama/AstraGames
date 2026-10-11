@@ -1,18 +1,18 @@
 # Moteur Wolf Android intégré
 
-Implémentation du 10 octobre 2026, Astra 1.12.0-beta.14 (42). Le moteur est expérimental : les fichiers des deux exemples officiels se lisent correctement, mais leur partie rencontre encore des commandes non portées. Winlator reste disponible. Ce document décrit le code livré ; les preuves d'exécution sont consignées dans [la validation de la bêta 14](../VALIDATION_1.12.0-beta.14.md).
+Le moteur Kotlin exécute les événements et rend les cartes directement dans Android. Les archives sont lues à la demande dans le dossier choisi : aucune copie générale de ses dizaines de milliers de fichiers n'est nécessaire. Winlator reste disponible pour les fonctions ou protections non prises en charge. La [couverture](RUNTIME_COVERAGE.md) et la [validation de la bêta 15](../VALIDATION_1.12.0-beta.15.md) distinguent les contrats portés, les parcours réellement exécutés et les limites.
 
 ## Choisir le moteur
 
-**Outils → Réglages Wolf RPG → Moteur** propose trois choix par jeu :
+**Outils → Réglages Wolf RPG → Moteur** conserve les trois choix par jeu :
 
-- **Automatique** : garde Winlator si le jeu possède déjà un préfixe ou un état Windows, pour préserver sa progression. Pour un nouveau jeu, lit les métadonnées puis vérifie les fonctions avant d'utiliser le natif ; une incompatibilité déclenche le secours Winlator et un diagnostic conservé.
-- **Natif expérimental** : tente directement l'interpréteur Android. Une fonction inconnue arrête la session avec fichier, événement, commande et offset, et propose **Lancer avec Winlator**.
-- **Winlator / Windows** : utilise directement le parcours existant. Les profils de lancement externes explicitement sélectionnés restent externes.
+- **Automatique** conserve le parcours Windows d'un jeu ayant déjà son préfixe ou son état Windows. Pour un nouveau jeu, il examine les métadonnées, cartes, pages, commandes et routes avant l'admission native. Un refus conserve son diagnostic et utilise Winlator.
+- **Natif Android · expérimental** lance directement le moteur natif. Une fonction inconnue arrête la session avec carte, événement, commun, opcode et offset, puis propose **Lancer avec Winlator**.
+- **Winlator / Windows** utilise le parcours Windows existant.
 
-Une admission automatique positive exige toutes les cartes et les commandes connues ; un refus définitif peut arrêter la vérification plus tôt. Elle ne certifie pas toute la sémantique de Wolf. Voir [RUNTIME_COVERAGE.md](RUNTIME_COVERAGE.md) pour la liste exacte des variantes encore refusées.
+L'admission statique examine toutes les cartes pour un résultat positif. Elle peut s'arrêter plus tôt sur une incompatibilité définitive ; le rapport indique cette différence. Elle ne certifie pas la jouabilité de toutes les branches.
 
-## Architecture effectivement livrée
+## Architecture
 
 ```mermaid
 flowchart LR
@@ -20,40 +20,51 @@ flowchart LR
     Choice --> Host[WolfNativeActivity]
     Choice --> Wine[WolfRuntimeActivity / Winlator]
     Host --> Source[AndroidWolfAssetSource : local ou SAF]
-    Source --> Core[wolf-native : formats / VM / snapshots]
+    Source --> Archive[AndroidWolfArchiveSource : accès aléatoire]
+    Archive --> Core[wolf-native : formats / VM / snapshots]
+    Source --> Core
     Core --> View[WolfNativeView : Canvas Android]
-    Core --> Audio[WolfNativeAudio : MediaPlayer]
-    Core --> Saves[WolfNativeSaveStore : AtomicFile privé]
-    Input[Tactile / touches personnalisées / clavier] --> Core
+    Core --> Audio[MediaPlayer / AudioTrack / MIDI]
+    Core --> Video[MediaCodec / EGL / Xiph JNI]
+    Core --> Saves[Sauvegardes et fichiers privés atomiques]
+    Input[Tactile / touches / clavier / manette] --> Core
     Host -->|Incompatibilité| Wine
 ```
 
-`wolf-native` est un module Kotlin/JVM sans dépendance Android, intégré au DEX de l'application. Les commandes sont exécutées par un seul worker de session. Le tick logique suit la cadence 30/60 du jeu, indépendamment de la limite d'affichage. Les frames transmis au thread principal sont regroupés ; les entrées et opérations de sauvegarde passent par le même propriétaire de VM.
+Le module `wolf-native` ne dépend pas d'Android. Une session possède sa VM, son RNG, ses variables, bases de données, pages, routes, caméra, images, entrées et effets. Un seul worker modifie cet état. Le tick logique suit la cadence du jeu ; le thread UI regroupe les frames. Une opération asynchrone reprend le tick suspendu, sans avancer artificiellement ses compteurs ni perdre les appuis reçus pendant l'attente. Le budget de 50 000 instructions par tick borne les boucles accidentelles.
 
-Les lecteurs couvrent Game.dat, CommonEvent.dat, bases de données, tilesets et cartes CP932/UTF-8, dont les blocs LZ4 observés. Les lectures et allocations comptabilisées sont bornées, avec diagnostics de troncature, valeurs invalides et budgets dépassés. Ces budgets ne constituent pas une mesure exacte du pic de mémoire JVM.
+Les lecteurs prennent en charge les enveloppes documentées de Game.dat, CommonEvent.dat, bases de données, tilesets et cartes CP932/UTF-8/LZ4. Les profils DX/Wolf et leurs chaînes de clés sont décrits dans [ARCHIVE_FORMATS.md](../../wolf-native/ARCHIVE_FORMATS.md). Les limites d'index, chemins, codecs, tailles et allocations sont vérifiées avant lecture ou expansion. Elles ne représentent pas une mesure exacte du pic de mémoire JVM.
 
-Le rendu utilise les display lists Canvas accélérées par Android, décodages asynchrones, cache de bitmaps de 96 Mio et cache de morceaux de carte de 32 Mio. Les ressources visibles sont conservées. Le rendu comprend les couches de carte, les autotiles, personnages, pics, dialogues et choix pris en charge. La peau personnalisée des fenêtres Wolf et certaines variantes avancées restent absentes ; aucune équivalence graphique complète n'est annoncée.
+## Ressources, rendu et médias
 
-Le lecteur audio utilise réellement MediaPlayer pour les formats Android, sur un thread dédié, avec journalisation des étapes de préparation et démarrage. Ce backend ne reproduit pas le synthétiseur GuruGuruSMF Windows ni toutes ses règles musicales.
+Le moteur consulte le dossier local ou le sous-dossier d'un arbre SAF choisi par l'utilisateur. Il n'indexe que les répertoires visités. Les archives utilisent les positions des entrées ; un fichier protégé ou une police WOLFX est décodé au moment où il est demandé. Les originaux restent inchangés. Les recherches insensibles à la casse refusent les ambiguïtés et les chemins qui sortent du jeu.
 
-## Accès aux ressources et cycle de vie
+Le rendu comprend les couches de carte, autotiles, personnages, collisions, fenêtres Wolf, images, textes, choix, transitions, effets et masques documentés. Le cache de bitmaps et celui des morceaux de carte sont bornés ; les ressources visibles sont conservées. Les polices propres au jeu sont résolues hors du thread UI et capturées à la création du texte : un changement ultérieur ne réécrit pas les anciennes images de texte. Une ombre facultative absente est ignorée avec diagnostic, comme dans les moteurs de référence ; une image obligatoire absente reste une erreur.
 
-Le moteur consulte le dossier sélectionné, y compris une URI de sous-dossier dans un arbre SAF parent. Il indexe seulement les répertoires qu'il visite et charge les cartes/bitmaps demandés. Il n'importe pas tout le jeu. Les quelques pistes qui nécessitent un fichier local pour MediaPlayer sont mises en cache à la demande.
+Le filtre demandé par Sys140 s'applique à l'image finale, y compris textes et rectangles. Sys148 est une préférence de fenêtre pour le prochain lancement : Astra la conserve par jeu sans modifier Game.ini. Android garde son adaptation à l'écran et le mode d'image choisi par l'utilisateur.
 
-Les chemins sont confinés au jeu ; les recherches insensibles à la casse refusent les ambiguïtés. Les appels SAF sont annulables et la fermeture invalide les lectures. Les archives Wolf protégées ne sont pas décodées par cette version : elles provoquent un refus ou un secours Windows.
+L'audio utilise MediaPlayer pour les formats Android, un synthétiseur MIDI Android et AudioTrack pour le PCM Vorbis des vidéos. Les canaux, volumes maîtres, voix SE/BGS, fades, boucles, positions et changements de tonalité portés restent séparés. Le synthétiseur Android ne reproduit pas les timbres de GuruGuruSMF Windows.
 
-Les commandes restent masquées pendant les huit étapes et n'apparaissent qu'après une première image dont les ressources sont décodées. Une attente de plus de 180 secondes produit un diagnostic. Une relance crée une session neuve ; Android ne restaure pas implicitement une VM interrompue. Pause, perte de focus, menu et verrouillage Astra relâchent les entrées et suspendent la session.
+Les vidéos MP4 passent par les décodeurs Android et SurfaceTexture/EGL ; les OGV Theora/Vorbis passent par les bibliothèques BSD Xiph épinglées dans `astra_wolfcodecs`. Les tests contrôlent les pixels et le PCM réellement décodés, ainsi que l'horloge AudioTrack. Une vidéo à une vitesse différente utilise la conversion PCM effective. Ces preuves ne certifient pas une écoute sur haut-parleur physique ou tous les profils vidéo.
+
+## Fichiers, réseau et cycle de vie
+
+Les commandes de fichiers lisent directement les originaux et écrivent dans un overlay privé par jeu. Les remplacements utilisent AtomicFile et gardent une version précédente. L'export comprend cet overlay et ses sauvegardes, sans recopier les ressources du jeu. L'encodage, le BOM, les fins de ligne et les règles CSV suivent les profils qualifiés ; un CSV facultatif absent préserve la base existante.
+
+Les téléchargements260 sont bornés et annulables. Une restauration ou un retour au titre abandonne la requête ; une réponse tardive ne remplace pas les données de la nouvelle session. La saisie clavier et la synthèse vocale sont reliées aux services Android, avec diagnostic des ressources ou voix indisponibles.
+
+Les commandes restent masquées pendant les étapes de préparation et apparaissent après une première image effectivement rendue dont les ressources obligatoires sont prêtes. Pause, perte de focus, menu et verrouillage suspendent les médias et relâchent les entrées. Une relance crée une session neuve. Les erreurs et attentes prolongées restent enregistrées dans les diagnostics.
 
 ## Contrôles et affichage
 
-Les touches Astra conservent taille, opacité, position par orientation et actions remappées. Deux doigts envoient la touche Retour configurée ; le pincement optionnel zoome de 1× à 4× et permet de déplacer l'image. Les modes Image entière / Remplir / Étirer utilisent les mêmes réglages. La taille logique du jeu est conservée : le mode Remplir rogne, le mode Étirer déforme ; aucun décor supplémentaire n'est inventé.
+Les touches conservent taille, opacité, position par orientation et actions remappées. Deux doigts envoient Retour ; le pincement optionnel zoome de 1× à 4× et permet de déplacer l'image. **Image entière** agrandit sans rogner ni déformer ; **Remplir** conserve les proportions en rognant ; **Étirer** utilise tout l'espace en modifiant les proportions. La résolution logique et le décor restent ceux du jeu.
 
-Les coordonnées tactiles sont converties vers le viewport logique. Le clic utilise le comportement porté par la VM ; le déplacement au toucher reste soumis aux collisions et déclencheurs pris en charge. L'option Direction au toucher fournit les directions maintenues. Les sources clavier, écran et boutons sont agrégées pour qu'un relâchement ne libère pas une touche encore tenue ailleurs.
+Les coordonnées tactiles sont converties dans le viewport logique. Le déplacement suit les collisions et déclencheurs portés. L'option Direction au toucher fournit des directions maintenues. Clavier, écran, manette et boutons sont agrégés pour qu'un relâchement ne libère pas une touche encore tenue par une autre source.
 
 ## Sauvegardes natives
 
-Les fichiers se trouvent dans `files/wolf-native/<SHA-256 de l'identifiant du jeu>/saves/slot-N.astrawolf`. Ils contiennent une enveloppe `ASTRA-WOLF-NATIVE-1` et un snapshot `AWNS` V2, empreinte des métadonnées et somme SHA-256. Chaque remplacement est atomique et conserve une copie `.previous`. Le chargement vérifie les bornes, CRC, chemins et empreintes avant de modifier l'état.
+Les fichiers se trouvent dans `files/wolf-native/<SHA-256 de l'identifiant du jeu>/saves/slot-N.astrawolf`. Les noms de sauvegarde demandés par le jeu utilisent des identités privées `named-<SHA-256>.astrawolf`, sans accéder à un chemin système. Le format `ASTRA-WOLF-NATIVE-1/2` enveloppe les données AWNS/AWNF avec empreinte des métadonnées, somme SHA-256 et CRC interne. Chaque remplacement est atomique et conserve une copie `.previous`.
 
-**Ces fichiers ne sont pas compatibles avec les sauvegardes Windows.** Aucune conversion ni modification du Save/SaveData original n'a lieu. Le menu de partie propose sauvegarde, chargement et export natifs ; **Outils → Sauvegardes Wolf RPG** les affiche séparément et propose leur ZIP.
+L'état conserve variables et bases mutables, personnages et routes, effets, caméra, images et animations, audio, contrôles et modifications de carte. Le codec lit aussi les anciennes sauvegardes Astra, dont le format V2 publié dans beta14. Une restauration valide l'ensemble avant de modifier la session ; elle abandonne les anciennes opérations asynchrones. Les piles d'événements et le dialogue en cours ne sont pas repris, selon le contrat de chargement qualifié.
 
-Le snapshot conserve les variables/DB, RNG, héros, événements, pics et contrôles. Il ne restaure pas la pile d'événements ni le dialogue en cours. Une route, un tween ou un son continu non sérialisé empêchent explicitement une sauvegarde plutôt que de perdre cet état silencieusement. Le chargement Windows et ses formats restent à implémenter et comparer.
+Les sauvegardes Wolf Windows restent distinctes. Aucune migration de `.sav` Windows vers AWNS n'est annoncée. Le menu propose sauvegarde, chargement et export natifs ; **Outils → Sauvegardes Wolf RPG** affiche séparément les données des deux moteurs.

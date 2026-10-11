@@ -91,9 +91,21 @@ try {
     try { await access(join(output, 'stop')); break; } catch { /* no stop request */ }
     for (const file of (await readdir(requests)).sort()) {
       if (done.has(file) || !/^[0-9A-Za-z_-]+\.json$/.test(file)) continue;
+      // A producer can still be finishing a small request. Prefer atomic rename,
+      // but do not close a valid analysis session because one write was partial.
+      let request;
+      try { request = JSON.parse((await readFile(join(requests, file), 'utf8')).replace(/^\uFEFF/, '')); }
+      catch (error) {
+        if (error instanceof SyntaxError) continue;
+        throw error;
+      }
       done.add(file);
-      const request = JSON.parse((await readFile(join(requests, file), 'utf8')).replace(/^\uFEFF/, ''));
-      if (!allowed.has(request.name)) throw new Error(`Unsupported research tool: ${request.name}`);
+      if (!allowed.has(request.name)) {
+        const error = `Unsupported research tool: ${request.name ?? '(missing name)'}`;
+        await writeFile(join(output, 'responses', file), JSON.stringify({ isError: true, error }, null, 2), { flag: 'wx' });
+        progress({ id: file.slice(0, -5), state: 'invalid-request', error });
+        continue;
+      }
       const response = await call(file.slice(0, -5), request.name, request.arguments ?? {});
       if (request.name === 'close_binary' && !response.isError && !parsed(response)?.error) opened = false;
     }

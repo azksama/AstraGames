@@ -2,7 +2,7 @@
 
 Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay ou, pour Wolf RPG, avec les moteurs intégrés Android et Windows. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
 
-Le [moteur Wolf Android expérimental](docs/wolf-native/IMPLEMENTATION.md), issu de la [recherche REA](docs/wolf-native/README.md), interprète directement les données du jeu. Sa compatibilité reste partielle ; Winlator est conservé en secours, notamment pour les deux exemples officiels et les jeux disposant déjà de sauvegardes Windows.
+Le [moteur Wolf Android expérimental](docs/wolf-native/IMPLEMENTATION.md), issu de la [recherche REA](docs/wolf-native/README.md), interprète directement les données du jeu. Les exemples officiels 2.2961 et 3.729 disposent de parcours natifs vérifiés, dont la sauvegarde depuis leur menu et la reprise après relance. Sa compatibilité reste partielle ; Winlator est conservé en secours, avec les sauvegardes Windows existantes.
 
 ## Fonctions incluses
 
@@ -193,9 +193,9 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.14](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.14). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.15](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.15). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
-**Outils → Réglages Wolf RPG → Moteur** permet de choisir Automatique, Natif expérimental ou Winlator. Automatique conserve le moteur Windows des jeux déjà joués et utilise le secours Winlator si une fonction du jeu n'est pas portée. Le moteur Android lit les ressources dans le dossier d'origine, sans transfert général, et conserve ses sauvegardes séparément. Les deux exemples officiels ne sont pas encore jouables en natif ; voir la [couverture réelle](docs/wolf-native/RUNTIME_COVERAGE.md) et la [validation de la bêta 14](docs/VALIDATION_1.12.0-beta.14.md).
+**Outils → Réglages Wolf RPG → Moteur** permet de choisir Automatique, Natif expérimental ou Winlator. Automatique conserve le moteur Windows des jeux déjà joués et utilise le secours Winlator si une fonction du jeu n'est pas portée. Le moteur Android lit les ressources dans le dossier d'origine, sans transfert général, et conserve ses sauvegardes séparément. Les parcours des exemples officiels et les limites sont détaillés dans la [couverture réelle](docs/wolf-native/RUNTIME_COVERAGE.md) et la [validation de la bêta 15](docs/VALIDATION_1.12.0-beta.15.md).
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;

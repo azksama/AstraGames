@@ -74,6 +74,9 @@ data class WolfMap(
     val events: List<WolfEvent>,
     val layoutMarker: Int,
     val modernMetadata: Int?,
+    /** SysDB map registry field 3; the MPS file itself has no looping setting. */
+    val loopX: Boolean = false,
+    val loopY: Boolean = false,
 ) {
     fun tile(x: Int, y: Int, layer: Int): Int =
         if (x in 0 until width && y in 0 until height && layer in 0 until layerCount && tiles.isNotEmpty())
@@ -120,7 +123,10 @@ data class WolfGameConfig(
     val wordSettings: IntArray,
     val strings: List<String>,
     val footer: Int,
-)
+) {
+    /** Version declared by Game.dat (u16 setting 18), not an inspected EXE version. */
+    val engineCompatibilityVersion: Int? get() = wordSettings.getOrNull(18)
+}
 
 enum class WolfDatabaseKind { USER, MUTABLE, SYSTEM }
 enum class WolfValueType { NUMBER, STRING }
@@ -165,10 +171,10 @@ data class WolfTileset(
     val tags: ByteArray,
     val passage: IntArray,
 ) {
-    /** The file reserves one empty slot plus all version-specific autotiles. */
+    /** W2 00483260: wire autotile 1 is transparent; normal chips follow its reserved slot and autotiles. */
     fun passageIndex(tile: Int): Int = when {
-        tile >= 100000 -> tile / 100000
-        tile >= 32 -> tile - 32 + autoImages.size + 1
+        tile >= 100000 -> tile / 100000 - 1
+        tile >= 0 -> tile + autoImages.size + 1
         else -> -1
     }
     fun passageForTile(tile: Int): Int = passageIndex(tile).let {

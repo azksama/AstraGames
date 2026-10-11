@@ -9,6 +9,9 @@
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
 
     <queries>
+        <intent>
+            <action android:name="android.intent.action.TTS_SERVICE" />
+        </intent>
         <package android:name="cyou.joiplay.joiplay" />
         <package android:name="cyou.joiplay.runtime.rpgmaker" />
         <package android:name="cyou.joiplay.runtime.renpy" />
@@ -65,6 +68,7 @@
         android:label="@string/app_name"
         android:roundIcon="@mipmap/astra_icon"
         android:supportsRtl="true"
+        android:usesCleartextTraffic="true"
         android:theme="@style/Theme.AstraGames">
         <provider
             android:name="androidx.core.content.FileProvider"

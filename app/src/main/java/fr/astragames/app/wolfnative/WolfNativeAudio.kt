@@ -12,6 +12,7 @@ import android.os.Looper
 import android.os.SystemClock
 import fr.astragames.wolf.NativeEffect
 import fr.astragames.wolf.WolfAssetSource
+import fr.astragames.wolf.WolfParser
 import java.io.Closeable
 import java.io.File
 import java.io.FileOutputStream
@@ -29,11 +30,12 @@ import java.util.concurrent.atomic.AtomicLong
 /** Android decoders/synthesizer, with file preparation off the UI and VM threads. */
 internal class WolfNativeAudio(
     context: Context,
-    private val source: WolfAssetSource,
+    source: WolfAssetSource,
     private val cacheDirectory: File,
     private val onError: (String) -> Unit,
     private val onPlaybackEvent: (String) -> Unit = {},
 ) : Closeable {
+    private val resourceBytes = WolfNativeResourceBytes(source)
     private val thread = HandlerThread("Wolf-native-audio").apply { start() }
     private val handler = Handler(thread.looper)
     private val main = Handler(Looper.getMainLooper())
@@ -51,25 +53,41 @@ internal class WolfNativeAudio(
         }, handler).build()
     private val closed = AtomicBoolean()
     private val serial = AtomicLong()
-    private val generations = ConcurrentHashMap<Int, Long>()
-    private val channelControls = ConcurrentHashMap<Int, ChannelControl>()
+    private val generations = ConcurrentHashMap<Pair<Int, Int>, Long>()
+    private val soundGenerations = ConcurrentHashMap<Triple<Int, Int, String>, Long>()
+    private val stoppedVoices = ConcurrentHashMap<Pair<Int, Int>, Long>()
+    private val stoppedChannels = ConcurrentHashMap<Int, Long>()
+    private val channelControls = ConcurrentHashMap<Pair<Int, Int>, ChannelControl>()
     private val prepared = ConcurrentHashMap<String, AudioFile>()
     private val ownedFiles = ConcurrentHashMap.newKeySet<File>()
     private val sessionName = "wolf-audio-${UUID.randomUUID()}-"
     private val players = linkedMapOf<Long, Playing>() // audio-thread owned
+    private val channelGains = mutableMapOf<Int, Float>() // audio-thread owned; nominal voice volumes remain unchanged
+    // Compare requests before allocating handler messages or diagnostic events. Serialize
+    // the comparison and enqueue so concurrent callers cannot reverse distinct changes.
+    private val requestedGlobalGains = IntArray(3) { 100 }
+    @Volatile private var nextSeMaster = 100
     private var paused = false
     private var focusPaused = false
     private var duck = 1f
     private var cachedBytes = 0L // synchronized with prepared
     private var lastPump = SystemClock.uptimeMillis()
 
-    private data class AudioFile(val file: File, val loopStartMs: Int = 0, val loopEndMs: Int = 0)
-    private data class ChannelControl(val order: Long, val volume: Int, val pitch: Int, val fadeTicks: Int, val fps: Int)
+    private data class AudioFile(val file: File, val loopStartMs: Int = 0, val loopEndMs: Int = 0,
+        val midi: WolfNativeMidi? = null, val logicalPath: String = "")
+    private data class ChannelControl(val order: Long, val volume: Int, val pitch: Int, val fadeTicks: Int,
+        val fps: Int, val pan: Int = 0, val position: Int = 0, val loopStart: Int = 0)
     private class Playing(val id: Long, val channel: Int, val path: String, val player: MediaPlayer,
         val effect: NativeEffect.Audio, val audio: AudioFile, var volume: Float,
         var fadeFrom: Float = 0f, var fadeTarget: Float = 0f, var fadeRemainingMs: Long = 0L,
         var fadeDurationMs: Long = 0L, var stopAfterFade: Boolean = false, var ready: Boolean = false,
-        var pitch: Int = 100, var requestedPitch: Int = effect.pitch, var started: Boolean = false)
+        var pitch: Int = 100, var requestedPitch: Int = effect.pitch, var started: Boolean = false,
+        var pan: Int = effect.pan, var position: Int = effect.position,
+        var delayMs: Long = 0L, var requestedLoopStart: Int = effect.loopStart) {
+        val voice: Int get() = effect.voice
+        val loopStart: Int get() = if (audio.midi == null && requestedLoopStart > 0) requestedLoopStart else audio.loopStartMs
+        val loopEnd: Int get() = if (audio.midi == null && requestedLoopStart > 0) 0 else audio.loopEndMs
+    }
 
     private val pump = object : Runnable {
         override fun run() {
@@ -81,6 +99,11 @@ internal class WolfNativeAudio(
                 players.values.toList().forEach { state ->
                     if (!state.ready) return@forEach
                     try {
+                        if (!state.started && state.delayMs > 0) {
+                            state.delayMs = (state.delayMs - delta).coerceAtLeast(0)
+                            if (state.delayMs == 0L) beginPlayback(state)
+                            return@forEach
+                        }
                         if (state.fadeRemainingMs > 0) {
                             state.fadeRemainingMs = (state.fadeRemainingMs - delta).coerceAtLeast(0)
                             val t = 1f - state.fadeRemainingMs.toFloat() / state.fadeDurationMs.coerceAtLeast(1)
@@ -88,9 +111,9 @@ internal class WolfNativeAudio(
                             setVolume(state)
                             if (state.fadeRemainingMs == 0L && state.stopAfterFade) { release(state); return@forEach }
                         }
-                        if (state.effect.loop && state.audio.loopEndMs > 0 &&
-                            state.player.isPlaying && state.player.currentPosition >= state.audio.loopEndMs) {
-                            state.player.seekTo(state.audio.loopStartMs.toLong(), MediaPlayer.SEEK_CLOSEST)
+                        if (state.effect.loop && state.loopEnd > 0 &&
+                            state.player.isPlaying && state.player.currentPosition >= state.loopEnd) {
+                            state.player.seekTo(state.loopStart.toLong(), MediaPlayer.SEEK_CLOSEST)
                         }
                     } catch (error: Exception) { failure(state.path, error); release(state) }
                 }
@@ -104,24 +127,64 @@ internal class WolfNativeAudio(
         handler.post(pump)
     } }
 
+    /** Sys100/101 changes playing music; Sys102 is sampled only when a new SE is requested. */
+    fun setGlobalGain(channel: Int, percentage: Int) {
+        if (closed.get()) return
+        if (channel !in 0..2 || percentage < 0) {
+            failure("Sys${100 + channel}", IllegalArgumentException("gain global hors plage : canal $channel, $percentage %"))
+            return
+        }
+        synchronized(requestedGlobalGains) {
+            if (closed.get() || requestedGlobalGains[channel] == percentage) return
+            requestedGlobalGains[channel] = percentage
+            if (channel == 2) {
+                nextSeMaster = percentage
+                event("global-gain", channel, detail = "percentage=$percentage futureVoicesOnly=true")
+                return
+            }
+            handler.post {
+                if (closed.get()) return@post
+                channelGains[channel] = percentage / 100f
+                val voices = players.values.filter { it.channel == channel }
+                voices.forEach { state ->
+                    if (!state.ready) return@forEach
+                    try {
+                        setVolume(state)
+                        event("gain-applied", channel, state.path,
+                            "nominal=${state.volume} gain=${channelGains[channel]} effective=${effectiveVolume(state)} playing=${state.player.isPlaying} positionMs=${state.player.currentPosition} id=${state.id}")
+                    } catch (error: Exception) { failure(state.path, error); release(state) }
+                }
+                event("global-gain", channel, detail = "percentage=$percentage voices=${voices.size}")
+            }
+        }
+    }
+
     fun apply(effect: NativeEffect.Audio, logicalFps: Int = 60) {
         if (closed.get()) return
         val requestedPath = effect.path
+        val seMaster = nextSeMaster
+        if (effect.channel == 2 && !effect.stop && !requestedPath.isNullOrBlank() && seMaster == 0) {
+            event("muted-before-load", effect.channel, requestedPath)
+            return
+        }
         event(if (effect.stop) "stop-requested" else if (requestedPath.isNullOrBlank()) "update-requested" else "play-requested",
-            effect.channel, requestedPath, "volume=${effect.volume} pitch=${effect.pitch} loop=${effect.loop} fadeTicks=${effect.fadeTicks}")
+            effect.channel, requestedPath, "volume=${effect.volume} pitch=${effect.pitch} loop=${effect.loop} fadeTicks=${effect.fadeTicks} voice=${effect.voice} pan=${effect.pan} position=${effect.position} delayTicks=${effect.delayTicks}")
         val generation = serial.incrementAndGet()
+        val voice = effect.channel to effect.voice
         // BGM/BGS and looping channels replace previous requests. One-shot SEs overlap.
         val single = effect.channel < 2 || effect.loop || effect.stop || requestedPath.isNullOrBlank()
-        if (single && (effect.stop || !requestedPath.isNullOrBlank())) generations[effect.channel] = generation
+        if (effect.stop) {
+            if (effect.voice == -1) stoppedChannels[effect.channel] = generation else stoppedVoices[voice] = generation
+        } else if (single && !requestedPath.isNullOrBlank()) generations[voice] = generation
         if (effect.stop || requestedPath.isNullOrBlank()) {
-            if (!effect.stop) channelControls[effect.channel] = ChannelControl(generation, effect.volume, effect.pitch, effect.fadeTicks, logicalFps)
+            if (!effect.stop) channelControls[voice] = ChannelControl(generation, effect.volume, effect.pitch, effect.fadeTicks, logicalFps, effect.pan, effect.position, effect.loopStart)
             handler.post {
-                if (!closed.get()) players.values.filter { it.channel == effect.channel }.toList().forEach { state ->
+                if (!closed.get()) players.values.filter { it.channel == effect.channel && (effect.voice == -1 || it.voice == effect.voice) }.toList().forEach { state ->
                     try {
                         if (effect.stop) {
                             if (effect.fadeTicks > 0 && state.ready) fade(state, 0f, effect.fadeTicks, logicalFps, true) else release(state)
                         } else {
-                            control(state, ChannelControl(generation, effect.volume, effect.pitch, effect.fadeTicks, logicalFps))
+                            control(state, ChannelControl(generation, effect.volume, effect.pitch, effect.fadeTicks, logicalFps, effect.pan, effect.position, effect.loopStart))
                         }
                     } catch (error: Exception) { failure(state.path, error); release(state) }
                 }
@@ -130,13 +193,17 @@ internal class WolfNativeAudio(
         }
         val path = try { WolfNativeResources.logicalPath(requestedPath) }
         catch (error: Exception) { failure(requestedPath, error); return }
+        val soundKey = Triple(effect.channel, effect.voice, path)
+        if (!single) soundGenerations[soundKey] = generation
         try {
             io.execute {
                 try {
-                    val audio = materialize(path)
+                    val audio = materialize(path, effect.loopStart)
                     handler.post {
-                        if (!closed.get() && (!single || generations[effect.channel] == generation))
-                            start(effect, audio, path, generation, single, logicalFps)
+                        if (!closed.get() && (stoppedChannels[effect.channel] ?: 0) < generation &&
+                            (stoppedVoices[voice] ?: 0) < generation &&
+                            (if (single) generations[voice] == generation else soundGenerations[soundKey] == generation))
+                            start(effect, audio, path, generation, single, logicalFps, seMaster)
                     }
                 } catch (error: Exception) { failure(path, error) }
             }
@@ -145,16 +212,45 @@ internal class WolfNativeAudio(
         }
     }
 
-    private fun materialize(path: String): AudioFile {
-        prepared[path]?.let { return it }
-        val bytes = source.read(path)
+    fun cache(effect: NativeEffect.AudioCache) {
+        if (closed.get()) return
+        if (effect.operation == 1) {
+            val path = effect.path ?: return
+            try { io.execute {
+                try { materialize(WolfNativeResources.logicalPath(path)); event("preloaded", path = path) }
+                catch (error: Exception) { if (!closed.get()) failure(path, error) }
+            } } catch (error: Exception) { failure(path, error) }
+        } else handler.post {
+            if (closed.get()) return@post
+            val usedFiles = players.values.mapTo(hashSetOf()) { it.audio.file }
+            synchronized(prepared) {
+                val released = prepared.entries.filter { (path, value) -> value.file !in usedFiles &&
+                    (effect.operation == 3 || value.logicalPath == effect.path) }
+                released.forEach { (path, value) ->
+                    prepared.remove(path); cachedBytes -= value.file.length()
+                    // Keep owned files until close: an asynchronous pending player can still
+                    // hold the prepared descriptor after its cache entry has been released.
+                }
+                event("cache-released", path = effect.path, detail = "assets=${released.size}")
+            }
+        }
+    }
+
+    private fun materialize(path: String, loopOrKey: Int = 0): AudioFile {
+        val payloadPath = WolfNativeResourceBytes.payloadPath(path)
+        val cacheKey = if (payloadPath.substringAfterLast('.').equals("mid", true) || payloadPath.substringAfterLast('.').equals("midi", true)) "$path#$loopOrKey" else path
+        prepared[cacheKey]?.let { return it }
+        val original = resourceBytes.read(WolfParser.rootAssetPath(path), 64 * 1024 * 1024)
+        val midi = WolfNativeMidi.parse(original)
+        require(midi != null || loopOrKey >= 0) { "Position de boucle négative pour un son échantillonné" }
+        val bytes = midi?.transpose(original, loopOrKey) ?: original
         require(bytes.isNotEmpty() && bytes.size <= 64 * 1024 * 1024) { "fichier audio vide ou dépassant 64 Mio" }
         require(!closed.get()) { "session audio fermée" }
-        val suffix = path.substringAfterLast('.', "bin").lowercase().takeIf { it.matches(Regex("[a-z0-9]{1,6}")) } ?: "bin"
-        val digest = MessageDigest.getInstance("SHA-256").digest(path.toByteArray(Charsets.UTF_8))
+        val suffix = payloadPath.substringAfterLast('.', "bin").lowercase(java.util.Locale.ROOT).takeIf { it.matches(Regex("[a-z0-9]{1,6}")) } ?: "bin"
+        val digest = MessageDigest.getInstance("SHA-256").digest(cacheKey.toByteArray(Charsets.UTF_8))
             .joinToString("") { "%02x".format(it) }
         synchronized(prepared) {
-            prepared[path]?.let { return it }
+            prepared[cacheKey]?.let { return it }
             require(!closed.get()) { "session audio fermée" }
             require(cachedBytes + bytes.size <= 256L * 1024 * 1024) { "cache audio de la session dépassant 256 Mio" }
             require(cacheDirectory.isDirectory || cacheDirectory.mkdirs()) { "cache audio non accessible" }
@@ -166,53 +262,51 @@ internal class WolfNativeAudio(
             require(temporary.renameTo(file)) { "écriture atomique du cache audio impossible" }
             ownedFiles.remove(temporary); ownedFiles += file
             val loop = vorbisLoop(bytes)
-            val result = AudioFile(file, loop.first, loop.second)
+            val result = AudioFile(file, loop.first, loop.second, midi, path)
             cachedBytes += bytes.size
-            prepared[path] = result
+            prepared[cacheKey] = result
             return result
         }
     }
 
-    private fun start(effect: NativeEffect.Audio, audio: AudioFile, path: String, id: Long, single: Boolean, fps: Int) {
-        if (single) players.values.filter { it.channel == effect.channel }.toList().forEach(::release)
-        else if (players.values.count { it.channel >= 2 } >= 16) {
-            failure(path, IllegalStateException("plus de 16 effets sonores simultanés")); return
+    private fun start(effect: NativeEffect.Audio, audio: AudioFile, path: String, id: Long, single: Boolean, fps: Int, seMaster: Int) {
+        players.values.filter { it.channel == effect.channel && it.voice == effect.voice && (single || it.path == path) }.toList().forEach(::release)
+        if (!single && players.values.count { it.channel >= 2 } >= 256) {
+            failure(path, IllegalStateException("plus de 256 effets sonores simultanés")); return
         }
         val player = MediaPlayer()
-        val targetVolume = effect.volume.coerceIn(0, 100) / 100f
+        val targetVolume = if (effect.channel == 2) maxOf(1L, effect.volume.coerceIn(0, 100).toLong() * seMaster / 100).coerceAtMost(100) / 100f
+            else effect.volume.coerceIn(0, 100) / 100f
         val state = Playing(id, effect.channel, path, player, effect, audio,
-            if (effect.fadeTicks > 0) 0f else targetVolume)
+            if (effect.fadeTicks > 0) 0f else targetVolume, delayMs = effect.delayTicks.toLong() * 1000 / fps.coerceIn(1, 240))
         players[id] = state
         try {
             if (effect.fadeTicks > 0) fade(state, targetVolume, effect.fadeTicks, fps)
-            channelControls[effect.channel]?.takeIf { it.order > id }?.let { control(state, it) }
+            channelControls[effect.channel to effect.voice]?.takeIf { it.order > id }?.let { control(state, it) }
             player.setAudioAttributes(attributes)
             player.setDataSource(audio.file.absolutePath)
-            player.isLooping = effect.loop && audio.loopStartMs == 0 && audio.loopEndMs == 0
+            player.isLooping = effect.loop && state.loopStart == 0 && state.loopEnd == 0
             player.setOnPreparedListener {
                 if (closed.get() || players[id] !== state) { release(state); return@setOnPreparedListener }
                 state.ready = true
                 try {
                     event("prepared", state.channel, state.path, "durationMs=${player.duration} id=${state.id}")
-                    if (effect.loop && (audio.loopStartMs > 0 || audio.loopEndMs > 0)) {
+                    if (effect.loop && (state.loopStart > 0 || state.loopEnd > 0)) {
                         val duration = player.duration
-                        require(duration > audio.loopStartMs && (audio.loopEndMs == 0 || audio.loopEndMs in (audio.loopStartMs + 1)..duration)) {
-                            "bornes de boucle Vorbis invalides : ${audio.loopStartMs}–${audio.loopEndMs} ms pour $duration ms"
+                        require(duration > state.loopStart && (state.loopEnd == 0 || state.loopEnd in (state.loopStart + 1)..duration)) {
+                            "bornes de boucle invalides : ${state.loopStart}–${state.loopEnd} ms pour $duration ms"
                         }
                     }
                     changePitch(state, state.requestedPitch)
                     setVolume(state)
-                    if (!paused && !focusPaused) {
-                        player.start()
-                        state.started = player.isPlaying
-                        event("started", state.channel, state.path, "playing=${state.started} id=${state.id} volume=${state.volume} pitch=${state.pitch}")
-                    }
+                    seek(state, state.position)
+                    if (!paused && !focusPaused && state.delayMs == 0L) beginPlayback(state)
                 } catch (error: Exception) { failure(path, error); release(state) }
             }
             player.setOnCompletionListener {
-                if (!closed.get() && effect.loop && (audio.loopStartMs > 0 || audio.loopEndMs > 0)) {
+                if (!closed.get() && effect.loop && (state.loopStart > 0 || state.loopEnd > 0)) {
                     try {
-                        player.seekTo(audio.loopStartMs.toLong(), MediaPlayer.SEEK_CLOSEST)
+                        player.seekTo(state.loopStart.toLong(), MediaPlayer.SEEK_CLOSEST)
                         if (!paused && !focusPaused) player.start()
                     } catch (error: Exception) { failure(path, error); release(state) }
                 } else release(state)
@@ -226,6 +320,16 @@ internal class WolfNativeAudio(
 
     private fun control(state: Playing, control: ChannelControl) {
         state.requestedPitch = control.pitch
+        state.pan = control.pan
+        if (state.audio.midi == null) {
+            require(control.loopStart >= 0) { "Position de boucle négative" }
+            if (state.ready && state.effect.loop && control.loopStart > 0)
+                require(control.loopStart < state.player.duration) { "Début de boucle hors de la piste" }
+            state.requestedLoopStart = control.loopStart
+            state.player.isLooping = state.effect.loop && state.loopStart == 0 && state.loopEnd == 0
+            if (state.ready) event("loop-updated", state.channel, state.path, "startMs=${state.loopStart} endMs=${state.loopEnd} id=${state.id}")
+        }
+        if (control.position > 0) { state.position = control.position; if (state.ready) seek(state, control.position) }
         changePitch(state, control.pitch)
         val volume = control.volume.coerceIn(0, 100) / 100f
         if (control.fadeTicks > 0) fade(state, volume, control.fadeTicks, control.fps)
@@ -234,6 +338,7 @@ internal class WolfNativeAudio(
             state.volume = volume
             if (state.ready) setVolume(state)
         }
+        if (state.ready) stereoEvent(state)
     }
 
     private fun changePitch(state: Playing, pitch: Int) {
@@ -249,9 +354,35 @@ internal class WolfNativeAudio(
     }
 
     private fun setVolume(state: Playing) {
-        val volume = (state.volume * duck).coerceIn(0f, 1f)
-        state.player.setVolume(volume, volume)
+        val volume = effectiveVolume(state)
+        val pan = state.pan.coerceIn(-255, 255) / 255f
+        val left = volume * if (pan > 0) 1f - pan else 1f
+        val right = volume * if (pan < 0) 1f + pan else 1f
+        state.player.setVolume(left, right)
     }
+
+    private fun stereoEvent(state: Playing) {
+        val volume = effectiveVolume(state); val pan = state.pan / 255f
+        event("stereo-volume", state.channel, state.path,
+            "voice=${state.voice} left=${volume * if (pan > 0) 1f - pan else 1f} right=${volume * if (pan < 0) 1f + pan else 1f} pan=${state.pan} id=${state.id}")
+    }
+
+    private fun seek(state: Playing, position: Int) {
+        if (position <= 0) return
+        val millis = state.audio.midi?.millis(position) ?: position
+        state.player.seekTo(millis.toLong(), MediaPlayer.SEEK_CLOSEST)
+        event("seek", state.channel, state.path, "voice=${state.voice} position=$position positionMs=$millis id=${state.id}")
+    }
+
+    private fun beginPlayback(state: Playing) {
+        state.player.start(); state.started = state.player.isPlaying
+        stereoEvent(state)
+        event("started", state.channel, state.path,
+            "playing=${state.started} id=${state.id} voice=${state.voice} volume=${state.volume} effectiveVolume=${effectiveVolume(state)} pitch=${state.pitch} positionMs=${state.player.currentPosition}")
+    }
+
+    private fun effectiveVolume(state: Playing): Float =
+        (state.volume * (channelGains[state.channel] ?: 1f) * duck).coerceIn(0f, 1f)
 
     private fun fade(state: Playing, target: Float, ticks: Int, fps: Int, stop: Boolean = false) {
         state.fadeFrom = state.volume; state.fadeTarget = target
@@ -273,7 +404,7 @@ internal class WolfNativeAudio(
                         state.player.pause()
                         event("paused", state.channel, state.path, "playing=${state.player.isPlaying} positionMs=${state.player.currentPosition} id=${state.id}")
                     }
-                } else if (!state.player.isPlaying) {
+                } else if (!state.player.isPlaying && state.delayMs == 0L) {
                     state.player.start()
                     val action = if (state.started) "resumed" else "started"
                     state.started = state.player.isPlaying
@@ -310,6 +441,7 @@ internal class WolfNativeAudio(
 
     override fun close() {
         if (!closed.compareAndSet(false, true)) return
+        resourceBytes.close()
         io.shutdownNow()
         handler.post {
             handler.removeCallbacksAndMessages(null)
@@ -322,6 +454,7 @@ internal class WolfNativeAudio(
                 val root = cacheDirectory.canonicalFile
                 ownedFiles.forEach { file -> if (file.canonicalFile.parentFile == root && file.name.startsWith(sessionName)) file.delete() }
                 ownedFiles.clear(); prepared.clear(); channelControls.clear(); generations.clear()
+                soundGenerations.clear(); stoppedVoices.clear(); stoppedChannels.clear()
             }, "Wolf-native-audio-close").apply { isDaemon = true; start() }
         }
     }

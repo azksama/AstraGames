@@ -1,0 +1,3 @@
+# Native reference vectors have published byte-level hashes; preserve generator line endings.
+wolf-native/src/test/resources/*.tsv -text
+wolf-native/src/test/resources/**/*.tsv -text

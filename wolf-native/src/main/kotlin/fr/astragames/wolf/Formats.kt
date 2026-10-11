@@ -48,7 +48,14 @@ object WolfFormats {
         } else {
             reader.require(tileCount * 4 <= reader.remaining, "truncated tile matrix")
             reader.allocate(tileCount * 4 + 24)
-            IntArray(tileCount.toInt()) { reader.int() }
+            // MPS stores each layer by column (X then Y). WolfMap's portable
+            // contract is row-major; transpose once while reading, without a
+            // second matrix allocation. W2 00418e20 and W3 009f6fe0 agree.
+            IntArray(tileCount.toInt()).also { matrix ->
+                for (layer in 0 until layerCount) for (x in 0 until width) for (y in 0 until height) {
+                    matrix[(layer * height + y) * width + x] = reader.int()
+                }
+            }
         }
         val events = List(eventCount) {
             reader.allocate(48)
@@ -74,14 +81,19 @@ object WolfFormats {
 
     internal fun parseCommonEvents(data: ByteArray, name: String, budget: WolfParseBudget): List<WolfCommon> {
         budget.input(data.size, name)
-        val source = WolfReader(data, name, budget = budget)
+        val decoded = WolfMetadataCrypt.decode(data, WolfMetadataKind.COMMON, name, budget)
+        val source = WolfReader(decoded.bytes, name, budget = budget)
         val magic = source.bytes(10)
         val encoding = encoding(magic[6].toInt() and 0xff, source)
         magic[6] = 0
         source.require(magic.contentEquals(commonMagic), "unsupported/protected common-event header")
         val version = source.byte()
-        source.require(version == 0x8f || version == 0x93, "unsupported common-event version $version")
-        val packed = version == 0x93
+        // WolfTL/CommonEvents.hpp treats both 0x93 and 0xcc as the packed
+        // 3.50 command dialect. These are envelopes, not disposable markers:
+        // the payload contains a raw LZ4 block and every command has an
+        // additional length-prefixed extension, including route commands.
+        val packed = version == 0x93 || version == 0xcc
+        source.require(version in 0x8f..0x92 || packed, "unsupported common-event version $version")
         val payload = if (packed) unpack(source) else source.remainingBytes()
         source.end()
         val reader = WolfReader(payload, "$name:payload", encoding, budget)
@@ -120,7 +132,12 @@ object WolfFormats {
                 argumentNames, modes, stringOptions, numericOptions, defaults, color, localNames,
                 metadataExtra, returnName, returnValue, offset)
         }
-        reader.expect(if (packed) 0x92 else 0x8f)
+        // The CommonEvent footer is independent of its version. WolfTL and
+        // UberWolf retain this byte and validate >= 0x89 plus exact EOF; e.g.
+        // the official 0x93 fixture ends in 0x92. Do not require version ==
+        // footer or consume a footer outside the decompressed payload.
+        val terminator = reader.byte()
+        reader.require(terminator >= 0x89, "invalid common-event file terminator $terminator")
         reader.end()
         return events
     }
@@ -129,7 +146,8 @@ object WolfFormats {
 
     internal fun parseGame(data: ByteArray, name: String, budget: WolfParseBudget): WolfGameConfig {
         budget.input(data.size, name)
-        val reader = WolfReader(data, name, budget = budget)
+        val decoded = WolfMetadataCrypt.decode(data, WolfMetadataKind.GAME, name, budget)
+        val reader = WolfReader(decoded.bytes, name, budget = budget)
         val magic = reader.bytes(10)
         val encoding = encoding(magic[9].toInt() and 0xff, reader)
         magic[9] = 0
@@ -138,13 +156,19 @@ object WolfFormats {
         val byteSettings = reader.bytes(reader.count("game byte settings"))
         reader.require(byteSettings.size in 21..64, "unsupported game byte-settings length ${byteSettings.size}")
         val count = reader.count("game string", 5)
-        reader.require(count in 9..14, "unsupported game string-settings count $count")
+        // GameDat.hpp defines eight base entries, then the subtitle (9),
+        // four Pro entries (13) and an optional final entry (14). Counts
+        // 10..12 are not intermediate layouts of that structure.
+        reader.require(count in setOf(8, 9, 13, 14), "unsupported game string-settings count $count")
         // The key at index 2 is a byte array, not necessarily text. It is not
         // needed for these unprotected files and is never exposed as a title.
         val strings = List(count) { if (it == 2) { reader.bytes(reader.count("key")); "" } else reader.string() }
         reader.require(strings[1] == "0000-0000", "unexpected game serial marker")
         val fileSize = reader.unsigned("file size")
-        reader.require(fileSize == data.size - 1, "Game.dat file-size marker mismatch")
+        // The clear notice prefix is outside this editor size field. Encrypted
+        // wrappers may instead retain their physical size (WolfTL preserves it).
+        reader.require(fileSize == decoded.bytes.size - 1 || (decoded.encrypted && fileSize == data.size - 1),
+            "Game.dat file-size marker mismatch")
         reader.int() // Editor-owned metadata; retained source bytes are not written.
         val wordCount = reader.count("game word settings", 2)
         reader.require(wordCount in 19..64, "unsupported game word-settings length $wordCount")
@@ -174,7 +198,9 @@ object WolfFormats {
     internal fun parseDatabase(projectBytes: ByteArray, dataBytes: ByteArray, name: String, budget: WolfParseBudget): WolfDatabase {
         budget.input(projectBytes.size, "$name.project")
         budget.input(dataBytes.size, "$name.dat")
-        val source = WolfReader(dataBytes, "$name.dat", budget = budget)
+        val decoded = WolfMetadataCrypt.decode(dataBytes, WolfMetadataKind.DATABASE, "$name.dat", budget)
+        val decodedProject = WolfMetadataCrypt.project(projectBytes, decoded.projectKey, "$name.project", budget)
+        val source = WolfReader(decoded.bytes, "$name.dat", budget = budget)
         val magic = source.bytes(10)
         val encoding = encoding(magic[6].toInt() and 0xff, source)
         magic[6] = 0
@@ -184,7 +210,7 @@ object WolfFormats {
         val payload = if (version == 0xc4) unpack(source) else source.remainingBytes()
         source.end()
         val reader = WolfReader(payload, "$name.dat:payload", encoding, budget)
-        val project = WolfReader(projectBytes, "$name.project", encoding, budget)
+        val project = WolfReader(decodedProject, "$name.project", encoding, budget)
         val types = List(project.count("database type", 24)) { projectType(project) }
         project.end()
         val typeCount = reader.count("database type", 16)
@@ -228,14 +254,17 @@ object WolfFormats {
 
     internal fun parseTilesets(data: ByteArray, name: String, budget: WolfParseBudget): List<WolfTileset> {
         budget.input(data.size, name)
-        val reader = WolfReader(data, name, budget = budget)
+        val decoded = WolfMetadataCrypt.decode(data, WolfMetadataKind.TILESET, name, budget)
+        val reader = WolfReader(decoded.bytes, name, budget = budget)
         val magic = reader.bytes(10)
         val encoding = encoding(magic[6].toInt() and 0xff, reader)
         magic[6] = 0
         reader.require(magic.contentEquals(dataMagic), "unsupported/protected tileset header")
         reader.encoding = encoding
         val version = reader.byte()
-        reader.require(version == 209 || version == 210, "unsupported tileset version $version")
+        // D3 in the distributed Pro 3.69 game preserves all 31 strings and both
+        // property blocks. Future tags still need an independently observed body.
+        reader.require(version in 209..211, "unsupported tileset version $version")
         val result = List(reader.count("tileset", 90)) { index ->
             reader.allocate(64 + 31 * 8 + 24)
             val title = reader.string()

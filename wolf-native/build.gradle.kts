@@ -13,4 +13,5 @@ dependencies {
 tasks.test {
     // Official research samples remain local and are never packaged in the app.
     systemProperty("wolf.fixtureRoot", rootProject.layout.projectDirectory.dir("build/wolf-research").asFile.absolutePath)
+    systemProperty("wolf.projectRoot", rootProject.layout.projectDirectory.asFile.absolutePath)
 }

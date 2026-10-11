@@ -18,11 +18,17 @@ android {
         applicationId = "fr.astragames.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 42
-        versionName = "1.12.0-beta.14"
+        versionCode = 43
+        versionName = "1.12.0-beta.15"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
+        ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
     }
+
+    externalNativeBuild { cmake {
+        path = file("src/main/cpp/CMakeLists.txt")
+        version = "3.22.1"
+    } }
 
     buildTypes {
         release {

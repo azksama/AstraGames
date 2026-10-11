@@ -12,7 +12,13 @@ internal data class EventAddress(val map: Int, val event: Int = -1, val common: 
 internal class WolfVariables(
     private val databases: Map<WolfDatabaseKind, WolfDatabase>,
     private val systemValue: (Int, EventAddress) -> Int?,
+    private val systemString: (Int, EventAddress) -> String? = { _, _ -> null },
+    private val randomValue: (Int) -> Int = { error("Générateur aléatoire natif absent") },
+    private val systemWrite: (Int, Int) -> Unit = { _, _ -> },
+    private val systemStringWrite: (Int, String) -> Boolean = { _, _ -> false },
+    private val compatibilityVersion: Int = 0,
 ) {
+    constructor(databases: Map<WolfDatabaseKind, WolfDatabase>, systemValue: (Int, EventAddress) -> Int?) : this(databases, systemValue, { _, _ -> null })
     val numbers = linkedMapOf<Int, Int>()
     val strings = linkedMapOf<Int, String>()
     val self = linkedMapOf<Triple<Int, Int, Int>, Int>()
@@ -22,10 +28,12 @@ internal class WolfVariables(
     val systemStrings = linkedMapOf<Int, String>()
     val mutableNumbers = linkedMapOf<Triple<Int, Int, Int>, Int>()
     val mutableStrings = linkedMapOf<Triple<Int, Int, Int>, String>()
+    val mutableRows = linkedMapOf<Int, Int>()
+    val imports = WolfDatabaseChanges(databases)
 
     fun clear() {
         numbers.clear(); strings.clear(); self.clear(); common.clear(); commonStrings.clear()
-        system.clear(); systemStrings.clear(); mutableNumbers.clear(); mutableStrings.clear()
+        system.clear(); systemStrings.clear(); mutableNumbers.clear(); mutableStrings.clear(); mutableRows.clear(); imports.clear()
     }
 
     fun read(code: Int, address: EventAddress): Int = when (code) {
@@ -35,11 +43,11 @@ internal class WolfVariables(
         in 1_600_000..1_699_999 -> common[address.common to (code % 100)] ?: numericPrefix(commonStrings[address.common to (code % 100)] ?: "")
         in 2_000_000..2_999_999 -> numbers[code - 2_000_000] ?: 0
         in 3_000_000..3_999_999 -> numericPrefix(strings[code - 3_000_000] ?: "")
+        in 8_000_000..8_999_999 -> randomValue(code % 8_000_000)
         in 9_000_000..9_099_999 -> {
             val id = code % 100_000
             require(id in SUPPORTED_SYSTEM_READS) { "Variable système non prise en charge : $code" }
-            require(id !in setOf(8, 73) || id in system) { "Valeur initiale système non établie : $code ; une écriture explicite est nécessaire" }
-            systemValue(id, address) ?: system[id] ?: 0
+            systemValue(id, address) ?: system[id] ?: error("Valeur initiale système non établie : $code ; une écriture explicite est nécessaire")
         }
         in 9_100_000..9_199_999 -> systemValue(code, address) ?: error("État de personnage non pris en charge : $code")
         in 15_000_000..15_999_999 -> common[((code - 15_000_000) / 100) to (code % 100)] ?: 0
@@ -63,7 +71,23 @@ internal class WolfVariables(
                 require(id in SUPPORTED_SYSTEM_WRITES) { "Écriture système non prise en charge : $code" }
                 require(id != 8 || value in 1..1024) { "Taille de police système hors capacité : $value" }
                 require(id != 73 || value in 0..1) { "Contrôle tactile système invalide : $value" }
-                system[id] = value
+                require(id != 38 || value in 0..3) { "Permissions pendant la saisie invalides : $value" }
+                require(id != 125 || value in 1..10) { "Épaisseur de police système invalide : $value" }
+                require(id != 140 || compatibilityVersion >= 355 && value in 0..1) { "Filtre d'affichage système invalide ou absent du profil Wolf : $value" }
+                require(id != 148 || compatibilityVersion >= 330) { "Échelle du prochain lancement absente de ce profil Wolf" }
+                require(id != 150 || compatibilityVersion >= 350) { "Conversion de texte150 absente de ce profil Wolf" }
+                require(id !in 129..130 || compatibilityVersion >= 350) { "Facteur diagonal absent de ce profil Wolf" }
+                // W2 setter4425d0 stores Sys102 signed, but clamps Sys100/101 at zero.
+                // W3 applies that lower clamp to all three gains; neither profile caps at100.
+                val stored = when {
+                    id in 15..16 -> value.coerceAtLeast(1)
+                    id in 100..101 || id == 102 && compatibilityVersion >= 300 -> value.coerceAtLeast(0)
+                    id in 129..130 -> value.coerceIn(0, 10_000)
+                    id == 150 -> value.coerceIn(0, 1)
+                    else -> value
+                }
+                if (id in 52..57) WolfControlBindings.write(system, id, stored, compatibilityVersion)
+                else { system[id] = stored; systemWrite(id, stored) }
             }
             in 15_000_000..15_999_999 -> common[((code - 15_000_000) / 100) to (code % 100)] = value
             in 1_100_000_000..1_199_999_999 -> {
@@ -78,7 +102,7 @@ internal class WolfVariables(
         in 1_600_000..1_699_999 -> commonStrings[address.common to (code % 100)] ?: ""
         in 3_000_000..3_999_999 -> strings[code - 3_000_000] ?: ""
         in 15_000_000..15_999_999 -> commonStrings[((code - 15_000_000) / 100) to (code % 100)] ?: ""
-        in 9_900_000..9_999_999 -> error("Chaîne système non prise en charge : $code")
+        in 9_900_000..9_999_999 -> systemString(code % 100_000, address) ?: systemStrings[code % 100_000] ?: error("Chaîne système non prise en charge : $code")
         in 1_000_000_000..1_099_999_999, in 1_100_000_000..1_199_999_999, in 1_300_000_000..1_399_999_999 -> {
             val base = code / 100_000_000 * 100_000_000
             val kind = when (base) { 1_000_000_000 -> WolfDatabaseKind.USER; 1_100_000_000 -> WolfDatabaseKind.MUTABLE; else -> WolfDatabaseKind.SYSTEM }
@@ -94,6 +118,12 @@ internal class WolfVariables(
             in 1_600_000..1_699_999 -> { commonStrings[address.common to (code % 100)] = value; common.remove(address.common to (code % 100)) }
             in 3_000_000..3_999_999 -> strings[code - 3_000_000] = value
             in 15_000_000..15_999_999 -> { val key = ((code - 15_000_000) / 100) to (code % 100); commonStrings[key] = value; common.remove(key) }
+            in 9_900_000..9_999_999 -> {
+                val id = code % 100_000
+                require(id in SUPPORTED_SYSTEM_STRING_WRITES) { "Destination de chaîne système non prise en charge : $code" }
+                if (id in FONT_SYSTEM_STRINGS) require(compatibilityVersion >= 300) { "Police système absente de ce profil Wolf" }
+                if (!systemStringWrite(id, value)) systemStrings[id] = value
+            }
             in 1_100_000_000..1_199_999_999 -> {
                 val relative = code - 1_100_000_000
                 setDatabaseString(relative / 1_000_000, (relative % 1_000_000) / 100, relative % 100, value)
@@ -103,32 +133,95 @@ internal class WolfVariables(
     }
 
     fun databaseNumber(kind: WolfDatabaseKind, type: Int, row: Int, field: Int): Int {
+        if (kind == WolfDatabaseKind.MUTABLE) grow(type, row + 1)
         if (kind == WolfDatabaseKind.MUTABLE) mutableNumbers[Triple(type, row, field)]?.let { return it }
+        if (kind != WolfDatabaseKind.MUTABLE) imports.number(kind, type, row, field)?.let { return it }
+        if (kind == WolfDatabaseKind.MUTABLE && row in (databases[kind]?.types?.getOrNull(type)?.rows?.size ?: 0) until rowCount(kind, type))
+            return databases[kind]?.types?.getOrNull(type)?.fields?.getOrNull(field)?.takeIf { it.valueType == WolfValueType.NUMBER }?.defaultValue ?: error("Champ DB numérique absent")
         return databases[kind]?.types?.getOrNull(type)?.number(row, field)
             ?: error("Valeur DB numérique absente : $kind/$type/$row/$field")
     }
 
     fun databaseString(kind: WolfDatabaseKind, type: Int, row: Int, field: Int): String {
+        if (kind == WolfDatabaseKind.MUTABLE) grow(type, row + 1)
         if (kind == WolfDatabaseKind.MUTABLE) mutableStrings[Triple(type, row, field)]?.let { return it }
+        if (kind != WolfDatabaseKind.MUTABLE) imports.string(kind, type, row, field)?.let { return it }
+        if (kind == WolfDatabaseKind.MUTABLE && row in (databases[kind]?.types?.getOrNull(type)?.rows?.size ?: 0) until rowCount(kind, type)) {
+            require(databases[kind]?.types?.getOrNull(type)?.fields?.getOrNull(field)?.valueType == WolfValueType.STRING) { "Champ DB texte absent" }
+            return ""
+        }
         return databases[kind]?.types?.getOrNull(type)?.string(row, field)
             ?: error("Valeur DB texte absente : $kind/$type/$row/$field")
     }
 
     fun setDatabaseNumber(type: Int, row: Int, field: Int, value: Int) {
-        require(databases[WolfDatabaseKind.MUTABLE]?.types?.getOrNull(type)?.number(row, field) != null) { "Destination DB numérique absente" }
+        require(databases[WolfDatabaseKind.MUTABLE]?.types?.getOrNull(type)?.fields?.getOrNull(field)?.valueType == WolfValueType.NUMBER) { "Destination DB numérique absente" }
+        grow(type, row + 1)
         mutableNumbers[Triple(type, row, field)] = value
     }
 
     fun setDatabaseString(type: Int, row: Int, field: Int, value: String) {
-        require(databases[WolfDatabaseKind.MUTABLE]?.types?.getOrNull(type)?.string(row, field) != null) { "Destination DB texte absente" }
+        require(databases[WolfDatabaseKind.MUTABLE]?.types?.getOrNull(type)?.fields?.getOrNull(field)?.valueType == WolfValueType.STRING) { "Destination DB texte absente" }
+        grow(type, row + 1)
         require(value.length <= 1_000_000) { "Valeur DB texte trop grande" }
         mutableStrings[Triple(type, row, field)] = value
     }
 
+    fun rowCount(kind: WolfDatabaseKind, type: Int): Int = if (kind == WolfDatabaseKind.MUTABLE) mutableRows.getOrPut(type) {
+        maxOf(imports.count(kind, type), (mutableNumbers.keys + mutableStrings.keys).filter { it.first == type }.maxOfOrNull { it.second + 1 } ?: 0)
+    }
+        else imports.count(kind, type)
+
+    fun rowName(kind: WolfDatabaseKind, type: Int, row: Int): String {
+        require(row in 0 until rowCount(kind, type)) { "Nom de rangée DB absent" }
+        return imports.name(kind, type, row) ?: databases[kind]?.types?.getOrNull(type)?.rows?.getOrNull(row)?.name.orEmpty()
+    }
+
+    fun namedRow(kind: WolfDatabaseKind, type: Int, name: String): Int =
+        (0 until rowCount(kind, type)).firstOrNull { rowName(kind, type, it) == name } ?: -1
+
+    /** Preflight every CSV cell before applying any part of this import. */
+    internal fun importCsv(kind: WolfDatabaseKind, type: Int, start: Int, rows: List<WolfDatabaseCsv.Row>) {
+        val descriptor = databases[kind]?.types?.getOrNull(type) ?: error("Type CSV DB absent")
+        require(start >= 0 && start.toLong() + rows.size <= 10_000) { "Import CSV DB hors rangées" }
+        val count = maxOf(rowCount(kind, type), start + rows.size)
+        val numbers = linkedMapOf<WolfDatabaseChanges.Cell, Int>()
+        val strings = linkedMapOf<WolfDatabaseChanges.Cell, String>()
+        val names = linkedMapOf<Int, String>()
+        rows.forEachIndexed { index, row ->
+            val at = start + index
+            row.name?.let { require(it.length <= 1_000_000); names[at] = it }
+            row.fields.forEach { (field, value) ->
+                val definition = descriptor.fields.getOrNull(field) ?: error("Champ CSV DB absent")
+                require(value.length <= 1_000_000) { "Champ CSV DB trop grand" }
+                val cell = WolfDatabaseChanges.Cell(kind, type, at, field)
+                if (definition.valueType == WolfValueType.NUMBER) numbers[cell] = numericPrefix(value) else strings[cell] = value
+            }
+        }
+        if (kind == WolfDatabaseKind.MUTABLE) {
+            val nextNumbers = mutableNumbers + numbers.mapKeys { Triple(it.key.type, it.key.row, it.key.field) }
+            val nextStrings = mutableStrings + strings.mapKeys { Triple(it.key.type, it.key.row, it.key.field) }
+            require(nextNumbers.size.toLong() + nextStrings.size <= 100_000) { "Import DB mutable trop grand" }
+            // replace() validates imported names/counts before either legacy value dictionary changes.
+            imports.replace(kind, type, count, emptyMap(), emptyMap(), names)
+            mutableNumbers.clear(); mutableNumbers.putAll(nextNumbers)
+            mutableStrings.clear(); mutableStrings.putAll(nextStrings); mutableRows[type] = count
+        } else imports.replace(kind, type, count, numbers, strings, names)
+    }
+
+    /** REA43cc00→4802c0 extends missing mutable rows and applies .project numeric defaults. */
+    fun grow(type: Int, count: Int) {
+        require(count in 0..10_000) { "Taille DB mutable hors capacité : $count" }
+        val previous = rowCount(WolfDatabaseKind.MUTABLE, type)
+        if (count > previous) mutableRows[type] = count
+    }
+
     companion object {
         /** Only fields with explicit runtime effects are admitted, never arbitrary zero defaults. */
-        val SUPPORTED_SYSTEM_READS = setOf(7, 8, 12, 13, 24, 71, 72, 73)
-        val SUPPORTED_SYSTEM_WRITES = setOf(7, 8, 73)
+        val SUPPORTED_SYSTEM_READS = (0..29).toSet() + (52..57).toSet() + (61..68).toSet() + setOf(35, 36, 37, 38, 39, 48, 59, 60, 71, 72, 73, 84, 95, 96, 97, 98, 99, 100, 101, 102, 104, 105, 108, 115, 116, 117, 118, 119, 125, 129, 130, 140, 148, 150, 155)
+        val SUPPORTED_SYSTEM_WRITES = (0..11).toSet() + (14..19).toSet() + (52..57).toSet() + (61..68).toSet() + setOf(21, 22, 23, 25, 26, 27, 28, 29, 36, 37, 38, 59, 60, 73, 95, 96, 97, 98, 99, 100, 101, 102, 104, 105, 125, 129, 130, 140, 148, 150)
+        val FONT_SYSTEM_STRINGS = (62..65).toSet() + 67
+        val SUPPORTED_SYSTEM_STRING_WRITES = (10..15).toSet() + setOf(26, 27, 30, 31) + FONT_SYSTEM_STRINGS
         fun numericPrefix(text: String): Int {
             val prefix = Regex("^[\\t ]*[+-]?[0-9]+").find(text)?.value?.trim() ?: return 0
             return prefix.toLongOrNull()?.coerceIn(Int.MIN_VALUE.toLong(), Int.MAX_VALUE.toLong())?.toInt()

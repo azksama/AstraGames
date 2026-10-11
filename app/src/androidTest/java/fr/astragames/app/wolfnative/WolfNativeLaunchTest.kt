@@ -8,11 +8,7 @@ import android.os.SystemClock
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Button
-import androidx.test.core.app.ActivityScenario
 import androidx.test.platform.app.InstrumentationRegistry
-import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.action.ViewActions.click
-import androidx.test.espresso.matcher.ViewMatchers.withText
 import fr.astragames.wolf.NativeFrame
 import fr.astragames.app.core.model.GameEngine
 import fr.astragames.app.core.model.LaunchResult
@@ -61,7 +57,7 @@ class WolfNativeLaunchTest {
         File(root, "original.sav").writeText("unchanged")
         WolfGameOptions(context, id).save(WolfOptions(runtime = WolfRuntimeMode.NATIVE))
         try {
-            ActivityScenario.launch<WolfNativeActivity>(WolfNativeActivity.intent(context, id, Uri.fromFile(root).toString(), "Game.exe", id)).use { scenario ->
+            NativeActivityScenario.launch(WolfNativeActivity.intent(context, id, Uri.fromFile(root).toString(), "Game.exe", id)).useNativeGame { scenario ->
                 await { var visible = false; scenario.onActivity { activity -> visible = descendants(activity.window.decorView).any { it is Button && it.text == "Lancer avec Winlator" } }; visible }
                 scenario.onActivity { activity ->
                     assertTrue(descendants(activity.window.decorView).filterIsInstance<WolfTouchControls>().all { it.visibility == View.GONE })
@@ -84,7 +80,7 @@ class WolfNativeLaunchTest {
         WolfGameOptions(context, id).save(WolfOptions(runtime = WolfRuntimeMode.NATIVE, showFps = false))
         val before = File(root, "Save/original.sav").readBytes()
         try {
-            ActivityScenario.launch<WolfNativeActivity>(WolfNativeActivity.intent(context, id, Uri.fromFile(root).toString(), "Game.exe", id)).use { scenario ->
+            NativeActivityScenario.launch(WolfNativeActivity.intent(context, id, Uri.fromFile(root).toString(), "Game.exe", id)).useNativeGame { scenario ->
                 await {
                     var ready = false
                     scenario.onActivity { activity -> ready = descendants(activity.window.decorView).filterIsInstance<WolfTouchControls>().any { it.visibility == View.VISIBLE } }
@@ -118,14 +114,14 @@ class WolfNativeLaunchTest {
         val savesDirectory = WolfNativeSaveStore.directoryFor(context, id)
         val frameField = WolfNativeView::class.java.getDeclaredField("frame").apply { isAccessible = true }
         try {
-            ActivityScenario.launch<WolfNativeActivity>(WolfNativeActivity.intent(context, id, Uri.fromFile(root).toString(), "Game.exe", id)).use { scenario ->
+            NativeActivityScenario.launch(WolfNativeActivity.intent(context, id, Uri.fromFile(root).toString(), "Game.exe", id)).useNativeGame { scenario ->
                 fun frame(): NativeFrame? {
                     var result: NativeFrame? = null
                     scenario.onActivity { activity -> descendants(activity.window.decorView).filterIsInstance<WolfNativeView>().firstOrNull()?.let { result = frameField.get(it) as NativeFrame? } }
                     return result // Immutable frame published by the actual owner thread.
                 }
                 fun press(label: String) = scenario.onActivity { activity -> descendants(activity.window.decorView).filterIsInstance<Button>().first { it.text == label }.performClick() }
-                fun menu() { press("Menu"); onView(withText("Réglages du jeu")).perform(click()) }
+                fun menu() { press("Menu"); clickNativeDialog("Réglages du jeu") }
                 await { frame()?.dialog?.choices?.firstOrNull() == "Nouvelle partie" }
                 SystemClock.sleep(200); press("Valider")
                 await { frame()?.dialog?.text == "Bienvenue !" }
@@ -133,18 +129,18 @@ class WolfNativeLaunchTest {
                 await { frame()?.dialog == null }
                 val heroX = frame()!!.map!!.characters.single { it.id == -2 }.x
                 capture(scenario, "native-game.png")
-                menu(); onView(withText("Sauvegarder · emplacement 0")).perform(click())
+                menu(); clickNativeDialog("Sauvegarder · emplacement 0")
                 await { File(savesDirectory, "slot-0.astrawolf").isFile }
-                onView(withText("Fermer")).perform(click())
+                clickNativeDialog("Fermer")
                 press("Valider"); SystemClock.sleep(200)
                 scenario.onActivity { activity -> descendants(activity.window.decorView).filterIsInstance<Button>().first { it.contentDescription == "Droite" }.performClick() }
                 await { frame()!!.map!!.characters.single { it.id == -2 }.x > heroX }
-                menu(); onView(withText("Charger une sauvegarde native")).perform(click())
-                onView(withText("Emplacement 0")).perform(click())
+                menu(); clickNativeDialog("Charger une sauvegarde native")
+                clickNativeDialog("Emplacement 0")
                 await { kotlin.math.abs(frame()!!.map!!.characters.single { it.id == -2 }.x - heroX) < .001f }
-                menu(); onView(withText("Réglages du jeu")).perform(click())
+                menu(); clickNativeDialog("Réglages du jeu")
                 capture(scenario, "native-options.png")
-                onView(withText("Annuler")).perform(click())
+                clickNativeDialog("Annuler")
                 assertEquals("Original Windows save must be preserved", File(root, "Save/original.sav").readText())
             }
         } finally {
@@ -163,7 +159,7 @@ class WolfNativeLaunchTest {
             android.app.Instrumentation.ActivityResult(0, null), true)
         instrumentation.addMonitor(monitor)
         try {
-            ActivityScenario.launch<WolfNativeActivity>(WolfNativeActivity.intent(context, id, Uri.fromFile(root).toString(), "Game.exe", id)).use { scenario ->
+            NativeActivityScenario.launch(WolfNativeActivity.intent(context, id, Uri.fromFile(root).toString(), "Game.exe", id)).useNativeGame { scenario ->
                 await { monitor.hits == 1 }
                 await { scenario.state == androidx.lifecycle.Lifecycle.State.DESTROYED }
                 val diagnostics = WolfDiagnostics(context)
@@ -178,7 +174,7 @@ class WolfNativeLaunchTest {
     }
 
     private fun clearOptions(id: String) { context.getSharedPreferences("wolf_game_options", Context.MODE_PRIVATE).edit().remove(WolfNativeSaveStore.digest(id.toByteArray())).commit() }
-    private fun capture(scenario: ActivityScenario<WolfNativeActivity>, name: String) {
+    private fun capture(scenario: NativeActivityScenario, name: String) {
         if (InstrumentationRegistry.getArguments().getString("nativeCapture") != "true") return
         scenario.onActivity { it.window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE) }
         SystemClock.sleep(350)

@@ -39,9 +39,9 @@ internal object NativeGameFixture {
         val title = listOf(
             Command(121, intArrayOf(9_000_008, 16, 0, 0)),
             Command(121, intArrayOf(9_000_073, 1, 0, 0)),
-            Command(150, intArrayOf(0, 1, 0, 0, 0, 1, 255, 0, 0, 100, 0), listOf("Picture/title.png")),
+            Command(150, intArrayOf(0, 1, 0, 1, 1, 1, 255, 0, 0, 100, 0), listOf("Picture/title.png")),
             Command(102, intArrayOf(19), listOf("Nouvelle partie", "Quitter")), Command(401, intArrayOf(2)),
-            Command(150, intArrayOf(2, 1, 0), depth = 1), Command(130, intArrayOf(-2, 1, 1, 1, 32), depth = 1),
+            Command(150, intArrayOf(2, 1, 0), depth = 1), Command(130, intArrayOf(-1, 1, 1, 1, 32), depth = 1),
             Command(101, strings = listOf("Bienvenue !"), depth = 1), Command(173, depth = 1),
             Command(401, intArrayOf(3)), Command(175, depth = 1), Command(499),
         )
@@ -54,6 +54,34 @@ internal object NativeGameFixture {
         file("Save/original.sav", "Original Windows save must be preserved".toByteArray())
     }
 
+    fun writeTextInput(root: File) {
+        write(root)
+        File(root, "Data/MapData/title.mps").writeBytes(map("input", listOf(
+            Command(122, intArrayOf(3_000_000, 0), listOf("prior")),
+            Command(122, intArrayOf(3_000_000, 0x3003, 4)),
+            Command(101, strings = listOf("\\s[0]|\\sys[39]")), Command(173),
+        ), 1, 1, 1))
+    }
+
+    fun writeKeyInput(root: File, flags: Int, specific: Int? = null, mappings: Map<Int, Int> = emptyMap()) {
+        write(root)
+        val args = if (specific == null) intArrayOf(2_000_000, flags) else intArrayOf(2_000_000, flags, specific)
+        val configure = mappings.map { (system, value) -> Command(121, intArrayOf(9_000_000 + system, value, 0, 0)) }
+        File(root, "Data/MapData/title.mps").writeBytes(map("physical input", configure + listOf(
+            Command(123, args), Command(101, strings = listOf("\\v[0]")), Command(173),
+        ), 1, 1, 1))
+    }
+
+    fun writeSaveReadBurst(root: File) {
+        write(root)
+        val reads = List(64) { Command(221, intArrayOf(2_000_000, 99, 2_000_000)) }
+        File(root, "Data/MapData/title.mps").writeBytes(map("save read burst", listOf(
+            Command(150, intArrayOf(0, 1, 0, 1, 1, 1, 255, 0, 0, 100, 0), listOf("Picture/title.png")),
+            // Begin the burst only after the first frame, so asset preparation is excluded.
+            Command(180, intArrayOf(90)),
+        ) + reads + listOf(Command(101, strings = listOf("read burst finished")), Command(173)), 1, 1, 1))
+    }
+
     private fun game(hero: Boolean): ByteArray = Writer().run {
         write(magic); int(21); write(ByteArray(21).also { b ->
             b[0] = 16; b[1] = 4; b[2] = 4; b[4] = 60; b[7] = 3; b[8] = 1; b[9] = 1
@@ -63,7 +91,9 @@ internal object NativeGameFixture {
             if (index == 2) int(0) else string(text)
         }
         val sizePosition = size(); int(0); int(0); int(19)
-        repeat(19) { short(if (it == 16 || it == 17) 96 else 0) }; int(0); int(0); write(0xc2)
+        // The real normal/alternate quarter-pixel speed pairs belong to Game.dat.
+        val movementWords = intArrayOf(0, 1, 1, 2, 2, 4, 4, 8, 8, 16, 16, 32, 32, 64, 64, 0, 96, 96, 0)
+        movementWords.forEach(::short); int(0); int(0); write(0xc2)
         toByteArray().also { bytes -> repeat(4) { bytes[sizePosition + it] = ((bytes.size - 1) ushr (it * 8)).toByte() } }
     }
 
@@ -96,7 +126,7 @@ internal object NativeGameFixture {
     private fun map(name: String, commands: List<Command>, trigger: Int, x: Int, y: Int): ByteArray = Writer().run {
         write(ByteArray(10)); write(byteArrayOf(87, 79, 76, 70, 77, 0, 0, 0, 0, 0)); int(100); write(0x65)
         string(name); int(0); int(6); int(6); int(1)
-        repeat(6 * 6 * 3) { int(if (it >= 6 * 6 * 2) 32 else 0) }
+        repeat(6 * 6 * 3) { int(if (it >= 6 * 6 * 2) 0 else 100_000) }
         write(byteArrayOf(0x6f, 0x39, 0x30, 0, 0)); int(0); string(name); int(x); int(y); int(1); write(ByteArray(4))
         write(0x79); int(-1); string(""); write(byteArrayOf(2, 1, 255.toByte(), 0))
         write(ByteArray(37).also { it[0] = trigger.toByte() }); write(byteArrayOf(3, 3, 3, 0)); write(3); write(2); int(0)

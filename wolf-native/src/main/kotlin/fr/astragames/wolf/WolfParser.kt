@@ -41,23 +41,58 @@ class WolfParser(private val source: WolfAssetSource, private val progress: (Str
     }
 
     fun loadMap(id: Int): WolfMap {
-        val reference = loadGame().maps.firstOrNull { it.id == id }
+        val data = loadGame()
+        val reference = data.maps.firstOrNull { it.id == id }
             ?: throw WolfFormatException("Unknown map ID $id")
-        return WolfFormats.parseMap(source.read(reference.file), reference.file)
+        // WOLFX aliases take precedence even when the clear map exists. The
+        // metadata/map reader is not the individual-resource media decoder.
+        val encrypted = when {
+            reference.file.endsWith(".wolfx", ignoreCase = true) -> reference.file
+            source.exists("${reference.file}.wolfx") -> "${reference.file}.wolfx"
+            else -> null
+        }
+        if (encrypted != null) throw WolfFormatException("Carte WOLFX non prise en charge par le lecteur natif : $encrypted")
+        // Original W2 0044dcf0 / W3 009f8860 apply SysDB0[field3]:
+        // 1 horizontal, 2 vertical, 3 both; every other value clears both.
+        val loop = data.databases.getValue(WolfDatabaseKind.SYSTEM).types[0].number(id, 3) ?: 0
+        return WolfFormats.parseMap(source.read(reference.file), reference.file).copy(
+            loopX = loop == 1 || loop == 3,
+            loopY = loop == 2 || loop == 3,
+        )
     }
 
     private fun database(name: String, budget: WolfParseBudget): WolfDatabase = WolfFormats.parseDatabase(
         source.read("Data/BasicData/$name.project"), source.read("Data/BasicData/$name.dat"), name, budget)
 
     companion object {
+        const val DATA_ROOT_PREFIX = "game-root:"
+        /** Game-root path, with Windows separators, without permitting a parent traversal. */
+        fun normalizePath(path: String): String {
+            val normalized = path.replace('\\', '/')
+            if (normalized.startsWith('/') || ':' in normalized || normalized.indexOf('\u0000') >= 0)
+                throw WolfFormatException("Wolf resource path escapes the game directory")
+            val parts = ArrayDeque<String>()
+            for (part in normalized.split('/')) when (part) {
+                "", "." -> Unit
+                ".." -> if (parts.isEmpty()) throw WolfFormatException("Wolf resource path escapes the game directory") else parts.removeLast()
+                else -> parts.addLast(part)
+            }
+            return parts.joinToString("/")
+        }
         /** Resource names are stored relative to Data in unprotected Wolf data. */
         fun dataPath(path: String): String {
             if (path.isBlank()) return ""
-            val normalized = path.replace('\\', '/').removePrefix("./")
-            if (normalized.startsWith('/') || Regex("^[a-zA-Z]:").containsMatchIn(normalized) ||
-                normalized.split('/').any { it == ".." } || normalized.indexOf('\u0000') >= 0)
+            val windows = path.replace('\\', '/')
+            if (windows.startsWith('/') || ':' in windows || '\u0000' in windows)
                 throw WolfFormatException("Wolf resource path escapes the game directory")
-            return if (normalized.startsWith("Data/", ignoreCase = true)) normalized else "Data/$normalized"
+            return normalizePath(if (windows.startsWith("Data/", ignoreCase = true)) windows else "Data/$windows")
         }
+        /** Explicitly distinguishes Data-relative resource names from resources in Save or another game folder. */
+        fun imageAssetPath(path: String): String {
+            if (path.startsWith(DATA_ROOT_PREFIX)) return DATA_ROOT_PREFIX + rootAssetPath(path)
+            val root = dataPath(path)
+            return if (root.isBlank() || root.startsWith("Data/", true)) root else DATA_ROOT_PREFIX + root
+        }
+        fun rootAssetPath(path: String): String = normalizePath(path.removePrefix(DATA_ROOT_PREFIX))
     }
 }
