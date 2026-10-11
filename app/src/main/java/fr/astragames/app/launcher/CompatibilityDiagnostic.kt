@@ -29,6 +29,7 @@ class CompatibilityDiagnostic(private val launcher: JoiPlayLauncher) {
         if (internalWolf && path != null && runCatching { File(path, "startup.tjs").isFile }.getOrDefault(false)) {
             checks += warning("Script TJS détecté", "Ce dossier contient startup.tjs, un point d’entrée habituel de KiriKiri. Choisir Wolf RPG ne convertit pas le jeu ; la compatibilité de cet exécutable avec Wine reste à vérifier.")
         }
+        GodotLaunchValidation.error(context, game, profile)?.let { checks += error("Pack Godot", it) }
 
         val uriAccessible = runCatching {
             val uri = Uri.parse(game.documentUri)

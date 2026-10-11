@@ -28,6 +28,17 @@ class JoiPlayPayloadBuilderTest {
         )
     }
 
+    @Test fun launchesEachGodotGenerationWithItsOwnRuntimeAndPack() {
+        for (generation in listOf(3, 4)) {
+            val godot = game().copy(engine = "GODOT_$generation", executableName = "Astra.pck")
+            val json = JSONObject(JoiPlayPayloadBuilder.build(godot)!!)
+            assertEquals("godot$generation", json.getString("type"))
+            assertEquals("Astra.pck", json.getString("execFile"))
+            assertEquals(listOf("cyou.joiplay.runtime.godot$generation.run"), JoiPlayPayloadBuilder.actionsFor(godot.engine))
+            assertEquals(setOf("cyou.joiplay.runtime.godot$generation"), JoiPlayPayloadBuilder.trustedPackagesFor(godot.engine))
+        }
+    }
+
     @Test fun mapsLegacyRpgMakerRuntimes() {
         assertEquals("cyou.joiplay.runtime.rpgmvxace.run", JoiPlayPayloadBuilder.actionFor("RPG_MAKER_VX_ACE"))
         assertEquals("cyou.joiplay.runtime.rpgmvx.run", JoiPlayPayloadBuilder.actionFor("RPG_MAKER_VX"))

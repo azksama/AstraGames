@@ -83,6 +83,68 @@ class StorageWorkflowsTest {
         assertFalse(scanned.missing)
     }
 
+    @Test fun scannerDetectsBothGodotGenerationsAndChoosesTheGamePackOverWindowsExecutables() = runTest {
+        val sourceDir = File(root, "godot-catalogue").apply { mkdirs() }
+        val expected = mutableMapOf<String, Pair<String, String>>()
+        fun packHeader(major: Int) = java.nio.ByteBuffer.allocate(20).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+            .putInt(0x43504447).putInt(if (major == 3) 1 else 2).putInt(major).putInt(3).putInt(0).array()
+        for (major in listOf(3, 4)) {
+            val pack = File(sourceDir, "Pack $major").apply { mkdirs() }
+            File(pack, "Astra.EXE").writeText("fixture")
+            File(pack, "Astra.PCK").writeBytes(packHeader(major))
+            File(pack, "Patch.pck").writeBytes(packHeader(if (major == 3) 4 else 3))
+            expected[pack.name] = "GODOT_$major" to "Astra.PCK"
+
+            val project = File(sourceDir, "Project $major").apply { mkdirs() }
+            File(project, "project.godot").writeText("config_version=${if (major == 3) 4 else 5}\n[application]\n")
+            expected[project.name] = "GODOT_$major" to "project.godot"
+
+            val embedded = File(sourceDir, "Embedded $major").apply { mkdirs() }
+            val footer = java.nio.ByteBuffer.allocate(12).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                .putLong(20).putInt(0x43504447).array()
+            File(embedded, "Astra.exe").writeBytes(ByteArray(512) + packHeader(major) + footer)
+            expected[embedded.name] = "GODOT_$major" to "Astra.exe"
+        }
+        val dao = database.dao()
+        val source = GameSourceEntity("godot-source", "Godot", Uri.fromFile(sourceDir).toString())
+        dao.upsertSource(source)
+        val scanner = RecursiveSourceScanner(context, dao, FileAccessResolver(context))
+        val report = scanner.scan(source.id)
+        assertEquals(6, report.added)
+        assertTrue(report.errors.isEmpty())
+        val games = dao.getGamesForSource(source.id)
+        assertEquals(6, games.size)
+        for (game in games) {
+            assertEquals(expected.getValue(game.title).first, game.engine)
+            assertEquals(expected.getValue(game.title).second, game.executableName)
+            assertEquals("JOIPLAY", game.launcher)
+        }
+        assertEquals(6, scanner.scan(source.id).unchanged)
+    }
+
+    @Test fun scannerDetectsStandaloneGodotPackThroughSaf() = runTest {
+        withSafFixture { documents ->
+            val folder = requireNotNull(documents.createDirectory("Godot"))
+            val pack = requireNotNull(folder.createFile("application/octet-stream", "Astra.pck"))
+            val header = java.nio.ByteBuffer.allocate(20).order(java.nio.ByteOrder.LITTLE_ENDIAN)
+                .putInt(0x43504447).putInt(2).putInt(4).putInt(3).putInt(0).array()
+            context.contentResolver.openOutputStream(pack.uri)!!.use { it.write(header) }
+            val source = GameSourceEntity("godot-saf", "Godot", documents.uri.toString())
+            val dao = database.dao()
+            dao.upsertSource(source)
+            val report = RecursiveSourceScanner(context, dao, FileAccessResolver(context)).scanSubfolder(source.id, listOf("Godot"))
+            assertEquals(1, report.added)
+            val game = dao.getGamesForSource(source.id).single()
+            assertEquals("GODOT_4", game.engine)
+            assertEquals("Astra.pck", game.executableName)
+            assertEquals(folder.uri.toString(), game.documentUri)
+            val scopedGame = game.copy(physicalPath = "/storage/emulated/0/Games/Godot")
+            assertNull(fr.astragames.app.launcher.GodotLaunchValidation.error(context, scopedGame, null))
+            requireNotNull(folder.createFile("application/octet-stream", "Patch.pck"))
+            assertTrue(fr.astragames.app.launcher.GodotLaunchValidation.error(context, scopedGame, null).orEmpty().contains("plusieurs"))
+        }
+    }
+
     @Test fun scanningSubfolderPreservesSiblingsAndSourceCount() = runTest {
         val sourceDir = File(root, "catalogue").apply { mkdirs() }
         fun createGame(path: String) = File(sourceDir, path).apply {

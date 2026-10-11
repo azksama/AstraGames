@@ -24,6 +24,8 @@ object JoiPlayPayloadBuilder {
         GameEngine.TWINE -> "twine"
         GameEngine.ELECTRON -> "electron"
         GameEngine.RENPY -> "renpy"
+        GameEngine.GODOT_3 -> "godot3"
+        GameEngine.GODOT_4 -> "godot4"
         else -> null
     }
 
@@ -35,6 +37,8 @@ object JoiPlayPayloadBuilder {
 
     internal fun trustedPackagesFor(engine: String): Set<String> = when (typeFor(engine)) {
         "renpy" -> setOf("cyou.joiplay.runtime.renpy", "cyou.joiplay.runtime.renpy8")
+        "godot3" -> setOf("cyou.joiplay.runtime.godot3")
+        "godot4" -> setOf("cyou.joiplay.runtime.godot4")
         "rpgmmv", "rpgmmz", "rpgmvxace", "rpgmvx", "rpgmxp" ->
             setOf("cyou.joiplay.runtime.rpgmaker", JoiPlayLauncher.PACKAGE)
         "html", "tyrano", "construct", "twine", "electron" -> setOf(JoiPlayLauncher.PACKAGE)
@@ -81,6 +85,7 @@ class JoiPlayLauncher : GameLauncher {
             val intent = fr.astragames.app.windows.WolfRuntimeActivity.intent(context, game.id, game.documentUri, executable, game.title)
             return start(context, intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
+        GodotLaunchValidation.error(context, game, profile)?.let { return LaunchResult.Failure(it) }
         val payload = JoiPlayPayloadBuilder.build(game, profile)
             ?: return LaunchResult.Failure("Le chemin physique du jeu n'est pas accessible à JoiPlay")
         val effectiveEngine = LaunchProfileResolver.engine(game, profile)

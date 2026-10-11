@@ -128,6 +128,8 @@ internal fun String.readableEngine(): String = when {
     startsWith("RPG_MAKER_") -> "RPG Maker " + removePrefix("RPG_MAKER_").replace("VX_ACE", "VX Ace")
     this == "REN_PY" || this == "RENPY" -> "Ren’Py"
     this == "HTML" || this == "HTML5" -> this
+    this == "GODOT_3" -> "Godot 3"
+    this == "GODOT_4" -> "Godot 4"
     else -> lowercase(java.util.Locale.ROOT).replace('_', ' ').split(' ').joinToString(" ") { it.replaceFirstChar(Char::uppercase) }
 }
 internal fun Long.asDateTime(): String = DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT).format(Date(this))

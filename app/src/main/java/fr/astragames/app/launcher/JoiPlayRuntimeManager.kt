@@ -62,8 +62,17 @@ class JoiPlayRuntimeManager {
             }
         }
 
+        return reconcile(libraryEngines, catalog, installed.values.toList())
+    }
+
+    /** Separate discovery from catalogue reconciliation so version matching can be tested without Android. */
+    internal fun reconcile(
+        libraryEngines: Set<GameEngine>,
+        catalog: List<JoiPlayCatalogEntry>,
+        installed: List<InstalledComponent>
+    ): List<JoiPlayRuntimeInfo> {
         val entries = if (catalog.isEmpty()) FALLBACK_CATALOG else catalog
-        val unmatched = installed.values.toMutableList()
+        val unmatched = installed.toMutableList()
         val result = entries.map { entry ->
             val component = bestMatch(entry, unmatched)
             if (component != null) unmatched.remove(component)
@@ -88,7 +97,7 @@ class JoiPlayRuntimeManager {
                 key = "installed-${component.packageName}",
                 name = component.label,
                 packageNames = listOf(component.packageName),
-                engines = enginesFor(component.label),
+                engines = enginesFor("${component.label} ${component.packageName}"),
                 installedPackage = component.packageName,
                 versionName = component.version,
                 required = false,
@@ -106,13 +115,19 @@ class JoiPlayRuntimeManager {
         val family = familyOf(entry.title)
         val sameFamily = candidates.filter { familyOf("${it.label} ${it.packageName} ${it.actions.joinToString()}") == family }
         if (sameFamily.isEmpty()) return null
+        // Godot's packages are stable across engine updates; catalogue titles include a minor version,
+        // while their Android labels contain only the generation ("Godot 3/4 Plugin for JoiPlay").
+        if (family == "godot") {
+            val generation = godotGeneration(entry.title) ?: return null
+            return sameFamily.firstOrNull { godotGeneration("${it.packageName} ${it.label}") == generation }
+        }
         val wantedEngineVersion = engineVersion(entry.title)
         if (wantedEngineVersion != null) {
-            sameFamily.firstOrNull { engineVersion("${it.label} ${it.packageName}")?.startsWith(wantedEngineVersion) == true }?.let { return it }
-            sameFamily.firstOrNull { candidate ->
+            return sameFamily.firstOrNull { candidate ->
                 val actual = engineVersion("${candidate.label} ${candidate.packageName}") ?: return@firstOrNull false
-                wantedEngineVersion.startsWith(actual) || actual.startsWith(wantedEngineVersion)
-            }?.let { return it }
+                val commonSize = minOf(wantedEngineVersion.size, actual.size)
+                wantedEngineVersion.take(commonSize) == actual.take(commonSize)
+            }
         }
         return if (sameFamily.size == 1) sameFamily.single() else null
     }
@@ -129,11 +144,22 @@ class JoiPlayRuntimeManager {
         }
     }
 
-    private fun engineVersion(value: String): String? = ENGINE_VERSION.find(value)?.groupValues?.get(1)?.removeSuffix(".0")
+    private fun engineVersion(value: String): List<Int>? {
+        val dotted = ENGINE_VERSION.find(value)?.groupValues?.get(1)
+        if (dotted != null) return dotted.split('.').map(String::toInt)
+        return PACKAGE_ENGINE_VERSION.find(value)?.groupValues?.drop(1)?.map(String::toInt)
+    }
+
+    private fun godotGeneration(value: String): Int? = GODOT_GENERATION.find(value)?.groupValues?.get(1)?.toInt()
 
     private fun enginesFor(value: String): Set<GameEngine> = when (familyOf(value)) {
         "renpy" -> setOf(GameEngine.RENPY)
         "rpgmaker" -> RPG_ENGINES
+        "godot" -> when (godotGeneration(value)) {
+            3 -> setOf(GameEngine.GODOT_3)
+            4 -> setOf(GameEngine.GODOT_4)
+            else -> setOf(GameEngine.GODOT_3, GameEngine.GODOT_4)
+        }
         else -> emptySet()
     }
 
@@ -151,17 +177,19 @@ class JoiPlayRuntimeManager {
         return false
     }
 
-    private data class InstalledComponent(
+    internal data class InstalledComponent(
         val packageName: String,
         val label: String,
         val version: String?,
-        val actions: Set<String>
+        val actions: Set<String> = emptySet()
     )
 
     private companion object {
         const val JOIPLAY_URL = "https://joiplay.net/"
         val VERSION_PARTS = Regex("\\d+")
-        val ENGINE_VERSION = Regex("(?<!\\d)([378](?:\\.\\d+){1,2})(?!\\d)")
+        val ENGINE_VERSION = Regex("(?<!\\d)([3478](?:\\.\\d+){1,2})(?![\\d.])")
+        val PACKAGE_ENGINE_VERSION = Regex("\\.v([3478])d([0-9]{1,3})d([0-9]{1,3})(?:$|\\s)")
+        val GODOT_GENERATION = Regex("godot\\s*([34])(?=[.\\s]|$)", RegexOption.IGNORE_CASE)
         val RPG_ENGINES = setOf(
             GameEngine.RPG_MAKER_MV, GameEngine.RPG_MAKER_MZ, GameEngine.RPG_MAKER_VX_ACE,
             GameEngine.RPG_MAKER_VX, GameEngine.RPG_MAKER_XP, GameEngine.RPG_MAKER_2000, GameEngine.RPG_MAKER_2003
@@ -181,7 +209,9 @@ class JoiPlayRuntimeManager {
         val FALLBACK_CATALOG = listOf(
             JoiPlayCatalogEntry(1, "JoiPlay", "", "Application principale", JOIPLAY_URL, "", null),
             JoiPlayCatalogEntry(2, "RPG Maker Plugin", "", "Plugin RPG Maker", JOIPLAY_URL, "", null),
-            JoiPlayCatalogEntry(3, "Ren'Py Plugin", "", "Plugin Ren'Py", JOIPLAY_URL, "", null)
+            JoiPlayCatalogEntry(3, "Ren'Py Plugin", "", "Plugin Ren'Py", JOIPLAY_URL, "", null),
+            JoiPlayCatalogEntry(6, "Godot 4 Plugin", "", "Plugin Godot 4", JOIPLAY_URL, "", null),
+            JoiPlayCatalogEntry(7, "Godot 3 Plugin", "", "Plugin Godot 3", JOIPLAY_URL, "", null)
         )
     }
 }

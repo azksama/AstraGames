@@ -206,14 +206,18 @@ class RecursiveSourceScanner(
                     }
                 }
                 .firstOrNull()
-            val detection = EngineSignatureDetector.detect(signatureNames) ?: executable?.let {
+            val detection = EngineSignatureDetector.detect(signatureNames)
+                ?: GodotGameDetector.detect(context, children, executable?.name)
+                ?: executable?.let {
                 DetectionResult(GameEngine.UNKNOWN, .25f, listOf("Exécutable détecté"), it.name)
             }
             if (detection != null) {
                 found++
                 val rawName = directory.name ?: "Jeu sans titre"
                 val normalized = GameTitleNormalizer.normalize(rawName)
-                val executableName = executable?.name ?: detection.executableName
+                val executableName = if (detection.engine in setOf(GameEngine.GODOT_3, GameEngine.GODOT_4)) {
+                    detection.executableName
+                } else executable?.name ?: detection.executableName
                 val fingerprint = GameFingerprint.create(detection.engine, normalized.title, normalized.productCode, executableName)
                 if (dao.findDeletedGameByFingerprint(fingerprint) != null) {
                     ignored++

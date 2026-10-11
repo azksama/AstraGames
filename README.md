@@ -13,7 +13,7 @@ Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été 
 - sources multiples, activation, suppression, scan individuel ou global ;
 - scan ciblé depuis **Paramètres → Sources et scan → Sous-dossier…** : navigation dans une source déjà autorisée, puis analyse du dossier choisi avec les options de récursivité de la source. Ce scan ajoute ou retrouve les jeux sans marquer les autres absents ; le scan complet reste nécessaire pour vérifier les suppressions ;
 - scan récursif hors thread principal (garde-fous de 128 niveaux et 100 000 dossiers), avec arrêt et remontée dès qu'un dossier contient un exécutable, et écran de progression indiquant source, chemin, profondeur, dossiers et jeux ;
-- détection RPG Maker MV/MZ, Ren'Py, HTML5, Tyrano, Construct, Twine, Electron et Wolf RPG ;
+- détection RPG Maker MV/MZ, Ren'Py, HTML5, Tyrano, Construct, Twine, Electron, Wolf RPG et Godot 3/4 (packs PCK, projets et packs intégrés aux exécutables) ;
 - moteur Wolf intégré expérimental : Wine, Box64 sur ARM64, affichage et commandes dans Astra, import SAF et synchronisation prudente des sauvegardes ;
 - Wolf RPG exécuté uniquement avec Winlator ; anciennes sauvegardes natives conservées en lecture seule et exportables ;
 - fingerprint, reconnaissance de déplacement, doublons et jeux manquants ;
@@ -30,6 +30,8 @@ Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été 
 - suivi du temps de jeu par sessions et affichage de la durée cumulée ;
 - gestionnaire de runtimes JoiPlay avec détection dynamique des variantes installées, catalogue officiel mis en cache sept jours et notification des mises à jour ;
 - détection des plugins Ren’Py versionnés avec vérification du certificat officiel ; moteur choisi dans un profil reflété dans la bibliothèque et la fiche ;
+- moteurs Godot 3 et Godot 4 disponibles dans les profils, filtres et collections ; lancement via le plugin JoiPlay de la même génération, avec association des plugins installés aux entrées du catalogue sans doublons ;
+- lancement Godot depuis un dossier contenant un seul pack `.pck` séparé ; les projets sources et les packs intégrés aux exécutables sont identifiés, avec un diagnostic demandant l’export ou l’extraction du pack. La compatibilité des jeux reste celle des plugins JoiPlay installés ;
 - suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
 - sauvegarde et restauration chiffrée du catalogue, des profils, des jaquettes et des journaux de sauvegardes/mods, avec raccourci vers le dossier choisi ;
 - choix automatique et manuel de jaquettes dans le moteur sélectionné (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), sans filtre de contenu ajouté par Astra, sélection de l’image affichée, ouverture navigateur, choix local et recadrage libre ;
@@ -194,7 +196,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.21](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.21). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.22](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.22). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Wolf RPG utilise désormais **Winlator · Wine et Box64**. Le moteur natif et le choix entre moteurs sont retirés. **Fiche du jeu → Compatibilité → Profil de lancement** permet toujours de corriger le moteur détecté ou de configurer explicitement une application externe. La bibliothèque, les filtres et la fiche affichent le moteur choisi ; rétablir la détection automatique conserve le résultat original du scan.
 
