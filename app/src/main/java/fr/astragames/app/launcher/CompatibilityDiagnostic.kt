@@ -26,6 +26,9 @@ class CompatibilityDiagnostic(private val launcher: JoiPlayLauncher) {
             JoiPlayPayloadBuilder.typeFor(engine) == null && launcherType != "EXTERNAL" && !internalWolf -> error("Moteur", "${engine.readable()} n'est pas pris en charge par JoiPlay")
             else -> ok("Moteur", engine.readable())
         }
+        if (internalWolf && path != null && runCatching { File(path, "startup.tjs").isFile }.getOrDefault(false)) {
+            checks += warning("Script TJS détecté", "Ce dossier contient startup.tjs, un point d’entrée habituel de KiriKiri. Choisir Wolf RPG ne convertit pas le jeu ; la compatibilité de cet exécutable avec Wine reste à vérifier.")
+        }
 
         val uriAccessible = runCatching {
             val uri = Uri.parse(game.documentUri)
@@ -53,14 +56,12 @@ class CompatibilityDiagnostic(private val launcher: JoiPlayLauncher) {
             if (profile?.customAction.isNullOrBlank()) error("Lanceur", "Action Android externe manquante")
             else ok("Lanceur", listOfNotNull(profile?.packageName, profile?.customAction).joinToString(" • "))
         } else if (internalWolf) {
-            val runtime = fr.astragames.app.windows.WolfGameOptions(context, game.id).read().runtime
-            if (runtime != fr.astragames.app.windows.WolfRuntimeMode.WINLATOR) warning("Moteur Astra", "Wolf Android natif : compatibilité vérifiée au lancement. Le mode automatique conserve Winlator en secours. Les sauvegardes des deux moteurs sont séparées.")
-            else if (fr.astragames.app.windows.WolfRuntimeInstaller.supportedAbi()) warning("Moteur Astra", "Wolf via Winlator : les composants Windows seront téléchargés au premier lancement. Compatibilité selon le jeu.")
+            if (fr.astragames.app.windows.WolfRuntimeInstaller.supportedAbi()) warning("Moteur Astra", "Wolf via Winlator : les composants Windows seront téléchargés au premier lancement. Compatibilité selon le jeu.")
             else error("Moteur Astra", "Android ARM64 ou x86_64 requis.")
         } else {
             when {
                 launcher.resolveJoiPlayIntent(context, engine) != null -> ok("Runtime JoiPlay", "Runtime ${engine.readable()} détecté")
-                engine == GameEngine.RENPY.name -> error("Runtime JoiPlay", "Plugin Ren'Py absent ou incompatible")
+                engine == GameEngine.RENPY.name -> error("Runtime JoiPlay", "Aucun plugin Android Ren’Py compatible détecté. Installez ou activez le plugin dans Paramètres → JoiPlay → Gestionnaire de runtimes. Les exécutables et bibliothèques Ren’Py du dossier PC ne sont pas ce plugin Android.")
                 else -> error("Runtime JoiPlay", "Runtime requis absent ou incompatible")
             }
         }

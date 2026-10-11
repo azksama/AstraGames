@@ -16,9 +16,8 @@ internal fun WolfLicensesDialog(onDismiss: () -> Unit) {
     val context = LocalContext.current
     val notices by produceState("Chargement…") {
         value = withContext(Dispatchers.IO) {
-            val native = context.assets.open("wolf-native-notices.txt").bufferedReader().use { it.readText() }
             val windows = context.assets.open("windows/THIRD-PARTY-NOTICES.txt").bufferedReader().use { it.readText() }
-            "MOTEUR NATIF ANDROID\n\n$native\n\nSECOURS WINLATOR / WINE\n\n$windows"
+            "WINLATOR / WINE\n\n$windows"
         }
     }
     AlertDialog(onDismissRequest = onDismiss, title = { Text("Moteur Wolf · licences") },

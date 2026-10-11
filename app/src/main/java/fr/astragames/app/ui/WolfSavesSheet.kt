@@ -13,7 +13,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.windows.WolfGameStorage
-import fr.astragames.app.wolfnative.WolfNativeSaveStore
+import fr.astragames.app.windows.WolfLegacySaves
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -39,7 +39,7 @@ internal fun WolfSavesSheet(game: GameEntity, onDismiss: () -> Unit) {
             try {
                 withContext(Dispatchers.IO) {
                     requireNotNull(context.contentResolver.openOutputStream(uri, "wt")).use {
-                        if (exportNative) WolfNativeSaveStore(context, game.id, "").export(it) else storage.exportSaves(it)
+                        if (exportNative) WolfLegacySaves(context, game.id).export(it) else storage.exportSaves(it)
                     }
                 }
                 message = "Sauvegardes exportées."
@@ -52,8 +52,7 @@ internal fun WolfSavesSheet(game: GameEntity, onDismiss: () -> Unit) {
         loading = true; error = null
         try {
             nativeFiles = withContext(Dispatchers.IO) {
-                WolfNativeSaveStore.directoryFor(context, game.id).listFiles().orEmpty()
-                    .filter { it.isFile && (it.name.endsWith(".astrawolf") || it.name.endsWith(".previous")) }.sortedBy { it.name }
+                WolfLegacySaves(context, game.id).files()
             }
             val result = withContext(Dispatchers.IO) {
                 storage.restoreLastLocation()
@@ -86,8 +85,8 @@ internal fun WolfSavesSheet(game: GameEntity, onDismiss: () -> Unit) {
                 SelectionContainer { Text("${file.path}\n${file.file.path}", style = MaterialTheme.typography.bodySmall) }
             }
             if (nativeFiles.isNotEmpty()) {
-                item { Text("Sauvegardes du moteur Android", style = MaterialTheme.typography.titleMedium) }
-                item { Text("Ces emplacements appartiennent au moteur natif Astra. Ils sont séparés des sauvegardes Windows et ne transfèrent pas la progression vers Winlator.") }
+                item { Text("Anciennes sauvegardes natives", style = MaterialTheme.typography.titleMedium) }
+                item { Text("Le moteur natif a été retiré. Ses sauvegardes restent conservées et exportables ; elles ne transfèrent pas la progression vers Winlator.") }
                 item { Button(onClick = { exportNative = true; picker.launch("Astra-Wolf-sauvegardes-natives.zip") }, enabled = !loading && !exporting) { Text("Exporter les sauvegardes natives") } }
                 items(nativeFiles, key = { "native:${it.name}" }) { file -> SelectionContainer { Text("${file.name}\n${file.path}", style = MaterialTheme.typography.bodySmall) } }
             }

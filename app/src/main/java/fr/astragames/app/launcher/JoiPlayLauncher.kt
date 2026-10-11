@@ -59,6 +59,9 @@ object JoiPlayPayloadBuilder {
 
 object LaunchProfileResolver {
     fun engine(game: GameEntity, profile: LaunchProfileEntity?) = profile?.engineOverride?.takeIf(String::isNotBlank) ?: game.engine
+    /** Read-only catalogue projection: retain the detected engine in storage for reset and rescans. */
+    fun displayGame(game: GameEntity, profile: LaunchProfileEntity?): GameEntity =
+        engine(game, profile).let { if (it == game.engine) game else game.copy(engine = it) }
     fun executable(game: GameEntity, profile: LaunchProfileEntity?) = profile?.executableName?.takeIf(String::isNotBlank) ?: game.executableName
     fun physicalPath(game: GameEntity, profile: LaunchProfileEntity?) = profile?.physicalPath?.takeIf(String::isNotBlank) ?: game.physicalPath
     fun launcherType(game: GameEntity, profile: LaunchProfileEntity?) = profile?.launcherType?.takeIf(String::isNotBlank) ?: game.launcher
@@ -75,10 +78,7 @@ class JoiPlayLauncher : GameLauncher {
         if (LaunchProfileResolver.launcherType(game, profile) == "EXTERNAL") return launchExternal(context, game, profile)
         if (LaunchProfileResolver.engine(game, profile) == GameEngine.WOLF_RPG.name) {
             val executable = LaunchProfileResolver.executable(game, profile) ?: "Game.exe"
-            val runtime = fr.astragames.app.windows.WolfGameOptions(context, game.id).read().runtime
-            val intent = if (runtime == fr.astragames.app.windows.WolfRuntimeMode.WINLATOR)
-                fr.astragames.app.windows.WolfRuntimeActivity.intent(context, game.id, game.documentUri, executable, game.title)
-            else fr.astragames.app.wolfnative.WolfNativeActivity.intent(context, game.id, game.documentUri, executable, game.title)
+            val intent = fr.astragames.app.windows.WolfRuntimeActivity.intent(context, game.id, game.documentUri, executable, game.title)
             return start(context, intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         }
         val payload = JoiPlayPayloadBuilder.build(game, profile)
@@ -86,7 +86,7 @@ class JoiPlayLauncher : GameLauncher {
         val effectiveEngine = LaunchProfileResolver.engine(game, profile)
         val resolvedIntent = resolveJoiPlayIntent(context, effectiveEngine)
             ?: return LaunchResult.Failure(
-                if (effectiveEngine == GameEngine.RENPY.name) "Installez ou mettez à jour le plugin Ren'Py de JoiPlay"
+                if (effectiveEngine == GameEngine.RENPY.name) "Aucun plugin Android Ren’Py compatible n’est disponible. Installez-le depuis Paramètres → JoiPlay → Gestionnaire de runtimes. Les fichiers Ren’Py du jeu PC ne remplacent pas ce plugin."
                 else "JoiPlay ou le runtime requis n'est pas installé"
             )
         val intent = resolvedIntent.apply {
@@ -103,11 +103,12 @@ class JoiPlayLauncher : GameLauncher {
     fun resolveJoiPlayIntent(context: Context, engine: String): Intent? =
         JoiPlayPayloadBuilder.actionsFor(engine).firstNotNullOfOrNull { action ->
             val base = Intent(action).addCategory(Intent.CATEGORY_DEFAULT)
-            val trusted = JoiPlayPayloadBuilder.trustedPackagesFor(engine)
             val target = context.packageManager.queryIntentActivities(base, PackageManager.MATCH_DEFAULT_ONLY)
                 .map { it.activityInfo }
-                .filter { it.exported && it.enabled && it.packageName in trusted }
-                .maxByOrNull { it.packageName }
+                .filter { it.exported && it.enabled && it.applicationInfo.enabled &&
+                    (it.permission.isNullOrEmpty() || context.checkSelfPermission(it.permission) == PackageManager.PERMISSION_GRANTED) &&
+                    JoiPlayRuntimeTrust.accepts(context.packageManager, engine, it.packageName) }
+                .maxWithOrNull(compareBy<android.content.pm.ActivityInfo> { JoiPlayRuntimeTrust.versionRank(it.packageName) }.thenBy { it.packageName })
             target?.let { base.setComponent(ComponentName(it.packageName, it.name)) }
         }
 

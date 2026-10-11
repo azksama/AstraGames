@@ -3,8 +3,10 @@ package fr.astragames.app.windows
 internal fun wolfRuntimeFailureHint(log: String): String? =
     if (log.contains("a wine server seems to be running, but I cannot connect to it"))
         "Wine ne peut pas joindre son serveur encore actif. Le jeu n’a pas pu démarrer."
+    else if (log.contains("nsiproxy.so(update_if_table") && log.contains("SIGSEGV"))
+        "Un processus Wine rencontre un défaut mémoire dans nsiproxy (interfaces réseau). Ce journal ne prouve pas que le processus du jeu a planté ; consultez aussi les erreurs de chargement et la fin de session."
     else if (log.contains("err:module:alloc_module rtl_rb_tree_put failed"))
-        "Wine échoue à enregistrer ses modules. Le profil Box64 Rapide peut être en cause ; essayez une relance avec le profil Stable."
+        "Wine signale des erreurs d’enregistrement de modules. Leur cause n’est pas déterminée par ce journal ; consultez également les erreurs qui suivent et la fin de session."
     else null
 
 /** A bounded excerpt per stream, preserving the result, loader context and final errors. */

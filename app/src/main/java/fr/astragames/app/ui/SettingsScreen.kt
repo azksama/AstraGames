@@ -181,6 +181,7 @@ internal fun SettingsScreen(
             ) }
             }
         }, second = {
+            item { BatteryOptimizationPreference(vm::prepareExternalPicker) }
             item { RoundedListItem(
                 modifier = Modifier.clickable { showWolfDiagnostics = true },
                 headlineContent = { Text("Diagnostic Wolf RPG") },

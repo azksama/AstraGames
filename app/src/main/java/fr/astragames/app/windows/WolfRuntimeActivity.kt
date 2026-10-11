@@ -62,6 +62,9 @@ class WolfRuntimeActivity : FragmentActivity() {
     private var shm: SysVSharedMemoryComponent? = null
     private var session: Job? = null
     private var process: Process? = null
+    private var cheatSession: WolfCheatSession? = null
+    private var cheatDialog: android.app.AlertDialog? = null
+    private var optionsDialog: android.app.AlertDialog? = null
     private val pressed = mutableSetOf<XKeycode>()
     private val keySources = mutableMapOf<String, Set<XKeycode>>()
     private lateinit var optionStore: WolfGameOptions
@@ -161,7 +164,6 @@ class WolfRuntimeActivity : FragmentActivity() {
                     WolfDiagnostics(this@WolfRuntimeActivity).begin(intent.getStringExtra("title") ?: "Wolf RPG", intent.getStringExtra("executable") ?: "?")
                 }
                 val id = requireNotNull(intent.getStringExtra("id"))
-                intent.getStringExtra("nativeFallbackReason")?.let { diagnostic?.event("Secours Winlator après vérification native : ${it.take(12_000)}") }
                 val uri = requireNotNull(intent.getStringExtra("source"))
                 val executable = requireNotNull(intent.getStringExtra("executable"))
                 progress(1, "Lecture des réglages et récupération de la session précédente…")
@@ -189,10 +191,11 @@ class WolfRuntimeActivity : FragmentActivity() {
                 storage.captureWindowsSaveBaseline()
                 display!!.renderer.awaitGameFrame(File(executable).name)
                 process = runInterruptible(Dispatchers.IO) { runner.launch(executable) }
+                cheatSession = WolfCheatSession(this@WolfRuntimeActivity, storage.directory, executable, runner)
                 progress(8, "Chargement du jeu · attente de sa première image…")
                 val visible = withTimeoutOrNull(180_000) {
                     while (!display!!.renderer.hasPresentedGameFrame()) {
-                        check(process!!.isAlive) { "Le jeu s’est arrêté avant sa première image : ${WolfDiagnosticSession.exitDescription(process!!.exitValue())}. Consultez le rapport de diagnostic." }
+                        check(runner.isGameAlive(process!!)) { "Le jeu s’est arrêté avant sa première image. Le processus de lancement a terminé avec ${WolfDiagnosticSession.exitDescription(process!!.exitValue())} et aucun processus du jeu n’est resté actif. Consultez le rapport de diagnostic." }
                         delay(100)
                     }
                     true
@@ -206,10 +209,11 @@ class WolfRuntimeActivity : FragmentActivity() {
                     controls.visibility = View.VISIBLE
                     startFpsCounter()
                 }
-                val result = runInterruptible(Dispatchers.IO) {
-                    process!!.waitFor().also { diagnostic?.exited(process!!, "Jeu", it) }
-                }
-                if (result != 0 && !closing) failure = "Le jeu s’est arrêté : ${WolfDiagnosticSession.exitDescription(result)}. Consultez le rapport de diagnostic."
+                while (runner.isGameAlive(process!!)) delay(250)
+                val result = process!!.exitValue()
+                diagnostic?.event("Fin de la session : aucun processus du jeu actif ; code du lanceur=$result (un enfant peut avoir un résultat distinct)")
+                if (runner.observedChildHandoff) diagnostic?.event("Un processus enfant a repris le jeu ; son code de sortie n’est pas accessible via le lanceur Android.")
+                if (result != 0 && !closing && !runner.observedChildHandoff) failure = "Le jeu s’est arrêté : ${WolfDiagnosticSession.exitDescription(result)}. Consultez le rapport de diagnostic."
             } catch (cancelled: CancellationException) { diagnostic?.event("Lancement annulé / fermeture demandée"); throw cancelled }
             catch (error: Throwable) {
                 failure = error.message ?: "Le lancement a échoué."
@@ -220,6 +224,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                 if (closing) progress("Fermeture du jeu et synchronisation des sauvegardes…")
                 withContext(Dispatchers.Main) {
                     playable = false
+                    dismissRuntimeDialogs()
                     heartbeat?.cancel(); heartbeat = null
                     if (::controls.isInitialized) controls.visibility = View.GONE
                     fpsLabel?.visibility = View.GONE
@@ -227,6 +232,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                     releaseKeys()
                 }
                 withContext(Dispatchers.IO) {
+                    runCatching { cheatSession?.close() }; cheatSession = null
                     runCatching { runner?.stop() }.onFailure { diagnostic?.failure("Échec de l’arrêt du runtime", it) }
                     process?.let { if (it.isAlive) it.destroyForcibly() }
                     if (storage != null && runner != null) {
@@ -303,7 +309,7 @@ class WolfRuntimeActivity : FragmentActivity() {
             updateKeys("controls", if (down) current + key else current - key)
         }, ::closeSession, optionStore, {
             releaseKeys()
-            showWolfOptions(this, optionStore) {
+            optionsDialog = showWolfOptions(this, optionStore) {
                 val previousMode = gameOptions.imageMode
                 gameOptions = optionStore.read(); controls.reload()
                 display?.renderer?.setSmoothScaling(gameOptions.smooth); display?.setMaxFps(gameOptions.maxFps)
@@ -311,7 +317,10 @@ class WolfRuntimeActivity : FragmentActivity() {
                 if (!gameOptions.pinchZoom) display?.renderer?.resetImageZoom()
                 diagnostic?.event("Cadrage modifié : ${gameOptions.imageMode}")
             }
-        }, ::releaseKeys).apply { visibility = View.GONE }
+        }, ::releaseKeys, cheats = {
+            releaseKeys()
+            if (playable && lockOverlay == null) cheatSession?.let { cheatDialog = showWolfCheats(this, it) }
+        }).apply { visibility = View.GONE }
         root.addView(controls, FrameLayout.LayoutParams(-1, -1))
         fpsLabel = TextView(this).apply { visibility = View.GONE; setTextColor(Color.WHITE); setBackgroundColor(0xAA17121E.toInt()); textSize = 12f; setPadding(dp(8), dp(4), dp(8), dp(4)) }
         root.addView(fpsLabel, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { leftMargin = dp(8); topMargin = dp(8) })
@@ -449,10 +458,15 @@ class WolfRuntimeActivity : FragmentActivity() {
     override fun onKeyDown(keyCode: Int, event: KeyEvent) = hardwareKey(event) || super.onKeyDown(keyCode, event)
     override fun onKeyUp(keyCode: Int, event: KeyEvent) = hardwareKey(event) || super.onKeyUp(keyCode, event)
     private fun unlockRuntime() { lockOverlay?.let(root::removeView); lockOverlay = null }
+    private fun dismissRuntimeDialogs() {
+        cheatDialog?.dismiss(); cheatDialog = null
+        optionsDialog?.dismiss(); optionsDialog = null
+    }
     private fun lockRuntime() {
         val current = settings ?: return
         if (lockOverlay != null || !(current.lockPinEnabled || current.lockBiometricEnabled)) return
         diagnosticOverlay?.let(root::removeView); diagnosticOverlay = null
+        dismissRuntimeDialogs()
         releaseKeys()
         lockOverlay = ComposeView(this).apply {
             setContent {
@@ -476,5 +490,5 @@ class WolfRuntimeActivity : FragmentActivity() {
     override fun onStop() { if (!isChangingConfigurations && settings?.lockOnBackground == true) lockRuntime(); super.onStop() }
     override fun onPause() { releaseKeys(); display?.onPause(); super.onPause() }
     override fun onResume() { super.onResume(); display?.onResume() }
-    override fun onDestroy() { process?.destroy(); session?.cancel(); super.onDestroy() }
+    override fun onDestroy() { dismissRuntimeDialogs(); process?.destroy(); session?.cancel(); super.onDestroy() }
 }

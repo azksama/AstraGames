@@ -18,6 +18,8 @@ public class Drawable extends XResource {
     public final Visual visual;
     private Texture texture = new Texture(this);
     private ByteBuffer data;
+    private ByteBuffer changedRegions;
+    private int fullFrameCopyBudget;
     private boolean useSharedData;
     private Runnable onDrawListener;
     private boolean offscreenStorage = false;
@@ -108,7 +110,7 @@ public class Drawable extends XResource {
             if ((dstX + width) > this.width) width = (short)((this.width - dstX));
             if ((dstY + height) > this.height) height = (short)((this.height - dstY));
 
-            if (compare) changed = copyAreaChanged(srcX, srcY, dstX, dstY, width, height, totalWidth, this.getStride(), data, this.data);
+            if (compare) changed = copyAreaChanged(srcX, srcY, dstX, dstY, width, height, totalWidth, this.getStride(), data, this.data, damageBuffer());
             else copyArea(srcX, srcY, dstX, dstY, width, height, totalWidth, this.getStride(), data, this.data);
         }
 
@@ -151,7 +153,7 @@ public class Drawable extends XResource {
         long changed = 0;
         boolean compare = gcFunction == GraphicsContext.Function.COPY && shouldCompareImage() && !(drawable.texture instanceof GPUImage);
         if (gcFunction == GraphicsContext.Function.COPY) {
-            if (compare) changed = copyAreaChanged(srcX, srcY, dstX, dstY, width, height, drawable.getStride(), this.getStride(), drawable.data, this.data);
+            if (compare) changed = copyAreaChanged(srcX, srcY, dstX, dstY, width, height, drawable.getStride(), this.getStride(), drawable.data, this.data, damageBuffer());
             else copyArea(srcX, srcY, dstX, dstY, width, height, drawable.getStride(), this.getStride(), drawable.data, this.data);
         }
         else copyAreaOp(srcX, srcY, dstX, dstY, width, height, drawable.getStride(), this.getStride(), drawable.data, this.data, gcFunction.ordinal());
@@ -221,13 +223,35 @@ public class Drawable extends XResource {
     }
 
     private void forceChangedUpdate(long region) {
-        if (region != 0) forceUpdate((int)(region >>> 48), (int)(region >>> 32) & 0xffff,
-            (int)(region >>> 16) & 0xffff, (int)region & 0xffff);
+        if (region == 0) return;
+        if (changedRegions == null) {
+            forceUpdate((int)(region >>> 48), (int)(region >>> 32) & 0xffff, (int)(region >>> 16) & 0xffff, (int)region & 0xffff);
+            return;
+        }
+        long changedArea = 0;
+        for (int offset = 0; offset < changedRegions.capacity(); offset += 16) {
+            int right = changedRegions.getInt(offset + 8), bottom = changedRegions.getInt(offset + 12);
+            if (right == 0 || bottom == 0) continue;
+            int left = changedRegions.getInt(offset), top = changedRegions.getInt(offset + 4);
+            changedArea += (long)(right - left) * (bottom - top);
+            texture.markDirty(left, top, right - left, bottom - top);
+        }
+        // A scrolling map really changes most pixels. Use the optimized memcpy path
+        // for the next three writes, then sample damage again; never skip a frame.
+        if (changedArea * 10 >= (long)width * height * 7) fullFrameCopyBudget = 3;
+        if (onDrawListener != null) onDrawListener.run();
+    }
+
+    private ByteBuffer damageBuffer() {
+        if (changedRegions == null) changedRegions = ByteBuffer.allocateDirect(((width + 63) / 64) * ((height + 63) / 64) * 16).order(ByteOrder.nativeOrder());
+        return changedRegions;
     }
 
     private boolean shouldCompareImage() {
         // Only displayed windows benefit from detecting damage. Scratch pixmaps keep the fast copy path.
-        return onDrawListener != null && (!offscreenStorage || useSharedData) && !(texture instanceof GPUImage);
+        if (onDrawListener == null || (offscreenStorage && !useSharedData) || texture instanceof GPUImage) return false;
+        if (fullFrameCopyBudget > 0) { fullFrameCopyBudget--; return false; }
+        return true;
     }
 
     public boolean isUseSharedData() {
@@ -243,7 +267,7 @@ public class Drawable extends XResource {
     private static native void drawAlphaMaskedBitmap(byte foreRed, byte foreGreen, byte foreBlue, byte backRed, byte backGreen, byte backBlue, ByteBuffer srcData, ByteBuffer maskData, ByteBuffer dstData);
 
     private static native void copyArea(short srcX, short srcY, short dstX, short dstY, short width, short height, short srcStride, short dstStride, ByteBuffer srcData, ByteBuffer dstData);
-    private static native long copyAreaChanged(short srcX, short srcY, short dstX, short dstY, short width, short height, short srcStride, short dstStride, ByteBuffer srcData, ByteBuffer dstData);
+    private static native long copyAreaChanged(short srcX, short srcY, short dstX, short dstY, short width, short height, short srcStride, short dstStride, ByteBuffer srcData, ByteBuffer dstData, ByteBuffer damage);
 
     private static native void copyAreaOp(short srcX, short srcY, short dstX, short dstY, short width, short height, short srcStride, short dstStride, ByteBuffer srcData, ByteBuffer dstData, int gcFunction);
 

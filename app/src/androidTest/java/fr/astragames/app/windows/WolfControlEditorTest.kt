@@ -20,11 +20,39 @@ class WolfControlEditorTest {
     private val instrumentation get() = InstrumentationRegistry.getInstrumentation()
     private val context get() = instrumentation.targetContext
 
+    @Test fun userSelectsJoystickAndEditsItsSizeThenAnIndividualButton() {
+        // Connect accessibility before opening the modal, not in the middle of its focus transition.
+        instrumentation.uiAutomation
+        val store = WolfGameOptions(context, "joystick-editor-${System.nanoTime()}")
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            scenario.onActivity { activity -> install(activity, WolfTouchControls(activity, { _, _ -> }, {}, store)) }
+            click("Menu du jeu")
+            click("Déplacement : croix")
+            click("Joystick à huit directions")
+            await { WolfControlLayout.movement(store.controlLayout()) == WolfMovementMode.JOYSTICK }
+            click("Menu du jeu"); click("Modifier les touches"); click("Joystick de déplacement")
+            progress("Taille individuelle", 110f) // 50 + 110 = 160 percent
+            progress("Opacité individuelle", 35f) // 15 + 35 = 50 percent
+            capture("wolf-joystick-editor")
+            click("Enregistrer")
+            await { WolfControlLayout.size(store.controlLayout(), "joystick") == 160 }
+            assertEquals(50, WolfControlLayout.opacity(store.controlLayout(), "joystick", 75))
+            click("Valider")
+            progress("Taille individuelle", 130f)
+            click("Enregistrer")
+            await { WolfControlLayout.size(store.controlLayout(), "accept") == 180 }
+            click("Terminer")
+            capture("wolf-joystick-controls")
+        }
+    }
+
     @Test fun userAddsSearchesEditsSavesAndLoadsControlsAcrossGames() {
+        instrumentation.uiAutomation
         val id = "editor-${System.nanoTime()}"
         val name = "Preset $id"
         val first = WolfGameOptions(context, id)
         first.save(WolfOptions(opacity = 31, size = 120))
+        first.loadControlLayout(first.controlLayout().put("movementMode", "JOYSTICK").put("size_joystick", 145).put("size_accept", 160).put("opacity_accept", 65))
         try {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 scenario.onActivity { activity ->
@@ -58,6 +86,9 @@ class WolfControlEditorTest {
                 click("Presets de contrôles"); click(name); click("Charger ce preset")
                 await { second.customControls().size == 1 }
                 assertEquals(31, second.read().opacity); assertEquals(120, second.read().size)
+                assertEquals(WolfMovementMode.JOYSTICK, WolfControlLayout.movement(second.controlLayout()))
+                assertEquals(145, WolfControlLayout.size(second.controlLayout(), "joystick")); assertEquals(160, WolfControlLayout.size(second.controlLayout(), "accept"))
+                assertEquals(65, WolfControlLayout.opacity(second.controlLayout(), "accept", 31))
                 assertEquals(WolfRuntimeMode.WINLATOR, second.read().runtime); assertEquals("1920x1080", second.read().resolution)
                 assertEquals(.2f to .7f, second.position(control.id, false)); assertEquals(.8f to .3f, second.position(control.id, true))
                 capture("wolf-controls-editor")
@@ -117,24 +148,46 @@ class WolfControlEditorTest {
         }
     }
 
-    private fun click(label: String) { await { node(label, clickable = true)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true } }
+    private fun click(label: String) { await("Click '$label'") { node(label, clickable = true)?.performAction(AccessibilityNodeInfo.ACTION_CLICK) == true } }
     private fun text(label: String, value: String) {
         val arguments = Bundle().apply { putCharSequence(AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, value) }
         await { node(label)?.performAction(AccessibilityNodeInfo.ACTION_SET_TEXT, arguments) == true }
     }
+    private fun progress(label: String, value: Float) {
+        val arguments = Bundle().apply { putFloat(AccessibilityNodeInfo.ACTION_ARGUMENT_PROGRESS_VALUE, value) }
+        await { node(label)?.performAction(AccessibilityNodeInfo.AccessibilityAction.ACTION_SET_PROGRESS.id, arguments) == true }
+    }
     private fun node(label: String, clickable: Boolean = false): AccessibilityNodeInfo? {
         fun find(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
             val matches = node.text?.toString()?.equals(label, true) == true || node.contentDescription?.toString()?.equals(label, true) == true
-            if (matches && (!clickable || node.className != "android.widget.EditText" && node.isClickable)) return node
+            if (matches) {
+                if (!clickable) return node
+                // PopupMenu labels belong to a clickable list row, rather than to the TextView itself.
+                var actionNode: AccessibilityNodeInfo? = node
+                while (actionNode != null) {
+                    if (actionNode.className != "android.widget.EditText" && actionNode.isClickable) return actionNode
+                    actionNode = actionNode.parent
+                }
+            }
             for (index in 0 until node.childCount) node.getChild(index)?.let { find(it)?.let { found -> return found } }
             return null
         }
         return instrumentation.uiAutomation.rootInActiveWindow?.let(::find)
     }
-    private fun await(condition: () -> Boolean) {
+    private fun await(description: String = "Expected editor interaction", condition: () -> Boolean) {
         val deadline = SystemClock.elapsedRealtime() + 7000
         while (SystemClock.elapsedRealtime() < deadline) { if (condition()) return; SystemClock.sleep(80) }
-        assertTrue("Expected editor interaction did not complete", condition())
+        if (!condition()) {
+            val tree = StringBuilder()
+            fun append(node: AccessibilityNodeInfo, depth: Int) {
+                if (depth > 12 || tree.length > 12_000) return
+                tree.append(" ".repeat(depth)).append(node.className).append(" text=").append(node.text)
+                    .append(" description=").append(node.contentDescription).append(" clickable=").append(node.isClickable).append('\n')
+                for (index in 0 until node.childCount) node.getChild(index)?.let { append(it, depth + 1) }
+            }
+            instrumentation.uiAutomation.rootInActiveWindow?.let { append(it, 0) }
+            fail("$description did not complete\n$tree")
+        }
     }
     private fun capture(prefix: String) {
         if (InstrumentationRegistry.getArguments().getString("wolfUiCapture") != "true") return

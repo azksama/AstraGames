@@ -46,8 +46,33 @@ class WolfControlLayoutTest {
     }
     @Test fun unknownVersionCannotPartiallyReplaceTheCurrentLayout() {
         val data = JSONObject().put("key_left", "KEY_A")
-        try { WolfControlLayout.apply(data, JSONObject().put("version", 2)); fail() } catch (_: IllegalArgumentException) { }
+        try { WolfControlLayout.apply(data, JSONObject().put("version", 3)); fail() } catch (_: IllegalArgumentException) { }
         assertEquals("KEY_A", data.getString("key_left"))
+    }
+    @Test fun joystickAndIndividualAppearanceRoundTripAndLegacyPresetsMigrate() {
+        val layout = source().put("movementMode", "JOYSTICK").put("size_joystick", 170).put("opacity_joystick", 40)
+            .put("size_accept", 190).put("opacity_accept", 90).put("size_$customId", 75)
+            .put("position_true_joystick", JSONArray(listOf(.05, .7)))
+        val destination = JSONObject().put("runtime", "WINLATOR")
+        WolfControlLayout.apply(destination, WolfControlLayout.normalized(layout))
+        assertEquals(WolfMovementMode.JOYSTICK, WolfControlLayout.movement(destination))
+        assertEquals(170, WolfControlLayout.size(destination, "joystick")); assertEquals(190, WolfControlLayout.size(destination, "accept"))
+        assertEquals(40, WolfControlLayout.opacity(destination, "joystick", 75)); assertEquals(75, WolfControlLayout.size(destination, customId))
+        assertEquals(.7, destination.getJSONArray("position_true_joystick").getDouble(1), 0.0)
+        WolfControlLayout.apply(destination, source().put("version", 1))
+        assertEquals(WolfMovementMode.DPAD, WolfControlLayout.movement(destination)); assertEquals(100, WolfControlLayout.size(destination, "accept"))
+        assertFalse(destination.has("position_true_joystick")); assertEquals("WINLATOR", destination.getString("runtime"))
+    }
+    @Test fun malformedAppearanceIsBoundedAndUnknownControlsAreDropped() {
+        val result = WolfControlLayout.normalized(source().put("movementMode", "bad").put("size_accept", -90)
+            .put("size_joystick", 10000).put("opacity_joystick", 1000).put("opacity_back", -1)
+            .put("size_unknown", 100).put("opacity_unknown", 50).put("key_joystick", "KEY_F8"))
+        assertEquals(WolfMovementMode.DPAD, WolfControlLayout.movement(result))
+        assertEquals(50, WolfControlLayout.size(result, "accept")); assertEquals(200, WolfControlLayout.size(result, "joystick"))
+        assertEquals(100, WolfControlLayout.opacity(result, "joystick", 75)); assertEquals(15, WolfControlLayout.opacity(result, "back", 75))
+        assertFalse(result.has("size_unknown")); assertFalse(result.has("opacity_unknown")); assertFalse(result.has("key_joystick"))
+        WolfControlLayout.clear(result)
+        assertFalse(result.has("movementMode")); assertFalse(result.has("size_joystick")); assertFalse(result.has("opacity_back"))
     }
     @Test fun legacyRemapsAndBothOrientationsSurviveWithoutCustomButtons() {
         val legacy = JSONObject().put("key_accept", "KEY_Z").put("position_false_accept", JSONArray(listOf(.4, .9)))

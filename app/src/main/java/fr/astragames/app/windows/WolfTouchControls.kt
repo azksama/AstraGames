@@ -21,7 +21,7 @@ import kotlin.math.abs
 internal class WolfTouchControls(context: Context, private val key: (XKeycode, Boolean) -> Unit,
     private val quit: () -> Unit, private val store: WolfGameOptions? = null,
     private val settings: () -> Unit = {}, private val clearInput: () -> Unit = {},
-    private val menuVisibility: (Boolean) -> Unit = {}) : FrameLayout(context) {
+    private val menuVisibility: (Boolean) -> Unit = {}, private val cheats: (() -> Unit)? = null) : FrameLayout(context) {
     private data class Control(val id: String, val label: String, val code: XKeycode, val size: Int, val arrow: Float? = null)
     private val standardDefinitions = listOf(
         Control("up", "Haut", XKeycode.KEY_UP, 52, 0f), Control("left", "Gauche", XKeycode.KEY_LEFT, 52, -90f),
@@ -35,6 +35,9 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
     var editing = false
         private set
     private var options = store?.read() ?: WolfOptions()
+    private var controlLayout = store?.controlLayout() ?: org.json.JSONObject()
+    private val joystick = WolfJoystickView(context, ::moveJoystick)
+    private var joystickBindings: Map<String, XKeycode> = emptyMap()
     private val menuButton: Button
     private val editorBar = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
     private val dialogs = mutableSetOf<AlertDialog>()
@@ -43,6 +46,8 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
     init {
         isMotionEventSplittingEnabled = true
         definitions.forEach(::createButton)
+        addView(joystick, LayoutParams(dp(144), dp(144)))
+        configureJoystickEditing()
         editorBar.addView(button("Ajouter", false).apply {
             contentDescription = "Ajouter un bouton de contrôle"; setOnClickListener { controlDialogs?.custom() }
         }, LinearLayout.LayoutParams(dp(84), dp(48)))
@@ -57,8 +62,11 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
                 if (editing) { setEditing(false); return@setOnClickListener }
                 PopupMenu(WolfDialogs.context(context), anchor).apply {
                     menu.add("Réglages du jeu").setOnMenuItemClickListener { settings(); true }
+                    cheats?.let { action -> menu.add("Cheats et variables").setOnMenuItemClickListener { action(); true } }
                     menu.add("Modifier les touches").setOnMenuItemClickListener { setEditing(true); true }
                     if (store != null) {
+                        menu.add("Déplacement : ${if (WolfControlLayout.movement(controlLayout) == WolfMovementMode.JOYSTICK) "joystick" else "croix"}")
+                            .setOnMenuItemClickListener { controlDialogs?.movement(); true }
                         menu.add("Ajouter un bouton").setOnMenuItemClickListener { setEditing(true); controlDialogs?.custom(); true }
                         menu.add("Presets de contrôles").setOnMenuItemClickListener { controlDialogs?.presets(); true }
                     }
@@ -120,16 +128,18 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
             addView(button, LayoutParams(dp(def.size), dp(def.size)))
     }
     fun setEditing(value: Boolean) {
-        releaseAll(); editing = value
+        releaseAll(); if (value) clearInput(); editing = value
         if (value) hidden = false
         menuButton.text = if (value) "Terminer" else "Menu"
         editorBar.visibility = if (value && store != null) View.VISIBLE else View.GONE
         publishMenu()
-        if (value) android.widget.Toast.makeText(context, "Glissez pour déplacer · touchez pour changer l’action", android.widget.Toast.LENGTH_LONG).show()
+        if (value) android.widget.Toast.makeText(context, "Glissez pour déplacer · touchez pour régler la touche, la taille et l’opacité", android.widget.Toast.LENGTH_LONG).show()
         reload()
     }
     fun reload() {
-        releaseAll(); options = store?.read() ?: WolfOptions()
+        releaseAll(); options = store?.read() ?: WolfOptions(); controlLayout = store?.controlLayout() ?: org.json.JSONObject()
+        joystickBindings = standardDefinitions.filter { it.id in WolfControlLayout.directionIds }.associate { it.id to (store?.binding(it.id, it.code) ?: it.code) }
+        val useJoystick = WolfControlLayout.movement(controlLayout) == WolfMovementMode.JOYSTICK
         val current = definitions
         buttons.keys.filter { id -> current.none { it.id == id } }.toList().forEach { removeView(buttons.remove(it)) }
         current.filter { it.id !in buttons }.forEach(::createButton)
@@ -138,11 +148,16 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
             text = if (mapped == def.code) (if (def.arrow == null) def.label else "") else keyLabel(mapped)
             foreground = if (mapped == def.code && def.arrow != null) ArrowDrawable(def.arrow) else null
             contentDescription = if (mapped == def.code) def.label else "${def.label} : ${keyLabel(mapped)}"
-            alpha = if (editing) 1f else options.opacity / 100f
-            visibility = if (hidden) View.GONE else View.VISIBLE
-            val size = dp(def.size * options.size / 100).coerceAtLeast(dp(48))
+            alpha = if (editing) 1f else WolfControlLayout.opacity(controlLayout, def.id, options.opacity) / 100f
+            visibility = if (hidden || useJoystick && def.id in WolfControlLayout.directionIds) View.GONE else View.VISIBLE
+            val size = dp(def.size * options.size * WolfControlLayout.size(controlLayout, def.id) / 10_000).coerceAtLeast(dp(48))
             layoutParams = LayoutParams(size, size)
         } }
+        joystick.editing = editing
+        joystick.visibility = if (!hidden && useJoystick) View.VISIBLE else View.GONE
+        joystick.alpha = if (editing) 1f else WolfControlLayout.opacity(controlLayout, "joystick", options.opacity) / 100f
+        val joystickSize = dp(144 * options.size * WolfControlLayout.size(controlLayout, "joystick") / 10_000).coerceAtLeast(dp(88))
+        joystick.layoutParams = LayoutParams(joystickSize, joystickSize)
         requestLayout()
     }
     private fun landscape() = resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
@@ -153,6 +168,7 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
         val areaHeight = height - paddingTop - paddingBottom
         for (def in definitions) {
             val view = buttons.getValue(def.id)
+            if (view.visibility == View.GONE) continue
             val saved = store?.position(def.id, landscape())
             val default = when (def.id) {
                 "up" -> (dp(12) + step).toFloat() to (areaHeight - dp(12) - step * 3).toFloat()
@@ -171,13 +187,19 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
             view.x = paddingLeft + (saved?.first?.times(areaWidth - view.width) ?: default.first).coerceIn(0f, (areaWidth - view.width).coerceAtLeast(0).toFloat())
             view.y = paddingTop + (saved?.second?.times(areaHeight - view.height) ?: default.second).coerceIn(0f, (areaHeight - view.height).coerceAtLeast(0).toFloat())
         }
+        store?.position("joystick", landscape()).let { saved ->
+            joystick.x = paddingLeft + (saved?.first?.times(areaWidth - joystick.width) ?: dp(16).toFloat())
+                .coerceIn(0f, (areaWidth - joystick.width).coerceAtLeast(0).toFloat())
+            joystick.y = paddingTop + (saved?.second?.times(areaHeight - joystick.height) ?: (areaHeight - joystick.height - dp(16)).toFloat())
+                .coerceIn(0f, (areaHeight - joystick.height).coerceAtLeast(0).toFloat())
+        }
         if (indexOfChild(menuButton) != childCount - 1) menuButton.bringToFront()
         editorBar.bringToFront()
     }
     private fun remap(def: Control) {
         val custom = store?.customControls()?.firstOrNull { it.id == def.id }
         if (custom != null) controlDialogs?.custom(custom)
-        else controlDialogs?.key(store?.binding(def.id, def.code) ?: def.code) { store?.bind(def.id, it); reload() }
+        else controlDialogs?.control(def.id, def.label, def.code)
     }
     private fun keyLabel(code: XKeycode) = WolfKeyboard.label(code)
     private fun publishMenu() { menuVisibility(editing || popupVisible || dialogs.isNotEmpty()) }
@@ -189,12 +211,47 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
         if (def.id in held) return
         val current = definitions.firstOrNull { it.id == def.id } ?: return
         val code = store?.binding(def.id, current.code) ?: current.code
+        hold(def.id, code)
+    }
+    private fun hold(id: String, code: XKeycode) {
+        if (id in held) return
         val alreadyHeld = code in held.values
-        held[def.id] = code
+        held[id] = code
         if (!alreadyHeld) key(code, true)
     }
+    private fun moveJoystick(directions: Set<String>) {
+        val before = held.values.toSet()
+        held.keys.filter { it.startsWith("joystick_") }.toList().forEach(held::remove)
+        joystickBindings.forEach { (id, code) -> if (id in directions) held["joystick_$id"] = code }
+        val after = held.values.toSet()
+        (before - after).forEach { key(it, false) }; (after - before).forEach { key(it, true) }
+    }
+    private fun configureJoystickEditing() {
+        var downX = 0f; var downY = 0f; var originX = 0f; var originY = 0f; var dragged = false
+        joystick.setOnClickListener { if (editing) controlDialogs?.joystick() }
+        joystick.setOnTouchListener { view, event ->
+            if (!editing) return@setOnTouchListener false
+            when (event.actionMasked) {
+                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; originX = view.x; originY = view.y; dragged = false }
+                MotionEvent.ACTION_MOVE -> {
+                    if (abs(event.rawX - downX) + abs(event.rawY - downY) > dp(8)) dragged = true
+                    if (dragged) {
+                        view.x = (originX + event.rawX - downX).coerceIn(paddingLeft.toFloat(), (width - paddingRight - view.width).coerceAtLeast(paddingLeft).toFloat())
+                        view.y = (originY + event.rawY - downY).coerceIn(paddingTop.toFloat(), (height - paddingBottom - view.height).coerceAtLeast(paddingTop).toFloat())
+                    }
+                }
+                MotionEvent.ACTION_UP -> if (dragged) {
+                    store?.position("joystick", landscape(), (view.x - paddingLeft) / (width - paddingLeft - paddingRight - view.width).coerceAtLeast(1),
+                        (view.y - paddingTop) / (height - paddingTop - paddingBottom - view.height).coerceAtLeast(1))
+                } else view.performClick()
+                MotionEvent.ACTION_CANCEL -> { view.x = originX; view.y = originY }
+            }
+            true
+        }
+    }
     private fun release(id: String) { val code = held.remove(id) ?: return; if (code !in held.values) key(code, false) }
-    fun releaseAll() { held.keys.toList().forEach(::release); buttons.values.forEach { it.isPressed = false } }
+    fun releaseAll() { joystick.reset(); held.keys.toList().forEach(::release); buttons.values.forEach { it.isPressed = false } }
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) { if (!hasWindowFocus) releaseAll(); super.onWindowFocusChanged(hasWindowFocus) }
     override fun onDetachedFromWindow() {
         releaseAll(); dialogs.toList().forEach(AlertDialog::dismiss); popupVisible = false
         menuVisibility(false); super.onDetachedFromWindow()

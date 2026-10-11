@@ -23,10 +23,14 @@ class WolfReportPreviewTest {
             assertTrue(preview.contains("===== $name ====="))
     }
     @Test fun shortReportsAreUnchanged() { assertEquals("small report", wolfReportPreview("small report")) }
-    @Test fun moduleRegistrationFailureSuggestsStableWithoutDeclaringItTheProvenCause() {
+    @Test fun moduleRegistrationFailureDoesNotBlameAnUnobservedProfile() {
         val hint = requireNotNull(wolfRuntimeFailureHint("57626.196:0020:00c0:err:module:alloc_module rtl_rb_tree_put failed."))
-        assertTrue(hint.contains("peut être en cause")); assertTrue(hint.contains("Stable"))
+        assertTrue(hint.contains("cause n’est pas déterminée")); assertFalse(hint.contains("peut être en cause"))
         assertNull(wolfRuntimeFailureHint("Error loading needed lib libgcrypt.so"))
+    }
+    @Test fun networkProcessFaultTakesPrecedenceOverModuleNoise() {
+        val hint = requireNotNull(wolfRuntimeFailureHint("err:module:alloc_module rtl_rb_tree_put failed\nnsiproxy.so(update_if_table+1e4)\nSIGSEGV"))
+        assertTrue(hint.contains("interfaces réseau")); assertTrue(hint.contains("ne prouve pas"))
     }
     @Test fun onlyTheSpecificServerErrorIsPresentedAsACause() {
         assertNotNull(wolfRuntimeFailureHint("wine: a wine server seems to be running, but I cannot connect to it."))

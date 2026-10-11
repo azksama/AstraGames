@@ -439,6 +439,9 @@ interface AstraDao {
     @Query("SELECT * FROM launch_profiles WHERE gameId = :gameId LIMIT 1")
     fun observeLaunchProfile(gameId: String): Flow<LaunchProfileEntity?>
 
+    @Query("SELECT * FROM launch_profiles")
+    fun observeLaunchProfiles(): Flow<List<LaunchProfileEntity>>
+
     @Query("SELECT * FROM launch_profiles WHERE gameId = :gameId LIMIT 1")
     suspend fun getLaunchProfile(gameId: String): LaunchProfileEntity?
 

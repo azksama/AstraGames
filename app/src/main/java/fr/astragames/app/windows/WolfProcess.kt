@@ -17,6 +17,14 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
     private val pulseSocket = File(temporary, "pulse.sock")
     private var audio: Process? = null
     private var wineServer: Process? = null
+    private val gameToken = java.util.UUID.randomUUID().toString()
+    private val gameTracker = WolfGameProcessTracker(gameToken, storage.prefix.path, runtime.path)
+    private val liveness = WolfProcessLiveness()
+    private var initialExitLogged = false
+    var observedChildHandoff = false
+        private set
+    private var lastChildren = emptyList<Int>()
+    private var childrenCheckedAt = 0L
     private val fontConfig = File(storage.directory, "fonts.conf").apply {
         writeText("""<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>${runtime.path}/fonts</dir><dir>/system/fonts</dir><cachedir>${storage.directory.path}/font-cache</cachedir><alias binding="strong"><family>MS Gothic</family><prefer><family>IPAexGothic</family></prefer></alias></fontconfig>""")
     }
@@ -85,14 +93,15 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
     }
 
     private fun start(executable: File, args: List<String>, append: Boolean = true,
-                      stream: String = "runtime", workingDirectory: File = storage.game): Process {
+                      stream: String = "runtime", workingDirectory: File = storage.game,
+                      extraEnvironment: Map<String, String> = emptyMap()): Process {
         val command = listOf("/system/bin/linker64") + (if (arm) listOf(box.path) else emptyList()) + executable.path + args
         diagnostics?.event("Commande : ${command.joinToString(" ")}")
         diagnostics?.event("Dossier de travail : ${workingDirectory.path}; journal=$stream")
         return ProcessBuilder(command)
             .directory(workingDirectory).redirectErrorStream(true)
             .apply { if (diagnostics == null) redirectOutput(if (append) ProcessBuilder.Redirect.appendTo(log) else ProcessBuilder.Redirect.to(log)) }
-            .apply { environment().putAll(environment) }.start()
+            .apply { environment().putAll(environment); environment().putAll(extraEnvironment) }.start()
             .also { diagnostics?.capture(it, stream) }
     }
 
@@ -156,7 +165,29 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         val free = gameDrive.verifyWritable(requireNotNull(file.parentFile))
         diagnostics?.event("Sauvegardes : écriture vérifiée dans le dossier du jeu ; espace disponible sur G: = $free octets ; stockage Astra = ${storage.directory.usableSpace} octets")
         diagnostics?.gameErrorLog(requireNotNull(file.parentFile), beforeLaunch = true)
-        return start(wine, listOf(gameDrive.executable(executable)), workingDirectory = requireNotNull(file.parentFile))
+        return start(wine, listOf(gameDrive.executable(executable)), workingDirectory = requireNotNull(file.parentFile),
+            extraEnvironment = mapOf("ASTRA_GAME_SESSION" to gameToken))
+    }
+
+    /** Tools have no game token and therefore cannot keep the gameplay session alive. */
+    fun startAuxiliary(executable: File, args: List<String>, workingDirectory: File): Process =
+        start(wine, listOf(executable.path) + args, stream = "cheat", workingDirectory = workingDirectory)
+
+    fun isGameAlive(initial: Process): Boolean {
+        if (initial.isAlive) return liveness.alive(true, false, android.os.SystemClock.elapsedRealtime())
+        if (!initialExitLogged) {
+            initialExitLogged = true
+            diagnostics?.exited(initial, "Processus de lancement (les enfants restent supervisés)", initial.exitValue())
+        }
+        val now = android.os.SystemClock.elapsedRealtime()
+        if (now - childrenCheckedAt >= 500 || childrenCheckedAt == 0L) {
+            childrenCheckedAt = now
+            val children = gameTracker.liveChildren().sorted()
+            if (children.isNotEmpty()) observedChildHandoff = true
+            if (children != lastChildren) diagnostics?.event("Processus du jeu après le lanceur : ${children.joinToString().ifEmpty { "aucun ; attente d’une éventuelle relance" }}")
+            lastChildren = children
+        }
+        return liveness.alive(false, lastChildren.isNotEmpty(), now)
     }
     fun stop() {
         try {

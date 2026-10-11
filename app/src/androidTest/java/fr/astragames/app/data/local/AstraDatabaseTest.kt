@@ -34,6 +34,23 @@ class AstraDatabaseTest {
 
     @After fun tearDown() = database.close()
 
+    @Test fun profileEngineUpdatesCatalogueAndSearchAndResetRestoresDetection() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dao = database.dao()
+        dao.upsertGame(game().copy(engine = "UNKNOWN"))
+        val repository = GameRepository(context, dao, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database))
+        assertEquals("UNKNOWN", repository.games.first().single().engine)
+        repository.saveLaunchProfile(LaunchProfileEntity(gameId = "g1", engineOverride = "WOLF_RPG"))
+        assertEquals("WOLF_RPG", repository.games.first().single().engine)
+        assertEquals("WOLF_RPG", repository.search("wind").first().single().engine)
+        assertEquals("UNKNOWN", dao.getGame("g1")!!.engine)
+        // A rescan cannot silently discard the chosen runtime.
+        dao.upsertGame(game().copy(engine = "UNKNOWN"))
+        assertEquals("WOLF_RPG", repository.games.first().single().engine)
+        repository.resetLaunchProfile("g1")
+        assertEquals("UNKNOWN", repository.games.first().single().engine)
+    }
+
     @Test fun removingAGameCannotDiscardItsInstalledModJournal() = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dao = database.dao()

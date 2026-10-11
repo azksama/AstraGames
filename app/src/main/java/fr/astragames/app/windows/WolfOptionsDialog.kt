@@ -37,14 +37,13 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
             setSelection(selected); layout.addView(this, LinearLayout.LayoutParams(-1, -2))
         }
     }
-    val runtime = choice("Moteur · au prochain lancement", WolfRuntimeMode.entries.map { it.label }, original.runtime.ordinal)
-    label("Le moteur Android exécute directement les données Wolf. Automatique utilise Winlator lorsqu’une fonction du jeu n’est pas encore prise en charge. Natif expérimental permet de tester le moteur et fournit un diagnostic précis en cas d’incompatibilité.")
-    label("Les sauvegardes natives restent séparées des sauvegardes Windows. Passer d’un moteur à l’autre ne transfère pas la progression.")
+    label("Moteur Winlator", heading = true)
+    label("Les jeux Wolf RPG sont exécutés avec Wine et Box64 dans Astra.")
     val storage = choice("Fichiers Winlator · au prochain lancement", WolfStorageMode.entries.map { it.label }, original.storageMode.ordinal)
     label("Le dossier d’origine évite l’import et reçoit directement les sauvegardes. Une copie privée reste disponible si le dossier est inaccessible ou si des sauvegardes sont en conflit.")
     if (android.os.Build.VERSION.SDK_INT >= 30) {
         label(if (android.os.Environment.isExternalStorageManager()) "Accès direct au stockage local autorisé."
-            else "Pour Winlator, Android demande l’accès à tous les fichiers pour lancer un jeu local sans copie. Cette autorisation est facultative : sans elle, Winlator utilise une copie privée. Le moteur Android lit le dossier sélectionné avec son autorisation existante.")
+            else "Pour Winlator, Android demande l’accès à tous les fichiers pour lancer un jeu local sans copie. Cette autorisation est facultative : sans elle, Winlator utilise une copie privée.")
         layout.addView(WolfViewStyle.button(context, "Accès à tous les fichiers · réglages Android").apply {
             setOnClickListener {
                 val intent = android.content.Intent(android.provider.Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION,
@@ -93,7 +92,7 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
     label("Écartez ou rapprochez deux doigts pour zoomer de 1× à 4×. Déplacez les deux doigts pour parcourir l’image agrandie. Désactiver le zoom rétablit le cadrage initial.")
     val opacity = slider("Opacité des touches", 15, 100, original.opacity)
     val size = slider("Taille des touches", 70, 150, original.size)
-    label("Menu → Modifier les touches : faites glisser chaque touche ; touchez-la pour changer son action. Positions séparées en portrait et paysage.")
+    label("Menu → Modifier les touches : faites glisser chaque contrôle ; touchez-le pour changer son action, sa taille et son opacité. Positions séparées en portrait et paysage. Menu → Direction permet de choisir le joystick.")
     val dialog = WolfDialogs.builder(context, "Réglages Wolf RPG")
         .setView(ScrollView(context).apply { addView(layout) })
         .setNegativeButton("Annuler", null)
@@ -101,7 +100,7 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
             store.save(WolfOptions(WolfPerformance.entries[performance.selectedItemPosition], WolfOptions.resolutions[resolution.selectedItemPosition],
                 smooth.isChecked, if (fps.selectedItemPosition == 0) 30 else 60, counter.isChecked, touch.selectedItemPosition == 1,
                 opacity.progress + 15, size.progress + 70, WolfImageMode.entries[imageMode.selectedItemPosition],
-                WolfStorageMode.entries[storage.selectedItemPosition], zoom.isChecked, WolfRuntimeMode.entries[runtime.selectedItemPosition])); changed()
+                WolfStorageMode.entries[storage.selectedItemPosition], zoom.isChecked, WolfRuntimeMode.WINLATOR)); changed()
         }.create()
     WolfDialogs.show(dialog)
     return dialog

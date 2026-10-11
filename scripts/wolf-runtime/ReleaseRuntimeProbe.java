@@ -19,7 +19,6 @@ public class ReleaseRuntimeProbe extends Instrumentation {
     @Override public void onCreate(Bundle arguments) { this.arguments = arguments; super.onCreate(arguments); start(); }
     @Override public void onStart() {
         if (arguments != null && "true".equals(arguments.getString("wolfInspectConfiguration"))) { inspectConfiguration(); return; }
-        if (arguments != null && "true".equals(arguments.getString("wolfNative"))) { nativeProbe(); return; }
         Bundle result = new Bundle();
         try {
             File sample = arguments != null && arguments.containsKey("wolfSource") ? new File(arguments.getString("wolfSource"))
@@ -35,19 +34,14 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             if (!new File(sample, "Game.exe").isFile()) throw new Exception("Missing official fixture");
             File gameRoot = gameDirectory(gameId);
             if (arguments != null && "true".equals(arguments.getString("wolfSeedLegacyCopy"))) seedLegacyCopy(sample, gameRoot);
-            boolean automatic = arguments != null && "true".equals(arguments.getString("wolfAutomatic"));
-            Intent intent = new Intent().setClassName(getTargetContext(), automatic ? "fr.astragames.app.wolfnative.WolfNativeActivity" : "fr.astragames.app.windows.WolfRuntimeActivity")
+            Intent intent = new Intent().setClassName(getTargetContext(), "fr.astragames.app.windows.WolfRuntimeActivity")
                 .putExtra("id", gameId).putExtra("source", sample.toURI().toString())
                 .putExtra("executable", "Game.exe").putExtra("title", "Wolf release test")
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             long launchStarted = android.os.SystemClock.elapsedRealtime();
-            long launchWall = System.currentTimeMillis();
-            if (automatic) {
-                ActivityMonitor monitor = addMonitor("fr.astragames.app.windows.WolfRuntimeActivity", null, false);
-                try { startActivitySync(intent); activity = monitor.waitForActivityWithTimeout(20000); }
-                finally { removeMonitor(monitor); }
-                if (activity == null) throw new Exception("Automatic mode did not launch the Winlator fallback");
-            } else activity = startActivitySync(intent);
+            // Connect accessibility before creating windows, avoiding a focus reset on the first screenshot.
+            getUiAutomation();
+            activity = startActivitySync(intent);
             runOnMainSync(() -> activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE));
             Thread.sleep(100);
             screenshot("release-loading.png");
@@ -69,6 +63,19 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             long renderedMs = android.os.SystemClock.elapsedRealtime() - launchStarted;
             boolean coldPrefix = arguments != null && "true".equals(arguments.getString("wolfColdPrefix"));
             if (!coldPrefix && renderedMs >= 60000) throw new Exception("Prepared official sample exceeded 60 seconds: " + renderedMs);
+            if (arguments != null && "true".equals(arguments.getString("wolfCheatPanel"))) {
+                runOnMainSync(() -> find(activity.getWindow().getDecorView(), "Menu").performClick());
+                clickAccessible("Cheats et variables");
+                android.view.accessibility.AccessibilityNodeInfo field = awaitAccessible("Valeur à rechercher", false);
+                Bundle value = new Bundle();
+                value.putCharSequence(android.view.accessibility.AccessibilityNodeInfo.ACTION_ARGUMENT_SET_TEXT_CHARSEQUENCE, "123456789");
+                if (!field.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_SET_TEXT, value)) throw new Exception("Cheat search field rejected input");
+                clickAccessible("Nouvelle recherche");
+                awaitAccessible("résultat(s)", true);
+                screenshot("release-cheat.png");
+                clickAccessible("Fermer");
+                result.putString("cheat", "PASS: release menu opened, real Wine memory search completed without writes");
+            }
             boolean migrated = arguments != null && "true".equals(arguments.getString("wolfRequireMigration"));
             if (migrated) verifyMigration(sample, gameRoot);
             if (arguments != null && "true".equals(arguments.getString("wolfKillAfterRendered"))) {
@@ -101,15 +108,6 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             String events = new String(java.nio.file.Files.readAllBytes(new File(reports[0], "events.log").toPath()), "UTF-8");
             if (!events.contains("Serveur Windows supervisé") || !events.contains("Fin wineserver : code de sortie 0"))
                 throw new Exception("Missing supervised server lifecycle evidence");
-            if (automatic) {
-                boolean observed = false;
-                for (File report : reports) {
-                    org.json.JSONObject nativeState = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(new File(report, "session.json").toPath()), "UTF-8"));
-                    if (nativeState.optLong("started") >= launchWall && nativeState.optBoolean("finished") && nativeState.optString("result").startsWith("Secours Winlator")) observed = true;
-                }
-                if (!observed) throw new Exception("No completed native incompatibility report before fallback");
-                result.putBoolean("automaticFallback", true);
-            }
             if (arguments != null && "true".equals(arguments.getString("wolfRequireDirect"))) {
                 org.json.JSONObject mode = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(new File(gameRoot, "working-mode.json").toPath()), "UTF-8"));
                 if (!mode.optString("mode").equals("DIRECT")) throw new Exception("Original directory was not used: " + mode);
@@ -117,6 +115,7 @@ public class ReleaseRuntimeProbe extends Instrumentation {
                 result.putString("configuration", verifyRestoredConfiguration(ini, originalIni, gameRoot));
             }
             result.putBoolean("debuggable", (getTargetContext().getApplicationInfo().flags & 2) != 0);
+            result.putString("sourceGameSha256", hex(java.security.MessageDigest.getInstance("SHA-256").digest(java.nio.file.Files.readAllBytes(new File(sample, "Game.exe").toPath()))));
             result.putString("stream", "PASS: Release game rendered, accepted input and closed with supervised wineserver. readyMs=" + readyMs + " renderedMs=" + renderedMs + "\n" + state);
             finish(Activity.RESULT_OK, result);
         } catch (Throwable error) {
@@ -161,110 +160,6 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             result.putString("stream", android.util.Log.getStackTraceString(error));
             finish(Activity.RESULT_CANCELED, result);
         }
-    }
-    /** Exercises the real R8 APK using SDK framework APIs, without app classes or reflection. */
-    private void nativeProbe() {
-        Bundle result = new Bundle();
-        String gameId = "native-release-beta14";
-        android.content.SharedPreferences prefs = getTargetContext().getSharedPreferences("wolf_game_options", 0);
-        String preferenceKey = null, previous = null;
-        try {
-            if ((getTargetContext().getApplicationInfo().flags & 2) != 0) throw new Exception("Expected non-debuggable release APK");
-            File source = new File(getTargetContext().getFilesDir(), "wolf-probe/native-authored-beta14");
-            File marker = new File(source, ".astra-test-fixture");
-            if (!marker.isFile() || !new String(java.nio.file.Files.readAllBytes(marker.toPath()), "UTF-8").equals("AUTHORED_BETA14"))
-                throw new Exception("Missing independently authored native fixture");
-            byte[] original = java.nio.file.Files.readAllBytes(new File(source, "Save/original.sav").toPath());
-            preferenceKey = hex(java.security.MessageDigest.getInstance("SHA-256").digest(gameId.getBytes("UTF-8")));
-            previous = prefs.getString(preferenceKey, null);
-            if (!prefs.edit().putString(preferenceKey, new org.json.JSONObject().put("runtime", "NATIVE").put("showFps", false)
-                .put("smooth", false).put("pinchZoom", true).toString()).commit()) throw new Exception("Could not select native runtime");
-            long started = android.os.SystemClock.elapsedRealtime();
-            activity = startActivitySync(new Intent().setClassName(getTargetContext(), "fr.astragames.app.wolfnative.WolfNativeActivity")
-                .putExtra("id", gameId).putExtra("source", source.toURI().toString()).putExtra("executable", "Game.exe")
-                .putExtra("title", "Native authored release fixture").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-            runOnMainSync(() -> activity.getWindow().clearFlags(WindowManager.LayoutParams.FLAG_SECURE));
-            long deadline = started + 15000;
-            boolean[] ready = {false};
-            while (android.os.SystemClock.elapsedRealtime() < deadline && !ready[0]) {
-                runOnMainSync(() -> { Button button = find(activity.getWindow().getDecorView(), "Valider"); ready[0] = button != null && button.isShown(); });
-                Thread.sleep(50);
-            }
-            if (!ready[0]) throw new Exception("Native release did not show its first image");
-            long readyMs = android.os.SystemClock.elapsedRealtime() - started;
-            Thread.sleep(400); nativeImage("release-native-title.png", 0xff6020a0);
-            runOnMainSync(() -> find(activity.getWindow().getDecorView(), "Valider").performClick());
-            Thread.sleep(300);
-            runOnMainSync(() -> find(activity.getWindow().getDecorView(), "Valider").performClick());
-            Thread.sleep(300); nativeImage("release-native-game.png", 0xff208040);
-            File slot = new File(getTargetContext().getFilesDir(), "wolf-native/" + preferenceKey + "/saves/slot-0.astrawolf");
-            long previousWrite = slot.lastModified();
-            nativeMenu(); clickText("Sauvegarder · emplacement 0");
-            deadline = android.os.SystemClock.elapsedRealtime() + 10000;
-            while ((!slot.isFile() || slot.lastModified() <= previousWrite) && android.os.SystemClock.elapsedRealtime() < deadline) Thread.sleep(50);
-            if (!slot.isFile() || slot.length() == 0 || slot.lastModified() <= previousWrite) throw new Exception("Native release did not write a new save");
-            clickText("Fermer"); nativeMenu(); clickText("Charger une sauvegarde native"); clickText("Emplacement 0");
-            Thread.sleep(300); nativeImage("release-native-loaded.png", 0xff208040);
-            nativeMenu(); clickText("Réglages du jeu"); screenshot("release-native-options.png"); clickText("Annuler");
-            sendKeyDownUpSync(android.view.KeyEvent.KEYCODE_BACK);
-            if (!java.util.Arrays.equals(original, java.nio.file.Files.readAllBytes(new File(source, "Save/original.sav").toPath())))
-                throw new Exception("Original Windows save changed");
-            File[] reports = new File(getTargetContext().getNoBackupFilesDir(), "wolf-diagnostics").listFiles(File::isDirectory);
-            if (reports == null) throw new Exception("Missing native diagnostics");
-            java.util.Arrays.sort(reports, java.util.Comparator.comparing(File::getName).reversed());
-            File report = null;
-            for (File candidate : reports) {
-                String events = new String(java.nio.file.Files.readAllBytes(new File(candidate, "events.log").toPath()), "UTF-8");
-                if (events.contains("Native authored release fixture") && events.contains("wolf-native-kotlin-1")) { report = candidate; break; }
-            }
-            if (report == null) throw new Exception("No report from the real native release");
-            org.json.JSONObject state = null;
-            deadline = android.os.SystemClock.elapsedRealtime() + 10000;
-            while (android.os.SystemClock.elapsedRealtime() < deadline) {
-                state = new org.json.JSONObject(new String(java.nio.file.Files.readAllBytes(new File(report, "session.json").toPath()), "UTF-8"));
-                if (state.optBoolean("finished")) break;
-                Thread.sleep(50);
-            }
-            if (state == null || !state.optBoolean("finished") || !state.optString("result").contains("fermée")) throw new Exception("Native release did not close cleanly: " + state);
-            result.putBoolean("debuggable", false);
-            result.putString("stream", "PASS: R8 native release displayed title and map, accepted controls, saved, loaded and closed. readyMs=" + readyMs
-                + "; original Windows save preserved; authored fixture only.\n" + state);
-            finish(Activity.RESULT_OK, result);
-        } catch (Throwable error) {
-            result.putString("stream", android.util.Log.getStackTraceString(error));
-            finish(Activity.RESULT_CANCELED, result);
-        } finally {
-            if (activity != null && !activity.isDestroyed()) runOnMainSync(() -> activity.finish());
-            if (preferenceKey != null) { android.content.SharedPreferences.Editor edit = prefs.edit(); if (previous == null) edit.remove(preferenceKey); else edit.putString(preferenceKey, previous); edit.commit(); }
-        }
-    }
-    private void nativeMenu() throws Exception {
-        runOnMainSync(() -> find(activity.getWindow().getDecorView(), "Menu").performClick());
-        clickText("Réglages du jeu");
-    }
-    private void clickText(String text) throws Exception {
-        long deadline = android.os.SystemClock.elapsedRealtime() + 10000;
-        while (android.os.SystemClock.elapsedRealtime() < deadline) {
-            android.view.accessibility.AccessibilityNodeInfo root = getUiAutomation().getRootInActiveWindow();
-            if (root != null) for (android.view.accessibility.AccessibilityNodeInfo node : root.findAccessibilityNodeInfosByText(text)) {
-                if (!text.equalsIgnoreCase(node.getText() == null ? "" : node.getText().toString())) continue;
-                android.view.accessibility.AccessibilityNodeInfo target = node;
-                while (target != null && !target.isClickable()) target = target.getParent();
-                if (target != null && target.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)) { Thread.sleep(200); return; }
-            }
-            Thread.sleep(50);
-        }
-        throw new Exception("Native menu action unavailable: " + text);
-    }
-    private void nativeImage(String name, int expected) throws Exception {
-        Bitmap bitmap = getUiAutomation().takeScreenshot();
-        if (bitmap == null) throw new Exception("Native screenshot unavailable");
-        int matching = 0;
-        for (int y = 0; y < bitmap.getHeight(); y += 8) for (int x = 0; x < bitmap.getWidth(); x += 8)
-            if (bitmap.getPixel(x, y) == expected) matching++;
-        bitmap.recycle();
-        if (matching < 50) throw new Exception("Authored native content was not rendered: " + name + " matches=" + matching);
-        screenshot(name);
     }
     private File gameDirectory(String gameId) throws Exception {
         byte[] bytes = java.security.MessageDigest.getInstance("SHA-256").digest(gameId.getBytes("UTF-8"));
@@ -326,6 +221,30 @@ public class ReleaseRuntimeProbe extends Instrumentation {
             Button found = find(((ViewGroup)view).getChildAt(i), label); if (found != null) return found;
         }
         return null;
+    }
+    private android.view.accessibility.AccessibilityNodeInfo accessible(android.view.accessibility.AccessibilityNodeInfo node, String label, boolean contains) {
+        if (node == null) return null;
+        String text = String.valueOf(node.getText());
+        if ((contains ? text.contains(label) : text.equals(label)) || label.equals(String.valueOf(node.getContentDescription()))) return node;
+        for (int i = 0; i < node.getChildCount(); i++) {
+            android.view.accessibility.AccessibilityNodeInfo found = accessible(node.getChild(i), label, contains);
+            if (found != null) return found;
+        }
+        return null;
+    }
+    private android.view.accessibility.AccessibilityNodeInfo awaitAccessible(String label, boolean contains) throws Exception {
+        for (int i = 0; i < 300; i++) {
+            android.view.accessibility.AccessibilityNodeInfo found = accessible(getUiAutomation().getRootInActiveWindow(), label, contains);
+            if (found != null) return found;
+            Thread.sleep(100);
+        }
+        throw new Exception("Release UI missing: " + label);
+    }
+    private void clickAccessible(String label) throws Exception {
+        android.view.accessibility.AccessibilityNodeInfo node = awaitAccessible(label, false);
+        while (node != null && !node.isClickable()) node = node.getParent();
+        if (node == null || !node.performAction(android.view.accessibility.AccessibilityNodeInfo.ACTION_CLICK)) throw new Exception("Release UI not clickable: " + label);
+        Thread.sleep(250);
     }
     private void screenshot(String name) throws Exception {
         Bitmap bitmap = getUiAutomation().takeScreenshot();

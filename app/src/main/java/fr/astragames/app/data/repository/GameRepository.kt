@@ -32,6 +32,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.combine
+import fr.astragames.app.launcher.LaunchProfileResolver
 import org.json.JSONArray
 import org.json.JSONObject
 import org.json.JSONTokener
@@ -50,7 +52,11 @@ class GameRepository(
     private val scanner: RecursiveSourceScanner,
     private val backupManager: BackupManager
 ) {
-    val games: Flow<List<GameEntity>> = dao.observeGames()
+    private fun effectiveGames(games: Flow<List<GameEntity>>) = combine(games, dao.observeLaunchProfiles()) { entries, profiles ->
+        val byGame = profiles.associateBy { it.gameId }
+        entries.map { LaunchProfileResolver.displayGame(it, byGame[it.id]) }
+    }
+    val games: Flow<List<GameEntity>> = effectiveGames(dao.observeGames())
     val sources: Flow<List<GameSourceEntity>> = dao.observeSources()
     val tags: Flow<List<TagEntity>> = dao.observeTags()
     val tagCategories: Flow<List<TagCategoryEntity>> = dao.observeTagCategories()
@@ -63,7 +69,7 @@ class GameRepository(
     val auditEvents: Flow<List<AuditEventEntity>> = dao.observeAuditEvents()
     fun gameTagRefs() = dao.observeGameTagRefs()
     fun search(query: String) = if (fr.astragames.app.core.search.SearchParser.terms(query).isEmpty()) games
-        else dao.searchGames(fr.astragames.app.core.search.SearchParser.toFtsQuery(query))
+        else effectiveGames(dao.searchGames(fr.astragames.app.core.search.SearchParser.toFtsQuery(query)))
 
     fun game(id: String) = dao.observeGame(id)
     fun gameTags(id: String) = dao.observeTagsForGame(id)

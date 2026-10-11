@@ -55,6 +55,15 @@ class JoiPlayPayloadBuilderTest {
         assertEquals("/storage/emulated/0/Games/AstraQuest", LaunchProfileResolver.physicalPath(game(), profile))
     }
 
+    @Test fun chosenWolfEngineIsDisplayedWithoutReplacingDetection() {
+        val detected = game().copy(engine = "UNKNOWN")
+        val profile = LaunchProfileEntity(gameId = detected.id, engineOverride = "WOLF_RPG")
+        assertEquals("WOLF_RPG", LaunchProfileResolver.displayGame(detected, profile).engine)
+        assertEquals("UNKNOWN", detected.engine)
+        assertEquals("UNKNOWN", LaunchProfileResolver.displayGame(detected, null).engine)
+        assertEquals("UNKNOWN", LaunchProfileResolver.displayGame(detected, profile.copy(engineOverride = " ")).engine)
+    }
+
     private fun game() = GameEntity(
         id = "game-1", title = "Astra Quest", documentUri = "content://game",
         physicalPath = "/storage/emulated/0/Games/AstraQuest", executableName = "Game.exe",

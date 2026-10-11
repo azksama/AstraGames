@@ -1,21 +1,21 @@
 # Astra
 
-Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay ou, pour Wolf RPG, avec les moteurs intégrés Android et Windows. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
+Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay ou, pour Wolf RPG, avec Winlator, Wine et Box64 intégrés. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
 
-Le [moteur Wolf Android expérimental](docs/wolf-native/IMPLEMENTATION.md), issu de la [recherche REA](docs/wolf-native/README.md), interprète directement les données du jeu. Les exemples officiels 2.2961 et 3.729 disposent de parcours natifs vérifiés, dont la sauvegarde depuis leur menu et la reprise après relance. Sa compatibilité reste partielle ; Winlator est conservé en secours, avec les sauvegardes Windows existantes.
+Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été retirés du produit. Les anciens choix Automatique/Natif utilisent désormais Winlator. Les sauvegardes natives déjà créées restent conservées et exportables depuis les outils du jeu ; elles ne sont pas converties en sauvegardes Windows. Les documents de [recherche REA historique](docs/wolf-native/README.md) sont conservés comme archives.
 
 ## Fonctions incluses
 
 - onboarding et sélection de dossiers avec `ACTION_OPEN_DOCUMENT_TREE` ;
 - onboarding guidé avec choix de langue, import de tags, dossier de jeux et vérification des runtimes JoiPlay ;
 - interface disponible en français, anglais (par défaut), espagnol, russe, allemand, chinois et japonais, avec conservation des titres, tags et recherches Unicode ;
-- permissions SAF persistantes, sans `MANAGE_EXTERNAL_STORAGE` ;
+- permissions SAF persistantes ; accès à tous les fichiers facultatif pour jouer directement depuis un dossier local avec Winlator ;
 - sources multiples, activation, suppression, scan individuel ou global ;
 - scan ciblé depuis **Paramètres → Sources et scan → Sous-dossier…** : navigation dans une source déjà autorisée, puis analyse du dossier choisi avec les options de récursivité de la source. Ce scan ajoute ou retrouve les jeux sans marquer les autres absents ; le scan complet reste nécessaire pour vérifier les suppressions ;
 - scan récursif hors thread principal (garde-fous de 128 niveaux et 100 000 dossiers), avec arrêt et remontée dès qu'un dossier contient un exécutable, et écran de progression indiquant source, chemin, profondeur, dossiers et jeux ;
 - détection RPG Maker MV/MZ, Ren'Py, HTML5, Tyrano, Construct, Twine, Electron et Wolf RPG ;
 - moteur Wolf intégré expérimental : Wine, Box64 sur ARM64, affichage et commandes dans Astra, import SAF et synchronisation prudente des sauvegardes ;
-- moteur Wolf Android expérimental : lecteurs Wolf, VM Kotlin, rendu Canvas, audio Android, accès direct local/SAF, tactile et sauvegardes privées ; sélection par jeu et secours Winlator ;
+- Wolf RPG exécuté uniquement avec Winlator ; anciennes sauvegardes natives conservées en lecture seule et exportables ;
 - fingerprint, reconnaissance de déplacement, doublons et jeux manquants ;
 - rapport détaillé et persistant après chaque scan : ajoutés, actualisés, déjà connus, déplacés, manquants, ignorés et erreurs avec chemin et raison ;
 - Room avec index FTS4, historique des scans et sessions de lancement ;
@@ -29,6 +29,7 @@ Le [moteur Wolf Android expérimental](docs/wolf-native/IMPLEMENTATION.md), issu
 - résolution guidée des doublons : comparaison côte à côte, choix du principal, fusion des métadonnées et de l’historique, récupération des sauvegardes et stratégie de conflits ;
 - suivi du temps de jeu par sessions et affichage de la durée cumulée ;
 - gestionnaire de runtimes JoiPlay avec détection dynamique des variantes installées, catalogue officiel mis en cache sept jours et notification des mises à jour ;
+- détection des plugins Ren’Py versionnés avec vérification du certificat officiel ; moteur choisi dans un profil reflété dans la bibliothèque et la fiche ;
 - suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
 - sauvegarde et restauration chiffrée du catalogue, des profils, des jaquettes et des journaux de sauvegardes/mods, avec raccourci vers le dossier choisi ;
 - choix automatique et manuel de jaquettes dans le moteur sélectionné (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), sans filtre de contenu ajouté par Astra, sélection de l’image affichée, ouverture navigateur, choix local et recadrage libre ;
@@ -50,6 +51,8 @@ Le [moteur Wolf Android expérimental](docs/wolf-native/IMPLEMENTATION.md), issu
 - Baseline Profile embarqué et module de génération Macrobenchmark pour accélérer le démarrage et les parcours principaux ;
 - copie rapide du nom d’une jaquette en touchant son libellé et raccourci vers le dossier de sauvegarde d’un jeu ;
 - verrouillage biométrique et code chiffré, historique des sessions, bouton Outils, éditeur de sauvegardes et gestionnaire de mods ;
+- retour à la page et au brouillon précédents après déverrouillage, sans afficher leur contenu pendant le verrouillage ;
+- option **Paramètres → Optimisation de la batterie** ouvrant la demande Android pour Astra, avec état actualisé au retour ;
 - traduction locale des textes RPG Maker MV/MZ avec Google Translate (ML Kit), sans compte ni clé API, cache réutilisable et restauration des originaux ;
 - analyse des textes déclenchée uniquement par l’utilisateur, avec résultat persistant et réutilisation des extractions lorsque les fichiers restent identiques ;
 - mises à jour d’Astra depuis les releases GitHub publiques, vérification et téléchargement périodiques, contrôle SHA-256 et signature APK avant confirmation Android ;
@@ -74,8 +77,6 @@ data/saves   codecs, découverte SAF, écriture vérifiée et backups
 data/mods    import ZIP, installation et restauration journalisées
 data/backup  archives chiffrées du catalogue
 launcher/    JoiPlay et futur MTool
-wolf-native/ cœur Wolf Kotlin portable : formats, VM, état et snapshots
-wolfnative/  hôte Android, fichiers local/SAF, rendu, audio et sauvegardes natives
 windows/     moteur intégré Winlator / Wine / Box64 et sauvegardes Windows
 translation/ ML Kit, extraction MV/MZ, cache et restauration journalisée
 updates/     releases GitHub, téléchargement vérifié et installation Android
@@ -193,15 +194,21 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.20](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.20). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.21](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.21). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
-**Fiche du jeu → Compatibilité → Moteur de lancement** permet de choisir Automatique, Natif Android ou Winlator ; ce choix reste aussi disponible dans les réglages Wolf. Automatique conserve le moteur Windows des jeux déjà joués et utilise le secours Winlator si une fonction du jeu n'est pas portée. Le moteur Android lit les ressources dans le dossier d'origine, sans transfert général, et conserve ses sauvegardes séparément. Les parcours des exemples officiels et les limites sont détaillés dans la [couverture réelle](docs/wolf-native/RUNTIME_COVERAGE.md) et la [validation de la bêta 15](docs/VALIDATION_1.12.0-beta.15.md). La [bêta 16](docs/VALIDATION_1.12.0-beta.16.md) corrige le chargement des tables système contenant des noms de lignes sans colonnes, dont le cas de 701 lignes signalé dans un diagnostic.
+Wolf RPG utilise désormais **Winlator · Wine et Box64**. Le moteur natif et le choix entre moteurs sont retirés. **Fiche du jeu → Compatibilité → Profil de lancement** permet toujours de corriger le moteur détecté ou de configurer explicitement une application externe. La bibliothèque, les filtres et la fiche affichent le moteur choisi ; rétablir la détection automatique conserve le résultat original du scan.
 
-Un **appui long sur « Moteur / Wolf RPG » dans la fiche** ouvre l'[analyse de compatibilité](docs/wolf-native/COMPATIBILITY_ANALYSIS.md). Elle inspecte toutes les cartes déclarées, pages et événements communs depuis Astra, sans lancer le jeu, puis conserve un rapport filtrable et exportable en texte ou JSON. Les verdicts distinguent blocages connus, contrôles à l’exécution et analyse incomplète ; ils ne garantissent pas une partie complète.
+L’analyseur de compatibilité natif a également été retiré : ses verdicts ne décrivaient pas la compatibilité Wine. Les changements, preuves et limites sont suivis dans [Wolf Winlator beta21](docs/wolf-winlator-beta21.md).
+
+La beta.21 réduit les transferts GPU des sprites éloignés sans réduire la résolution ni sauter d’images. Elle supervise les jeux qui relancent leur propre exécutable, propose **Menu → Déplacement → Joystick à huit directions** et une taille/opacité individuelles dans **Modifier les touches**. Les presets conservent ces réglages. Les [mesures de rendu](docs/wolf-wine-performance-beta21.md) ne garantissent pas une cadence minimale sur chaque téléphone.
+
+**Menu → Cheats et variables** permet de rechercher, affiner, modifier, annuler une modification et figer des valeurs numériques dans la session Wine. Les valeurs suivies peuvent être nommées et recherchées. Les adresses ne sont pas réutilisées à la session suivante ; les noms internes et données chiffrées ne sont pas automatiquement décodés. Voir le [guide du cheat](docs/wolf-cheats.md).
+
+**Paramètres → Optimisation de la batterie** ouvre la demande Android pour autoriser Astra à fonctionner en arrière-plan. Le déverrouillage retrouve désormais la page et son état enregistrable. La détection JoiPlay reconnaît aussi les plugins Ren’Py officiels versionnés, sous contrôle de leur signature.
 
 La bêta 20 évite les transferts et le dessin des fenêtres entièrement cachées derrière le jeu Wine, conserve les pixels en attente et renforce le profil **Rapide** de Box64/Wine. Les réglages de définition existants sont conservés. Le lecteur Windows **G:** pointe sur le dossier réel du jeu afin que les contrôles d’espace des sauvegardes utilisent le bon volume. Les preuves Android et les limites des mesures sont dans la [validation beta.20](docs/VALIDATION_1.12.0-beta.20.md).
 
-La [bêta 17](docs/VALIDATION_1.12.0-beta.17.md) autorise les captures d'écran Android dans les deux moteurs et renouvelle le chargement avec ses huit étapes, le temps écoulé et une animation respectant les animations désactivées du système. Pendant le jeu, **Menu → Modifier les touches → Ajouter** permet de créer des boutons nommés avec une touche du clavier proposé, dont F1–F12, les modificateurs et le pavé numérique. **Presets** enregistre ou charge touches, positions portrait/paysage, taille et opacité pour les autres jeux Wolf, sans changer leur moteur ni leurs sauvegardes. Le lecteur natif prend aussi en charge les modes d'appui/relâchement qualifiés par [REA](docs/wolf-native/INPUT_EDGES_REA.md). En cas d'absence de première image Winlator, une relance avec le profil Stable est proposée ; elle n'établit pas à elle seule la compatibilité du jeu.
+Les captures d’écran Android restent autorisées et le chargement affiche ses huit étapes, le temps écoulé et une animation respectant les animations désactivées du système. Pendant le jeu, **Menu → Modifier les touches → Ajouter** permet de créer des boutons nommés avec une touche du clavier proposé, dont F1–F12, les modificateurs et le pavé numérique. **Presets** enregistre ou charge touches, positions portrait/paysage, taille et opacité pour les autres jeux Wolf, sans changer leurs sauvegardes. En cas d’absence de première image Winlator, une relance avec le profil Stable est proposée ; elle n’établit pas à elle seule la compatibilité du jeu.
 
 Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
 `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;

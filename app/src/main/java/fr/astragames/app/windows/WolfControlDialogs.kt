@@ -12,6 +12,7 @@ import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ListView
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.TextView
 import com.winlator.xserver.XKeycode
 
@@ -38,6 +39,75 @@ internal class WolfControlDialogs(private val context: Context, private val stor
                 textSize = 16f; typeface = WolfViewStyle.font(context); setTextColor(WolfViewStyle.text)
                 minHeight = dp(48)
             }
+    }
+    fun movement() {
+        val modes = WolfMovementMode.entries
+        present(builder("Déplacement")
+            .setSingleChoiceItems(rows(listOf("Croix directionnelle", "Joystick à huit directions"), true), modes.indexOf(WolfControlLayout.movement(store.controlLayout()))) { dialog, index ->
+                store.loadControlLayout(store.controlLayout().put("movementMode", modes[index].name)); changed(); dialog.dismiss()
+            }.setNegativeButton("Fermer", null).create())
+    }
+    private fun scroll(root: LinearLayout) = ScrollView(theme).apply { addView(root) }
+    private class Appearance(var size: Int, var opacity: Int) {
+        fun save(store: WolfGameOptions, id: String) {
+            store.loadControlLayout(store.controlLayout().put("size_$id", size).put("opacity_$id", opacity))
+        }
+    }
+    private fun appearance(root: LinearLayout, id: String?): Appearance {
+        val layout = store.controlLayout()
+        val state = Appearance(id?.let { WolfControlLayout.size(layout, it) } ?: 100,
+            id?.let { WolfControlLayout.opacity(layout, it, store.read().opacity) } ?: store.read().opacity)
+        fun slider(label: String, minimum: Int, maximum: Int, initial: Int, picked: (Int) -> Unit) {
+            val value = WolfViewStyle.label(theme, "$label : $initial %", color = WolfViewStyle.secondary)
+            root.addView(value, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+            root.addView(SeekBar(theme).apply {
+                max = maximum - minimum; progress = initial - minimum; contentDescription = label; minimumHeight = dp(48)
+                progressTintList = android.content.res.ColorStateList.valueOf(WolfViewStyle.accent); thumbTintList = progressTintList
+                setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+                    override fun onProgressChanged(bar: SeekBar?, progress: Int, fromUser: Boolean) {
+                        val number = progress + minimum; value.text = "$label : $number %"; picked(number)
+                    }
+                    override fun onStartTrackingTouch(bar: SeekBar?) = Unit
+                    override fun onStopTrackingTouch(bar: SeekBar?) = Unit
+                })
+            }, LinearLayout.LayoutParams(-1, -2))
+        }
+        slider("Taille individuelle", 50, 200, state.size) { state.size = it }
+        slider("Opacité individuelle", 15, 100, state.opacity) { state.opacity = it }
+        root.addView(WolfViewStyle.label(theme, "La taille se combine avec celle des commandes dans les réglages du jeu.", 13f, color = WolfViewStyle.secondary))
+        return state
+    }
+    fun control(id: String, label: String, default: XKeycode) {
+        val root = column()
+        var selected = store.binding(id, default)
+        val keyButton = WolfViewStyle.button(theme, "Touche : ${WolfKeyboard.label(selected)}")
+        keyButton.setOnClickListener { key(selected) { selected = it; keyButton.text = "Touche : ${WolfKeyboard.label(it)}" } }
+        root.addView(keyButton, LinearLayout.LayoutParams(-1, -2))
+        val appearance = appearance(root, id)
+        present(builder(label).setView(scroll(root))
+            .setPositiveButton("Enregistrer") { _, _ -> store.bind(id, selected); appearance.save(store, id); changed() }
+            .setNegativeButton("Annuler", null)
+            .setNeutralButton("Par défaut") { _, _ ->
+                val data = store.controlLayout(); data.remove("size_$id"); data.remove("opacity_$id"); data.remove("key_$id")
+                store.loadControlLayout(data); changed()
+            }.create())
+    }
+    fun joystick() {
+        val root = column()
+        root.addView(WolfViewStyle.label(theme, "Huit directions. Les touches de la croix sont utilisées ; un second doigt peut maintenir une action en même temps.", color = WolfViewStyle.secondary))
+        val appearance = appearance(root, "joystick")
+        val bindings = mutableMapOf<String, XKeycode>()
+        // The four bindings remain editable even while the cross itself is hidden.
+        listOf("up" to XKeycode.KEY_UP, "left" to XKeycode.KEY_LEFT, "right" to XKeycode.KEY_RIGHT, "down" to XKeycode.KEY_DOWN).forEach { (id, default) ->
+            val label = mapOf("up" to "Haut", "left" to "Gauche", "right" to "Droite", "down" to "Bas").getValue(id)
+            bindings[id] = store.binding(id, default)
+            root.addView(WolfViewStyle.button(theme, "$label : ${WolfKeyboard.label(bindings.getValue(id))}").apply {
+                setOnClickListener { key(bindings.getValue(id)) { bindings[id] = it; text = "$label : ${WolfKeyboard.label(it)}" } }
+            }, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(8) })
+        }
+        present(builder("Joystick").setView(scroll(root))
+            .setPositiveButton("Enregistrer") { _, _ -> bindings.forEach { (id, code) -> store.bind(id, code) }; appearance.save(store, "joystick"); changed() }
+            .setNegativeButton("Annuler", null).create())
     }
     fun key(selected: XKeycode, picked: (XKeycode) -> Unit) {
         val root = column()
@@ -73,14 +143,16 @@ internal class WolfControlDialogs(private val context: Context, private val stor
         val keyButton = WolfViewStyle.button(theme, "Touche : ${WolfKeyboard.label(selected)}")
         keyButton.setOnClickListener { key(selected) { selected = it; keyButton.text = "Touche : ${WolfKeyboard.label(it)}" } }
         root.addView(keyButton, LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
+        val appearance = appearance(root, control?.id)
         root.addView(WolfViewStyle.label(context, "Déplacez ensuite le bouton en le faisant glisser sur le jeu.", color = WolfViewStyle.secondary), LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(16) })
         val dialogBuilder = builder(if (control == null) "Ajouter un bouton" else "Modifier le bouton")
-            .setView(root).setPositiveButton(if (control == null) "Ajouter" else "Enregistrer", null).setNegativeButton("Annuler", null)
+            .setView(scroll(root)).setPositiveButton(if (control == null) "Ajouter" else "Enregistrer", null).setNegativeButton("Annuler", null)
         if (control != null) dialogBuilder.setNeutralButton("Supprimer") { _, _ -> store.removeControl(control.id); changed() }
         val dialog = dialogBuilder.create()
         dialog.setOnShowListener { dialog.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
             val clean = WolfControlLayout.label(name.text.toString()).ifBlank { WolfKeyboard.label(selected).take(16) }
-            if (control == null) store.addControl(clean, selected) else store.editControl(control.id, clean, selected)
+            val id = if (control == null) store.addControl(clean, selected).id else control.id.also { store.editControl(it, clean, selected) }
+            appearance.save(store, id)
             changed(); dialog.dismiss()
         } }
         present(dialog)
@@ -88,7 +160,7 @@ internal class WolfControlDialogs(private val context: Context, private val stor
     fun presets() {
         val names = presets.names()
         val root = column()
-        root.addView(WolfViewStyle.label(context, "Touches, positions, taille et opacité. Disponibles pour tous vos jeux Wolf.", color = WolfViewStyle.secondary))
+        root.addView(WolfViewStyle.label(context, "Joystick ou croix, touches, positions, tailles et opacités individuelles. Disponibles pour tous vos jeux Wolf.", color = WolfViewStyle.secondary))
         val list = ListView(theme)
         list.adapter = rows(names)
         if (names.isEmpty()) root.addView(WolfViewStyle.label(context, "Aucun preset enregistré.", 16f), LinearLayout.LayoutParams(-1, -2).apply { topMargin = dp(24); bottomMargin = dp(16) })

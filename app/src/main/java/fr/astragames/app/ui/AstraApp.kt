@@ -33,6 +33,7 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -94,12 +95,7 @@ fun AstraApp(
         return
     }
     val locked by viewModel.isLocked.collectAsStateWithLifecycle()
-    if (locked) {
-        CompositionLocalProvider(LocalAppLanguage provides state.settings.language) {
-            LockScreen(state, viewModel)
-        }
-        return
-    }
+    // The controller must outlive the lock screen; otherwise unlocking creates a new home back stack.
     val navController = rememberNavController()
     var coverBlurred by remember(state.settings.coverBlurMode) {
         mutableStateOf(state.settings.coverBlurMode == CoverBlurMode.STARTUP)
@@ -109,6 +105,9 @@ fun AstraApp(
         enabled = state.settings.coverBlurMode != CoverBlurMode.OFF,
         toggle = { coverBlurred = !coverBlurred }
     )
+    AppLockBoundary(locked, lockedContent = {
+        CompositionLocalProvider(LocalAppLanguage provides state.settings.language) { LockScreen(state, viewModel) }
+    }) {
     CompositionLocalProvider(
         LocalAppLanguage provides state.settings.language,
         LocalCoverBlurState provides coverBlurState
@@ -162,6 +161,14 @@ fun AstraApp(
             }
         }
     }
+    }
+}
+
+/** Remove private UI while locked, retaining saveable page/dialog state for the same navigation stack. */
+@Composable
+internal fun AppLockBoundary(locked: Boolean, lockedContent: @Composable () -> Unit, content: @Composable () -> Unit) {
+    val pages = rememberSaveableStateHolder()
+    if (locked) lockedContent() else pages.SaveableStateProvider("unlocked-pages", content)
 }
 
 @Composable

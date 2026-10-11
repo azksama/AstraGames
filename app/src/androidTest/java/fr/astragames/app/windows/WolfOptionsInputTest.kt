@@ -9,6 +9,29 @@ import org.junit.Test
 class WolfOptionsInputTest {
     private val context get() = InstrumentationRegistry.getInstrumentation().targetContext
 
+    @Test fun legacyNativePreferenceAlwaysUsesWinlatorWithoutChangingOtherPreferencesOrSaves() {
+        val id = "legacy-runtime-${System.nanoTime()}"
+        val prefs = context.getSharedPreferences("wolf_game_options", android.content.Context.MODE_PRIVATE)
+        val key = java.security.MessageDigest.getInstance("SHA-256").digest(id.toByteArray()).hexString()
+        val legacy = WolfLegacySaves(context, id)
+        check(legacy.directory.mkdirs())
+        val save = java.io.File(legacy.directory, "slot-1.astrawolf").apply { writeText("unchanged native save") }
+        try {
+            for (runtime in listOf("AUTO", "NATIVE", "WINLATOR", "future", "")) {
+                prefs.edit().putString(key, org.json.JSONObject().put("runtime", runtime).put("opacity", 32)
+                    .put("performance", "FAST").put("key_accept", "KEY_Z").toString()).commit()
+                val store = WolfGameOptions(context, id)
+                assertEquals(WolfRuntimeMode.WINLATOR, store.read().runtime)
+                assertEquals(32, store.read().opacity)
+                assertEquals(WolfPerformance.FAST, store.read().performance)
+                assertEquals(XKeycode.KEY_Z, store.binding("accept", XKeycode.KEY_ENTER))
+                store.save(store.read())
+                assertEquals("WINLATOR", org.json.JSONObject(prefs.getString(key, "")!!).getString("runtime"))
+                assertEquals("unchanged native save", save.readText())
+            }
+        } finally { prefs.edit().remove(key).commit(); legacy.directory.parentFile!!.deleteRecursively() }
+    }
+
     @Test fun preferencesRemainPerGameAndResetOnlyControls() {
         val id = "options-test-${System.nanoTime()}"
         val store = WolfGameOptions(context, id)

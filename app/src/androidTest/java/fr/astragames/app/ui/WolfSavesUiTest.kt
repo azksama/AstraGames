@@ -6,7 +6,7 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.test.core.app.ApplicationProvider
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.windows.WolfGameStorage
-import fr.astragames.app.wolfnative.WolfNativeSaveStore
+import fr.astragames.app.windows.WolfLegacySaves
 import kotlinx.coroutines.runBlocking
 import org.junit.*
 import java.io.File
@@ -22,7 +22,7 @@ class WolfSavesUiTest {
         executableName = "Game.exe", engine = "WOLF_RPG", launcher = "native", sourceId = "fixture", dateAdded = 0, lastModified = 0, fingerprint = id)
     @After fun cleanup() {
         source.deleteRecursively(); storage.directory.deleteRecursively()
-        val native = WolfNativeSaveStore.directoryFor(context, id)
+        val native = WolfLegacySaves.directoryFor(context, id)
         check(native.canonicalFile.parentFile!!.parentFile == File(context.filesDir, "wolf-native").canonicalFile)
         native.parentFile!!.deleteRecursively()
     }
@@ -55,10 +55,11 @@ class WolfSavesUiTest {
 
     @Test fun nativeSavesAreListedAndExportableWithoutAnyWindowsSave(): Unit = runBlocking {
         File(source, "Game.exe").writeText("fixture")
-        val native = WolfNativeSaveStore(context, id, "ui-fixture")
-        native.write(0, byteArrayOf(1, 2, 3))
+        val native = WolfLegacySaves(context, id)
+        native.directory.mkdirs()
+        File(native.directory, "slot-0.astrawolf").writeBytes(byteArrayOf(1, 2, 3))
         compose.setContent { MaterialTheme { WolfSavesSheet(game) {} } }
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Sauvegardes du moteur Android").fetchSemanticsNodes().isNotEmpty() }
+        compose.waitUntil(10_000) { compose.onAllNodesWithText("Anciennes sauvegardes natives").fetchSemanticsNodes().isNotEmpty() }
         compose.onNodeWithText("Exporter les sauvegardes").assertIsNotEnabled()
         compose.onNodeWithText("Exporter les sauvegardes natives").performScrollTo().assertIsEnabled()
         compose.onNodeWithText("slot-0.astrawolf", substring = true).performScrollTo().assertIsDisplayed()

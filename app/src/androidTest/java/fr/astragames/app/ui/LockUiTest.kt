@@ -2,6 +2,15 @@ package fr.astragames.app.ui
 
 import android.graphics.Bitmap
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.foundation.layout.Column
+import androidx.compose.material3.Button
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Text
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
@@ -18,6 +27,50 @@ import java.io.File
 @RunWith(AndroidJUnit4::class)
 class LockUiTest {
     @get:Rule val compose = createComposeRule()
+    @Test fun unlockingReturnsToTheSamePageAndDraftWithoutExposingItWhileLocked() {
+        val locked = mutableStateOf(false)
+        compose.setContent { AstraTheme { CompositionLocalProvider(LocalAppLanguage provides AppLanguage.FRENCH) {
+            val nav = rememberNavController()
+            AppLockBoundary(locked.value, lockedContent = {
+                LockContent(false, true, {}) { pin, result ->
+                    val valid = pin == "4826"
+                    result(valid)
+                    if (valid) locked.value = false
+                }
+            }) {
+                NavHost(nav, startDestination = "home") {
+                    composable("home") { Button(onClick = { nav.navigate("game/fixture") }) { Text("Ouvrir le jeu test") } }
+                    composable("game/fixture") {
+                        var draft by rememberSaveable { mutableStateOf("") }
+                        Column {
+                            Text("Fiche privée du jeu test")
+                            OutlinedTextField(draft, { draft = it }, label = { Text("Note de partie") })
+                            Button(onClick = { nav.popBackStack() }) { Text("Revenir à la bibliothèque") }
+                        }
+                    }
+                }
+            }
+        } } }
+        compose.onNodeWithText("Ouvrir le jeu test").performClick()
+        compose.onNodeWithText("Note de partie").performTextInput("Progression à conserver")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.runOnIdle { locked.value = true }
+        compose.onNodeWithText("Fiche privée du jeu test").assertDoesNotExist()
+        compose.onNodeWithText("Progression à conserver").assertDoesNotExist()
+        compose.onNodeWithText("Code").performScrollTo().performTextInput("1234")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.onNodeWithText("Déverrouiller").performScrollTo().performClick()
+        compose.onNodeWithText("Code incorrect").assertExists()
+        compose.onNodeWithText("Fiche privée du jeu test").assertDoesNotExist()
+        compose.onNodeWithText("Code").performTextInput("4826")
+        androidx.test.espresso.Espresso.closeSoftKeyboard()
+        compose.onNodeWithText("Déverrouiller").performScrollTo().performClick()
+        compose.onNodeWithText("Fiche privée du jeu test").assertIsDisplayed()
+        compose.onNodeWithText("Progression à conserver").assertIsDisplayed()
+        compose.onNodeWithText("Revenir à la bibliothèque").performClick()
+        compose.onNodeWithText("Ouvrir le jeu test").assertIsDisplayed()
+    }
+
     @Test fun lockKeepsBiometricAndPinActionsAndMasksTheCode() {
         var biometricCalls = 0
         val attempts = mutableListOf<String>()

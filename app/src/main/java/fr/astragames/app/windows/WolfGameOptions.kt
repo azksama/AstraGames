@@ -31,8 +31,6 @@ internal enum class WolfStorageMode(val label: String) {
 }
 
 internal enum class WolfRuntimeMode(val label: String) {
-    AUTO("Automatique · natif compatible, sinon Winlator"),
-    NATIVE("Natif Android · expérimental"),
     WINLATOR("Winlator · compatibilité Windows")
 }
 
@@ -48,7 +46,7 @@ internal data class WolfOptions(
     val imageMode: WolfImageMode = WolfImageMode.FIT,
     val storageMode: WolfStorageMode = WolfStorageMode.AUTO,
     val pinchZoom: Boolean = false,
-    val runtime: WolfRuntimeMode = WolfRuntimeMode.AUTO
+    val runtime: WolfRuntimeMode = WolfRuntimeMode.WINLATOR
 ) {
     fun windowsResolution(landscape: Boolean) = if (resolution == "auto") {
         if (landscape) "1280x720" else "1280x960"
@@ -71,7 +69,8 @@ internal class WolfGameOptions(context: Context, id: String) {
             imageMode = runCatching { WolfImageMode.valueOf(it.optString("imageMode", "FIT")) }.getOrDefault(WolfImageMode.FIT),
             storageMode = runCatching { WolfStorageMode.valueOf(it.optString("storageMode", "AUTO")) }.getOrDefault(WolfStorageMode.AUTO),
             pinchZoom = it.optBoolean("pinchZoom", false),
-            runtime = runCatching { WolfRuntimeMode.valueOf(it.optString("runtime", "AUTO")) }.getOrDefault(WolfRuntimeMode.AUTO))
+            // Legacy AUTO/NATIVE preferences now route to Winlator. Other per-game settings and saves stay intact.
+            runtime = WolfRuntimeMode.WINLATOR)
     }
     fun save(options: WolfOptions) {
         val data = json().put("performance", options.performance.name).put("resolution", options.resolution)

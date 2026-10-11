@@ -11,6 +11,76 @@ import java.nio.ByteBuffer
 
 /** Real GLES/JNI readback: catch missing pixels and stale regions as well as transfer cost. */
 class WolfTextureTransferTest {
+    @Test fun overlappingMapScrollPreservesSourceRowsAndDisplayedPixels() = withGl {
+        val drawable = Drawable(9024, 127, 95, null)
+        drawable.setOnDrawListener {}
+        try {
+            for (y in 0 until 95) drawable.fillRect(0,y,127,1,0x110000 + y * 133)
+            verify(drawable)
+            val before = ByteArray(127 * 95 * 4).also { drawable.data!!.duplicate().get(it) }
+            drawable.copyArea(2, 1, 9, 7, 90, 72, drawable)
+            for (y in 0 until 72) for (x in 0 until 90) for (channel in 0..3) {
+                assertEquals(before[((y + 1) * 127 + x + 2) * 4 + channel], drawable.data!!.get(((y + 7) * 127 + x + 9) * 4 + channel))
+            }
+            verify(drawable)
+        } finally { drawable.texture.destroy() }
+    }
+    @Test fun distantSpriteSnapshotsKeepEveryPixelAndIncomingDamage() = withGl {
+        val drawable = Drawable(9020, 511, 383, null)
+        val source = Drawable(9021, 511, 383, null)
+        drawable.setOnDrawListener {}
+        try {
+            drawable.fillColor(0x161616); source.fillColor(0x161616); verify(drawable)
+            val before = drawable.texture.uploadedBytes
+            // Same scanlines, opposite sides: a scanline/bounding union would still copy most of the map.
+            source.fillRect(3, 66, 23, 29, 0xCC2255)
+            source.fillRect(460, 66, 23, 29, 0x22CC55)
+            source.fillRect(197, 320, 31, 37, 0x2255CC)
+            drawable.drawImage(0,0,0,0,511,383,32,requireNotNull(source.data),511,383)
+            val expected = ByteBuffer.allocateDirect(511 * 383 * 4).apply { put(requireNotNull(source.data).duplicate().apply { rewind() }); rewind() }
+            drawable.texture.captureUpdate()
+            source.fillRect(310, 201, 28, 19, 0xAA99BB)
+            drawable.copyArea(0,0,0,0,511,383,source)
+            drawable.texture.uploadCapturedUpdate()
+            verify(drawable, expected, update = false)
+            assertTrue("Separate sprites must not upload the whole enclosing rectangle", drawable.texture.uploadedBytes - before < 20_000)
+            drawable.texture.captureUpdate(); drawable.texture.uploadCapturedUpdate()
+            verify(drawable, update = false)
+            assertEquals(source.data, drawable.data)
+        } finally { drawable.texture.destroy(); source.texture.destroy() }
+    }
+
+    @Test fun measureDenseAnimatedSpritesWithIdenticalResolutionAndPixels() = withGl {
+        val drawable = Drawable(9022, 1280, 960, null)
+        val source = Drawable(9023, 1280, 960, null)
+        val output = StringBuilder("Android SDK Emulator; 1280x960; 40 distant animated sprites; ABBA; 100 frames/pass; JNI copy + snapshot + GLES completion\n")
+        try {
+            for ((pass, precise) in listOf(false,true,true,false).withIndex()) {
+                drawable.setOnDrawListener(if (precise) Runnable {} else null)
+                drawable.fillColor(0x141414); source.fillColor(0x141414)
+                drawable.texture.updateFromDrawable(); GLES20.glFinish()
+                val bytes = drawable.texture.uploadedBytes
+                val elapsed = mutableListOf<Long>()
+                repeat(100) { frame ->
+                    repeat(40) { sprite ->
+                        source.fillRect(12 + (sprite % 8) * 155, 14 + (sprite / 8) * 185, 26, 34, (frame + 1) * 839 + sprite * 357)
+                    }
+                    val start = System.nanoTime()
+                    drawable.drawImage(0,0,0,0,1280,960,32,requireNotNull(source.data),1280,960)
+                    drawable.texture.captureUpdate(); drawable.texture.uploadCapturedUpdate(); GLES20.glFinish()
+                    elapsed += System.nanoTime() - start
+                }
+                elapsed.sort()
+                val transferred = drawable.texture.uploadedBytes - bytes
+                output.append("pass=$pass precise=$precise p50Ms=${elapsed[50] / 1e6} p95Ms=${elapsed[95] / 1e6} bytes=$transferred\n")
+                if (precise) assertTrue("Dense sprite damage should transfer less than a third of full frames", transferred < 1280L * 960 * 4 * 100 / 3)
+                else assertEquals(1280L * 960 * 4 * 100, transferred)
+                verify(drawable, source.data!!, update = false)
+            }
+            File(InstrumentationRegistry.getInstrumentation().targetContext.getExternalFilesDir(null), "wolf-dense-sprites-benchmark.txt").writeText(output.toString())
+        } finally { drawable.texture.destroy(); source.texture.destroy() }
+    }
+
     private fun withGl(block: () -> Unit) {
         val display = EGL14.eglGetDisplay(EGL14.EGL_DEFAULT_DISPLAY)
         assertTrue(EGL14.eglInitialize(display, IntArray(2), 0, IntArray(2), 0))

@@ -99,17 +99,25 @@ Java_com_winlator_xserver_Drawable_copyArea(JNIEnv *env, jclass obj, jshort srcX
     dstDataAddr += (dstX + dstY * dstStride) * 4;
 
     if (width == srcStride && width == dstStride) {
-        memcpy(dstDataAddr, srcDataAddr, width * height * 4);
+        memmove(dstDataAddr, srcDataAddr, width * height * 4);
     }
     else {
         width *= 4;
         srcStride *= 4;
         dstStride *= 4;
 
+        // XCopyArea can scroll a drawable in place. Copy bottom-up when the
+        // destination overlaps a later source row; memcpy is undefined here.
+        bool reverse = (uintptr_t)dstDataAddr > (uintptr_t)srcDataAddr &&
+            (uintptr_t)dstDataAddr < (uintptr_t)srcDataAddr + (height - 1) * srcStride + width;
+        if (reverse) {
+            srcDataAddr += (height - 1) * srcStride;
+            dstDataAddr += (height - 1) * dstStride;
+        }
         for (int16_t y = 0; y < height; y++) {
-            memcpy(dstDataAddr, srcDataAddr, width);
-            srcDataAddr += srcStride;
-            dstDataAddr += dstStride;
+            memmove(dstDataAddr, srcDataAddr, width);
+            srcDataAddr += reverse ? -srcStride : srcStride;
+            dstDataAddr += reverse ? -dstStride : dstStride;
         }
     }
 }
@@ -119,7 +127,7 @@ Java_com_winlator_xserver_Drawable_copyArea(JNIEnv *env, jclass obj, jshort srcX
 JNIEXPORT jlong JNICALL
 Java_com_winlator_xserver_Drawable_copyAreaChanged(JNIEnv *env, jclass obj,
         jshort srcX, jshort srcY, jshort dstX, jshort dstY, jshort width, jshort height,
-        jshort srcStride, jshort dstStride, jobject srcData, jobject dstData) {
+        jshort srcStride, jshort dstStride, jobject srcData, jobject dstData, jobject damage) {
     if (width <= 0 || height <= 0 || srcX < 0 || srcY < 0 || dstX < 0 || dstY < 0 ||
         srcX + width > srcStride || dstX + width > dstStride) return 0;
     const uint8_t *srcBase = (*env)->GetDirectBufferAddress(env, srcData);
@@ -132,10 +140,16 @@ Java_com_winlator_xserver_Drawable_copyAreaChanged(JNIEnv *env, jclass obj,
         dstOffset + dstSize > (*env)->GetDirectBufferCapacity(env, dstData)) return 0;
     const uint8_t *src = srcBase + srcOffset;
     uint8_t *dst = dstBase + dstOffset;
+    int32_t *regions = (*env)->GetDirectBufferAddress(env, damage);
+    int64_t regionsBytes = (*env)->GetDirectBufferCapacity(env, damage);
+    int columns = (dstStride + 63) / 64;
+    if (!regions || regionsBytes < (int64_t)columns * ((dstY + height + 63) / 64) * 16) return 0;
+    memset(regions, 0, regionsBytes);
     /* Aliased buffers keep the previous copy path; the diff path is for independent frames. */
     if ((uintptr_t)dst < (uintptr_t)src + srcSize && (uintptr_t)src < (uintptr_t)dst + dstSize) {
         Java_com_winlator_xserver_Drawable_copyArea(env, obj, srcX, srcY, dstX, dstY,
             width, height, srcStride, dstStride, srcData, dstData);
+        regions[0] = dstX; regions[1] = dstY; regions[2] = dstX + width; regions[3] = dstY + height;
         return ((uint64_t)(uint16_t)dstX << 48) | ((uint64_t)(uint16_t)dstY << 32) |
             ((uint64_t)(uint16_t)width << 16) | (uint16_t)height;
     }
@@ -147,6 +161,26 @@ Java_com_winlator_xserver_Drawable_copyAreaChanged(JNIEnv *env, jclass obj,
         while (first < last && memcmp(src + first * 4, dst + first * 4, 4) == 0) first++;
         while (last - 16 >= first && memcmp(src + (last - 16) * 4, dst + (last - 16) * 4, 64) == 0) last -= 16;
         while (last > first && memcmp(src + (last - 1) * 4, dst + (last - 1) * 4, 4) == 0) last--;
+        /* Keep separate 64px cells within a changed scanline. Two sprites on opposite
+         * sides of a map must not turn into one almost-full-screen GPU transfer. */
+        for (int x = first; x < last;) {
+            int end = ((dstX + x) / 64 + 1) * 64 - dstX;
+            if (end > last) end = last;
+            int a = x, b = end;
+            if (memcmp(src + a * 4, dst + a * 4, (b - a) * 4) != 0) {
+                while (a < b && memcmp(src + a * 4, dst + a * 4, 4) == 0) a++;
+                while (b > a && memcmp(src + (b - 1) * 4, dst + (b - 1) * 4, 4) == 0) b--;
+                int32_t *rect = regions + (((dstY + y) / 64) * columns + (dstX + x) / 64) * 4;
+                if (rect[2] == 0) {
+                    rect[0] = dstX + a; rect[1] = dstY + y; rect[2] = dstX + b; rect[3] = dstY + y + 1;
+                } else {
+                    if (dstX + a < rect[0]) rect[0] = dstX + a;
+                    if (dstX + b > rect[2]) rect[2] = dstX + b;
+                    rect[3] = dstY + y + 1;
+                }
+            }
+            x = end;
+        }
         memcpy(dst + first * 4, src + first * 4, (last - first) * 4);
         if (first < left) left = first;
         if (last > right) right = last;
