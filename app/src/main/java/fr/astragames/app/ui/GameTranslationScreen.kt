@@ -107,10 +107,15 @@ internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslation
                     state.message?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Polite }, color = MaterialTheme.colorScheme.primary) }
                     state.error?.let { Text(it, Modifier.semantics { liveRegion = LiveRegionMode.Assertive }, color = MaterialTheme.colorScheme.error) }
                     if (!state.busy && state.analysis == null) Text("Lancez l’analyse pour compter les textes. Le résultat sera conservé pour une prochaine utilisation.")
-                    if (!state.busy && state.analysis?.texts == 0 && state.analysis?.installed != true) Text("Aucun texte compatible trouvé. Vérifiez que le dossier data du jeu MV/MZ est accessible.")
-                    Text("MV/MZ : dialogues, choix et menus standards. Images, plugins et sauvegardes exclus.", style = MaterialTheme.typography.bodySmall)
+                    if (!state.busy && state.analysis?.texts == 0 && state.analysis?.installed != true) Text("Aucun texte source reconnu. Vérifiez que les données du jeu sont décompressées et accessibles.")
+                    Text(when (game.engine) {
+                        "WOLF_RPG" -> "Wolf : dialogues et choix dans CommonEvent.dat et les cartes .mps reconnues. Archives .wolf et textes créés à chaud exclus."
+                        "RENPY" -> "Ren’Py : dialogues et choix simples dans les sources .rpy. Archives, scripts compilés, écrans et code Python exclus."
+                        "RPG_MAKER_XP", "RPG_MAKER_VX", "RPG_MAKER_VX_ACE" -> "RGSS : dialogues, choix et données RPG standards décompressées. Scripts Ruby et archives exclus."
+                        else -> "MV/MZ : dialogues, choix et menus standards. Images, plugins et sauvegardes exclus."
+                    }, style = MaterialTheme.typography.bodySmall)
                     Text("Les noms utilisés par les conditions du jeu sont conservés pour rester compatibles avec vos sauvegardes.", style = MaterialTheme.typography.bodySmall)
-                    Text("Originaux : data/.astra-translation. Conservez ce dossier.", style = MaterialTheme.typography.bodySmall)
+                    Text("Originaux : .astra-translation dans le dossier de données du jeu. Conservez ce dossier.", style = MaterialTheme.typography.bodySmall)
                     if (!manual) {
                         val uriHandler = LocalUriHandler.current
                         TextButton(onClick = { uriHandler.openUri("https://developers.google.com/ml-kit/language/translation") }) { Text("À propos de Google Translate") }

@@ -14,7 +14,7 @@ internal fun textHash(bytes: ByteArray): String = MessageDigest.getInstance("SHA
     .digest(bytes).joinToString("") { "%02x".format(it) }
 
 /** The immutable journal and both versions live beside the game, independently of app data. */
-internal class TranslationPatch(private val files: TranslationFiles) {
+internal class TranslationPatch(private val files: TranslationFiles, private val accepts: (String) -> Boolean = RpgTextDocument::accepts) {
     data class Change(val name: String, val original: ByteArray, val translated: ByteArray)
     private data class Record(val name: String, val original: String, val translated: String)
     fun exists() = files.read(MANIFEST) != null
@@ -34,7 +34,7 @@ internal class TranslationPatch(private val files: TranslationFiles) {
         val states = (0 until rows.length()).map { index ->
             val row = rows.getJSONObject(index)
             val name = row.getString("name")
-            require(RpgTextDocument.accepts(name))
+            require(accepts(name))
             require(names.add(name))
             val hash = files.read(name)?.let(::textHash)
             (hash == row.getString("original")) to (hash == row.getString("translated"))
@@ -48,7 +48,7 @@ internal class TranslationPatch(private val files: TranslationFiles) {
         require(changes.isNotEmpty() && changes.size <= 2000)
         require(changes.map { it.name }.distinct().size == changes.size)
         changes.forEach {
-            require(RpgTextDocument.accepts(it.name))
+            require(accepts(it.name))
             check(files.read(it.name)?.contentEquals(it.original) == true) { "Le jeu a changé : ${it.name}" }
         }
         val records = changes.map { Record(it.name, textHash(it.original), textHash(it.translated)) }
@@ -93,7 +93,7 @@ internal class TranslationPatch(private val files: TranslationFiles) {
         require(records.map { it.name }.distinct().size == records.size)
         val pending = files.read(PENDING)?.toString(Charsets.UTF_8)
         records.forEach {
-            require(RpgTextDocument.accepts(it.name)) { "Chemin de restauration invalide." }
+            require(accepts(it.name)) { "Chemin de restauration invalide." }
             require(it.original.matches(Regex("[0-9a-f]{64}")) && it.translated.matches(Regex("[0-9a-f]{64}")))
             check(textHash(files.read("$BACKUP/original/${it.name}") ?: error("Original absent : ${it.name}")) == it.original) { "Original endommagé : ${it.name}" }
             val current = files.read(it.name)?.let(::textHash)

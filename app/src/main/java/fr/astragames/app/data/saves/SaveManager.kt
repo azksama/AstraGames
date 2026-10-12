@@ -13,6 +13,7 @@ import java.util.Locale
 import java.util.UUID
 import kotlinx.coroutines.sync.withLock
 import java.io.File
+import fr.astragames.app.windows.WolfGameStorage
 
 class SaveManager(
     private val context: Context,
@@ -25,8 +26,16 @@ class SaveManager(
     suspend fun locations(gameId: String) = dao.getSaveLocations(gameId)
 
     suspend fun detectLocations(game: GameEntity): List<GameSaveLocationEntity> {
-        val root = documentDir(context, Uri.parse(game.documentUri)) ?: return emptyList()
-        val detected = finder.locations(game, root.uri)
+        val root = documentDir(context, Uri.parse(game.documentUri))
+        val detected = (root?.let { finder.locations(game, it.uri) }.orEmpty() + withWolfStorage(game) { storage ->
+            wolfSaves(storage).filter { isPrivate(it.file) }.map { it.file.canonicalFile.parentFile!! }.distinct().map { folder ->
+                GameSaveLocationEntity(UUID.randomUUID().toString(), game.id, Uri.fromFile(folder).toString(),
+                    "WOLF_PRIVATE", "Wolf · sauvegardes dans Astra", true, true, System.currentTimeMillis())
+            }
+        })
+        val activePrivate = detected.filter { it.type == "WOLF_PRIVATE" }.map { it.uri }.toSet()
+        dao.getSaveLocations(game.id).filter { it.type == "WOLF_PRIVATE" && it.uri !in activePrivate }
+            .forEach { dao.deleteSaveLocation(it.id) }
         val existing = dao.getSaveLocations(game.id).map { it.uri }.toSet()
         detected.filter { it.uri !in existing }.forEach { dao.upsertSaveLocation(it) }
         return dao.getSaveLocations(game.id)
@@ -55,29 +64,47 @@ class SaveManager(
 
     suspend fun listSaves(game: GameEntity): List<GameSave> {
         val locations = detectLocations(game).ifEmpty { dao.getSaveLocations(game.id) }
-        return finder.saves(game, locations)
+        val private = withWolfStorage(game) { storage -> wolfSaves(storage).filter { isPrivate(it.file) }.map { saved ->
+            GameSave(Uri.fromFile(saved.file.canonicalFile).toString(), saved.path.substringAfterLast('/'),
+                saved.path.substringAfterLast('/').filter(Char::isDigit).take(3).toIntOrNull(), game.engine,
+                saved.file.length(), saved.file.lastModified(), title = saved.path,
+                auto = saved.path.substringAfterLast('/').startsWith("auto", ignoreCase = true))
+        } }
+        val privateUris = private.map { it.uri }.toSet()
+        val external = finder.saves(game, locations.filter { it.type != "WOLF_PRIVATE" }).filter { save ->
+            val uri = Uri.parse(save.uri)
+            game.engine != "WOLF_RPG" || uri.scheme != "file" || !isPrivate(File(requireNotNull(uri.path))) || save.uri in privateUris
+        }
+        return (external + private).distinctBy { it.uri }.sortedWith(compareBy({ it.slot ?: Int.MAX_VALUE }, { it.name }))
     }
 
     suspend fun readSave(game: GameEntity, save: GameSave): Pair<SaveData, List<SaveEntry>> {
-        val data = SaveCodec.read(game.engine, readBytes(context, save.uri))
-        return data to SaveCodec.entries(data)
+        return withWolfStorage(game) { storage ->
+            requireSource(game, save.uri, storage)
+            require(save.engine == game.engine) { "Moteur de sauvegarde incoherent." }
+            val data = SaveCodec.read(game.engine, readBytes(context, save.uri))
+            data to SaveCodec.entries(data)
+        }
     }
 
     private val writes = kotlinx.coroutines.sync.Mutex()
 
     suspend fun writeSave(game: GameEntity, save: GameSave, edits: List<SaveEdit>, expectedHash: String? = null): SaveBackupEntity = writes.withLock {
-        requireSource(game, save.uri)
-        require(save.engine == game.engine) { "Moteur de sauvegarde incoherent." }
-        val original = readBytes(context, save.uri)
-        check(expectedHash == null || sha256Hex(original) == expectedHash) {
-            "La sauvegarde a change depuis son ouverture. Fermez puis rouvrez l editeur."
+        withWolfStorage(game) { storage ->
+            requireSource(game, save.uri, storage)
+            require(save.engine == game.engine) { "Moteur de sauvegarde incoherent." }
+            val original = readBytes(context, save.uri)
+            check(expectedHash == null || sha256Hex(original) == expectedHash) {
+                "La sauvegarde a change depuis son ouverture. Fermez puis rouvrez l editeur."
+            }
+            val patched = SaveCodec.patch(game.engine, original, edits)
+            val backup = backup(game, save, original)
+            replaceVerified(save.uri, original, patched)
+            publishWolfSave(storage, save.uri)
+            // Retention cleanup must never turn a completed, verified write into an apparent failure.
+            runCatching { rotateBackups(save.uri) }
+            backup
         }
-        val patched = SaveCodec.patch(game.engine, original, edits)
-        val backup = backup(game, save, original)
-        replaceVerified(save.uri, original, patched)
-        // Retention cleanup must never turn a completed, verified write into an apparent failure.
-        runCatching { rotateBackups(save.uri) }
-        backup
     }
 
     private fun replaceVerified(uri: String, original: ByteArray, replacement: ByteArray) {
@@ -120,12 +147,15 @@ class SaveManager(
 
     suspend fun restoreBackup(backup: SaveBackupEntity) = writes.withLock {
         val game = dao.getGame(backup.gameId) ?: error("Jeu introuvable.")
-        requireSource(game, backup.sourceUri)
-        val bytes = readBackupBytes(backup.backupUri)
-        val original = readBytes(context, backup.sourceUri)
-        backup(game, GameSave(backup.sourceUri, backup.sourceName, null, game.engine, original.size.toLong(), 0), original)
-        replaceVerified(backup.sourceUri, original, bytes)
-        runCatching { rotateBackups(backup.sourceUri) }
+        withWolfStorage(game) { storage ->
+            requireSource(game, backup.sourceUri, storage)
+            val bytes = readBackupBytes(backup.backupUri)
+            val original = readBytes(context, backup.sourceUri)
+            backup(game, GameSave(backup.sourceUri, backup.sourceName, null, game.engine, original.size.toLong(), 0), original)
+            replaceVerified(backup.sourceUri, original, bytes)
+            publishWolfSave(storage, backup.sourceUri)
+            runCatching { rotateBackups(backup.sourceUri) }
+        }
     }
 
     suspend fun deleteBackup(backup: SaveBackupEntity) = writes.withLock {
@@ -149,15 +179,42 @@ class SaveManager(
         check(!file.exists() || file.delete()) { "Suppression du backup impossible." }
     }
 
-    private suspend fun requireSource(game: GameEntity, uri: String) {
+    private suspend fun requireSource(game: GameEntity, uri: String, storage: WolfGameStorage? = null) {
         val parsed = Uri.parse(uri)
         require(parsed.scheme == "content" || parsed.scheme == "file") { "Source de sauvegarde invalide." }
         if (parsed.scheme == "file") {
             val source = File(requireNotNull(parsed.path)).canonicalFile
-            val privateRoot = File(context.applicationInfo.dataDir).canonicalFile
-            require(!source.path.startsWith(privateRoot.path + File.separator)) { "Un fichier interne Astra ne peut pas etre une sauvegarde de jeu." }
+            if (isPrivate(source)) {
+                require(game.engine == "WOLF_RPG" && wolfSaves(storage).any { it.file.canonicalFile == source }) {
+                    "Ce fichier interne Astra ne fait pas partie des sauvegardes Wolf autorisees pour ce jeu."
+                }
+                return
+            }
         }
-        require(finder.saves(game, dao.getSaveLocations(game.id)).any { it.uri == uri }) { "Sauvegarde absente des dossiers autorises du jeu. Actualisez la liste." }
+        require(finder.saves(game, dao.getSaveLocations(game.id).filter { it.type != "WOLF_PRIVATE" }).any { it.uri == uri }) { "Sauvegarde absente des dossiers autorises du jeu. Actualisez la liste." }
+    }
+
+    private fun isPrivate(file: File) = file.canonicalFile.toPath().startsWith(File(context.applicationInfo.dataDir).canonicalFile.toPath())
+
+    private suspend fun wolfSaves(storage: WolfGameStorage?): List<WolfGameStorage.SaveFile> =
+        storage?.saveFiles().orEmpty().filter { it.path.endsWith(".sav", ignoreCase = true) && it.file.isFile }
+
+    private suspend fun <T> withWolfStorage(game: GameEntity, block: suspend (WolfGameStorage?) -> T): T {
+        val storage = if (game.engine == "WOLF_RPG") WolfGameStorage(context, game.id, game.documentUri) else null
+        try { return block(storage) } finally { storage?.closeMount() }
+    }
+
+    private suspend fun publishWolfSave(storage: WolfGameStorage?, uriValue: String) {
+        if (storage == null) return
+        val uri = Uri.parse(uriValue)
+        if (uri.scheme != "file" || !isPrivate(File(requireNotNull(uri.path)))) return
+        try {
+            storage.savedFileChanged(File(requireNotNull(uri.path)))
+            check(storage.synchronize() == 0) { "Le dossier source a change ; la version modifiee reste dans Astra." }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            throw IllegalStateException("Modification verifiee et backup conserves dans Astra. La copie vers le dossier source a echoue : ${failure.message}", failure)
+        }
     }
 
     private suspend fun rotateBackups(sourceUri: String) {

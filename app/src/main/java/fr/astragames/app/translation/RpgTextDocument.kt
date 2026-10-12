@@ -4,12 +4,12 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Only player-facing fields are writable; scripts, notes, paths and identifiers are opaque. */
-internal class RpgTextDocument(val filename: String, bytes: ByteArray) {
+internal class RpgTextDocument(val filename: String, bytes: ByteArray) : GameTextDocument {
     private val root: Any
     private val slots = mutableListOf<Slot>()
     data class Entry(val path: String, val text: String, val identityGroup: String? = null, val identityReference: Boolean = false)
     private data class Slot(val entry: Entry, val write: (String) -> Unit)
-    val entries: List<Entry> get() = slots.map { it.entry }
+    override val entries: List<Entry> get() = slots.map { it.entry }
     val texts: List<String> get() = slots.map { it.entry.text }
 
     init {
@@ -77,7 +77,7 @@ internal class RpgTextDocument(val filename: String, bytes: ByteArray) {
         return translatedEntries(entries.associate { it.path to (dictionary[it.text] ?: it.text) })
     }
 
-    fun translatedEntries(dictionary: Map<String, String>): ByteArray {
+    override fun translatedEntries(dictionary: Map<String, String>): ByteArray {
         val paths = slots.mapTo(mutableSetOf()) { it.entry.path }
         require(dictionary.keys.all { it in paths }) { "Emplacement de texte inconnu." }
         slots.forEach { slot ->

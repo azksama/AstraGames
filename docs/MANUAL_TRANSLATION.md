@@ -1,12 +1,12 @@
 # Traduire un jeu avec un fichier pour IA
 
-Le mode manuel concerne les jeux **RPG Maker MV et MZ**. Il fonctionne sans compte, clé API ou téléchargement de modèle dans Astra. Vous choisissez vous-même le service de traduction auquel transmettre le fichier ; Astra ne l’envoie à aucun service.
+Le mode manuel concerne les textes reconnus des jeux **RPG Maker MV/MZ/XP/VX/VX Ace, Wolf et Ren’Py**. Il fonctionne sans compte, clé API ou téléchargement de modèle dans Astra. Vous choisissez vous-même le service de traduction auquel transmettre le fichier ; Astra ne l’envoie à aucun service.
 
 ## Parcours
 
 1. Fermez le jeu et ouvrez sa fiche dans Astra, puis **Outils → Traduire → Fichier pour IA**.
 2. Touchez **Analyser les textes**, puis choisissez la langue d’origine et la langue souhaitée. Un résultat terminé est conservé pour la prochaine ouverture ; **Actualiser l’analyse** le renouvelle à votre demande. Si une traduction est déjà appliquée, utilisez d’abord **Restaurer les originaux**.
-3. Touchez **Exporter les textes** et créez un nouveau fichier JSON hors du dossier `data` du jeu, par exemple dans Documents. Une destination contenant déjà des données est refusée pour éviter tout écrasement.
+3. Touchez **Exporter les textes** et créez un nouveau fichier JSON hors du dossier du jeu, par exemple dans Documents. Une destination contenant déjà des données est refusée pour éviter tout écrasement.
 4. Donnez le fichier à l’IA avec le prompt ci-dessous. Demandez un fichier JSON complet, en UTF-8. Ne supprimez pas les entrées que l’IA ne peut pas traduire : laissez leur `translation` vide.
 5. Revenez au même jeu dans Astra, touchez **Importer la traduction**, choisissez le fichier retourné et **Vérifier et appliquer**.
 6. Lancez le jeu pour contrôler la qualité linguistique. **Restaurer les originaux** annule l’opération à l’octet près.
@@ -53,13 +53,17 @@ L’export conserve chaque **occurrence**, avec son emplacement précis ; le com
 
 Les commandes intégrées aux textes (`\N[1]`, `\C[\V[1]]`, commandes de plugins avec arguments imbriqués…), `%1`, le balisage, les sauts de ligne et les sauts de page RPG Maker (`\f`, caractère U+000C) sont remplacés par des marqueurs protégés. Leur contenu original est disponible dans `protectedTokens` et reste immuable.
 
-Les **scripts, commandes et paramètres libres de plugins, notes techniques, noms de ressources, variables, interrupteurs, images, vidéos et sauvegardes** ne sont pas traduits. Les textes créés à l’exécution par un script ou stockés dans un format de plugin ne peuvent pas être extraits de manière générique sans risquer de changer la logique du jeu. Ren’Py, RPG Maker XP/VX/VX Ace et leurs fichiers RGSS ne sont pas pris en charge par cette fonction.
+Les **scripts exécutables, commandes et paramètres libres de plugins, notes techniques, noms de ressources, variables, interrupteurs, images, vidéos et sauvegardes** ne sont pas traduits. Les textes créés à l’exécution par un script ou stockés dans un format de plugin ne peuvent pas être extraits de manière générique sans risquer de changer la logique du jeu.
+
+Depuis beta.23, les fichiers de données RGSS standards `.rxdata`, `.rvdata` et `.rvdata2` exposent les champs textuels reconnus des objets RPG et les dialogues/choix. `Scripts` reste exclu. Wolf expose les commandes Dialogue et Choix des fichiers décompressés `Data/MapData/*.mps` et `Data/BasicData/CommonEvent.dat`, en conservant leur encodage et leurs opérandes. Les autres données et les archives `.wolf` restent exclues. Ren’Py expose les dialogues et choix des sources UTF-8 `.rpy` dans `game`, y compris ses sous-dossiers ; Python, écrans, ATL, expressions complexes, sources de traduction `tl` et scripts compilés `.rpyc` restent exclus. Les interpolations `[variable]`, les balises `{...}` et les substitutions `%` deviennent des marqueurs immuables.
 
 Les noms purement techniques de cartes dans `MapInfos`, d’événements, de groupes de monstres, d’animations et de tilesets ne sont pas affichés comme du texte par le moteur standard. Le nom affiché d’une carte (`displayName`) est bien extrait. Les noms d’éléments, variables et interrupteurs peuvent être affichés par des plugins, mais cela dépend de leur code : ils ne font pas partie des menus standards couverts.
 
 Les noms et profils déjà enregistrés dans les sauvegardes ne sont pas réécrits. Les noms utilisés par une condition standard sont protégés automatiquement, dans les modes local et manuel. Les comparaisons de noms écrites dans des scripts personnalisés restent hors périmètre ; ces jeux peuvent nécessiter de conserver d’autres noms ou une adaptation spécifique.
 
-## Format JSON version 1
+## Formats JSON
+
+MV/MZ conservent **`astra-rpgm-translation`, version 1**, dont l’exemple ci-dessous reste valable. Les autres moteurs utilisent **`astra-game-translation`, version 2** : mêmes champs d’échange et règle « modifier seulement `translation` », avec des noms de fichiers pouvant inclure un sous-dossier. Le moteur, les IDs, les sources et empreintes sont toujours vérifiés avant application. Ne convertissez pas vous-même le format ou la version.
 
 Exemple complet pour le jeu de démonstration `demo-game`, moteur MV, avec un unique fichier `Actors.json` contenant exactement `[null,{"name":"Hello \\N[1]!"}]`, sans saut de ligne final. Les empreintes ci-dessous correspondent à cette fixture ; celles de votre export seront différentes.
 
@@ -102,7 +106,7 @@ Exemple complet pour le jeu de démonstration `demo-game`, moteur MV, avec un un
 
 ## Vérifications et restauration
 
-Astra vérifie le JSON, ses types, les identifiants, les empreintes SHA-256 de tous les fichiers sources et les commandes protégées **avant la première écriture dans le jeu**. Une erreur indique l’entrée concernée quand elle est identifiable. Les originaux sont sauvegardés et relus dans `data/.astra-translation` ou `www/data/.astra-translation`, puis chaque écriture est journalisée et relue. Conservez ce dossier. Un fichier modifié ensuite par un autre outil provoque un conflit de restauration ; Astra ne l’écrase pas silencieusement.
+Astra vérifie le JSON, ses types, les identifiants, les empreintes SHA-256 de tous les fichiers sources et les commandes protégées **avant la première écriture dans le jeu**. Une erreur indique l’entrée concernée quand elle est identifiable. Les originaux sont sauvegardés et relus dans `.astra-translation` sous le dossier de textes (`data`, `www/data`, `Data` ou `game`), puis chaque écriture est journalisée et relue. Conservez ce dossier. Un fichier modifié ensuite par un autre outil provoque un conflit de restauration ; Astra ne l’écrase pas silencieusement.
 
 Limites : 64 Mo par fichier d’échange, 200 000 occurrences, 2 000 fichiers de données, 16 Mo par fichier de données et 64 Mo cumulés de données sources. Le JSON est limité à 64 niveaux d’imbrication. Une traduction individuelle a une limite proportionnée à sa source, jusqu’à 1 048 576 caractères après restitution des commandes ; un texte source déjà plus long peut conserver sa longueur initiale. La taille supplémentaire des marqueurs ASTRA ne réduit pas cette capacité. Ces limites évitent des imports disproportionnés et doivent être respectées avant de charger le document dans Astra.
 

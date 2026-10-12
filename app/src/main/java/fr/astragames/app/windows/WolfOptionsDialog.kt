@@ -74,6 +74,8 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
     }
     val performance = choice("Fluidité · au prochain lancement", WolfPerformance.entries.map { it.label }, original.performance.ordinal)
     label("Rapide réduit le travail de traduction Box64 et active la synchronisation Wine accélérée. Relancez le jeu pour l’appliquer ; revenez à Stable si le jeu devient instable.")
+    val fonts = choice("Polices · au prochain lancement", WolfFontPolicy.entries.map { it.label }, original.fontPolicy.ordinal)
+    label("Le cache des polices est partagé entre les jeux. La recherche allégée utilise IPAexGothic pour le japonais et le latin ; revenez à Compatibilité si des caractères manquent.")
     val resolution = choice("Affichage Windows · au prochain lancement", WolfOptions.resolutions.map {
         if (it == "auto") "Automatique (orientation)" else it
     }, WolfOptions.resolutions.indexOf(original.resolution))
@@ -97,10 +99,11 @@ internal fun showWolfOptions(host: Context, store: WolfGameOptions, changed: () 
         .setView(ScrollView(context).apply { addView(layout) })
         .setNegativeButton("Annuler", null)
         .setPositiveButton("Enregistrer") { _, _ ->
-            store.save(WolfOptions(WolfPerformance.entries[performance.selectedItemPosition], WolfOptions.resolutions[resolution.selectedItemPosition],
-                smooth.isChecked, if (fps.selectedItemPosition == 0) 30 else 60, counter.isChecked, touch.selectedItemPosition == 1,
-                opacity.progress + 15, size.progress + 70, WolfImageMode.entries[imageMode.selectedItemPosition],
-                WolfStorageMode.entries[storage.selectedItemPosition], zoom.isChecked, WolfRuntimeMode.WINLATOR)); changed()
+            store.save(original.copy(performance = WolfPerformance.entries[performance.selectedItemPosition], resolution = WolfOptions.resolutions[resolution.selectedItemPosition],
+                smooth = smooth.isChecked, maxFps = if (fps.selectedItemPosition == 0) 30 else 60, showFps = counter.isChecked, directionalTouch = touch.selectedItemPosition == 1,
+                opacity = opacity.progress + 15, size = size.progress + 70, imageMode = WolfImageMode.entries[imageMode.selectedItemPosition],
+                storageMode = WolfStorageMode.entries[storage.selectedItemPosition], pinchZoom = zoom.isChecked,
+                fontPolicy = WolfFontPolicy.entries[fonts.selectedItemPosition])); changed()
         }.create()
     WolfDialogs.show(dialog)
     return dialog

@@ -1,0 +1,47 @@
+{
+  "engine": "Official Game.exe Wolf 2.2961, Windows Win32 controlled fixture",
+  "format": "0x80",
+  "original": "build/wolf-research/wolf-data-proof/official-1-1791837212213816600/Save/SaveData01.sav",
+  "originalSha256": "841ae6b9bdbfcea168c91260c0fa445123f5eb336f2b44c58f6329923e11846d",
+  "patched": "build/mtool-implementation/wolf-save-kotlin-real-w2.var17-314159.sav",
+  "patchedSha256": "26a67b594055a573e32c1d647f0585d8d123c7a6cd66855f2cee647ac921878c",
+  "size": 195337,
+  "edit": {
+    "path": "root.variables[17]",
+    "offset": 14257,
+    "width": 4,
+    "oldValue": 271828,
+    "newValue": 314159
+  },
+  "changedOffsets": [
+    2,
+    14257,
+    14258
+  ],
+  "checksumValidOriginal": true,
+  "checksumValidPatched": true,
+  "cppKotlinNumericCellAgreement": 17580,
+  "cppKotlinSectionAgreement": 7,
+  "cppRetainsUntargetedDatabase": true,
+  "runtimeReload": {
+    "status": "passed",
+    "platform": "Windows Win32, official Wolf 2.2961 unchanged executable",
+    "gameSha256": "795203a6e875618d7fbdc7dd1f409a445c60262c911745553d040081bedb6ac0",
+    "variableId": 2000017,
+    "originalControl": [
+      0,
+      271828
+    ],
+    "kotlinPatched": [
+      0,
+      314159
+    ],
+    "scriptDataChange": "Copied official CommonEvent48.init: append SaveLoad[1,1]; no variable assignment/save",
+    "evidence": [
+      "build/wolf-research/wolf-data-proof/offline-reload-control-proof.json",
+      "build/wolf-research/wolf-data-proof/offline-reload-proof.json"
+    ],
+    "androidWineProof": false
+  },
+  "androidRuntimeReload": "Not yet verified; Android SDK emulator testing is centralized by the parent."
+}

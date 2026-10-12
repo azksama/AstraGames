@@ -16,12 +16,18 @@ class FixtureDocumentsProvider : DocumentsProvider() {
     private val documentQueries = java.util.concurrent.atomic.AtomicInteger()
     private val childQueries = java.util.concurrent.atomic.AtomicInteger()
     @Volatile private var failingRename: String? = null
+    @Volatile private var deniedRenames: String? = null
+    @Volatile private var deniedAccess: String? = null
     override fun onCreate() = true
     private fun file(id: String): File = File(root, id).also {
         require(it.canonicalFile.toPath().startsWith(root.canonicalFile.toPath()))
     }
 
     override fun call(method: String, arg: String?, extras: Bundle?): Bundle? {
+        // Provider-side security response models a withdrawn content grant; the fixture runs
+        // in Astra's UID, so merely revoking its self-grant cannot exercise Android denial.
+        if (method == "denyAccess") { deniedAccess = arg; return Bundle() }
+        if (method == "denyRenames") { deniedRenames = arg; return Bundle() }
         if (method == "resetQueryStats") {
             documentQueries.set(0); childQueries.set(0)
             return Bundle()
@@ -60,10 +66,12 @@ class FixtureDocumentsProvider : DocumentsProvider() {
 
     override fun queryRoots(projection: Array<out String>?): Cursor = MatrixCursor(arrayOf(DocumentsContract.Root.COLUMN_ROOT_ID))
     override fun queryDocument(documentId: String, projection: Array<out String>?): Cursor {
+        requireAccess(documentId)
         documentQueries.incrementAndGet()
         return MatrixCursor(projection ?: COLUMNS).apply { row(this, file(documentId)) }
     }
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor {
+        requireAccess(parentDocumentId)
         childQueries.incrementAndGet()
         return MatrixCursor(projection ?: COLUMNS).apply { file(parentDocumentId).listFiles().orEmpty().forEach { row(this, it) } }
     }
@@ -80,16 +88,21 @@ class FixtureDocumentsProvider : DocumentsProvider() {
         cursor.addRow(cursor.columnNames.map { values[it] })
     }
 
-    override fun openDocument(documentId: String, mode: String, signal: CancellationSignal?): ParcelFileDescriptor =
-        ParcelFileDescriptor.open(file(documentId), ParcelFileDescriptor.parseMode(mode))
+    override fun openDocument(documentId: String, mode: String, signal: CancellationSignal?): ParcelFileDescriptor {
+        requireAccess(documentId)
+        return ParcelFileDescriptor.open(file(documentId), ParcelFileDescriptor.parseMode(mode))
+    }
     override fun createDocument(parentDocumentId: String, mimeType: String, displayName: String): String {
+        requireAccess(parentDocumentId)
         require(!displayName.contains('/') && displayName != "..")
         val child = File(file(parentDocumentId), displayName)
         if (mimeType == Document.MIME_TYPE_DIR) check(child.mkdir()) else check(child.createNewFile())
         return child.relativeTo(root).invariantSeparatorsPath
     }
-    override fun deleteDocument(documentId: String) { check(file(documentId).deleteRecursively()) }
+    override fun deleteDocument(documentId: String) { requireAccess(documentId); check(file(documentId).deleteRecursively()) }
     override fun renameDocument(documentId: String, displayName: String): String {
+        requireAccess(documentId)
+        if (deniedRenames != null && documentId.startsWith("$deniedRenames/")) throw java.io.IOException("Fixture: rename unsupported")
         val old = file(documentId)
         if (old.parentFile!!.relativeTo(root).invariantSeparatorsPath + "/" + displayName == failingRename) {
             failingRename = null
@@ -98,6 +111,11 @@ class FixtureDocumentsProvider : DocumentsProvider() {
         val renamed = File(old.parentFile, displayName)
         check(old.renameTo(renamed))
         return renamed.relativeTo(root).invariantSeparatorsPath
+    }
+
+    private fun requireAccess(id: String) {
+        val denied = deniedAccess
+        if (denied != null && (id == denied || id.startsWith("$denied/"))) throw SecurityException("Fixture: source access withdrawn")
     }
 
     companion object {

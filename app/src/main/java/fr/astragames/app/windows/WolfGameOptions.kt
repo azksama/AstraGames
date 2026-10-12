@@ -34,6 +34,11 @@ internal enum class WolfRuntimeMode(val label: String) {
     WINLATOR("Winlator · compatibilité Windows")
 }
 
+internal enum class WolfFontPolicy(val label: String) {
+    SYSTEM("Polices intégrées et Android · compatibilité"),
+    BUNDLED("Police japonaise intégrée · recherche allégée")
+}
+
 internal data class WolfOptions(
     val performance: WolfPerformance = WolfPerformance.BALANCED,
     val resolution: String = "auto",
@@ -46,7 +51,8 @@ internal data class WolfOptions(
     val imageMode: WolfImageMode = WolfImageMode.FIT,
     val storageMode: WolfStorageMode = WolfStorageMode.AUTO,
     val pinchZoom: Boolean = false,
-    val runtime: WolfRuntimeMode = WolfRuntimeMode.WINLATOR
+    val runtime: WolfRuntimeMode = WolfRuntimeMode.WINLATOR,
+    val fontPolicy: WolfFontPolicy = WolfFontPolicy.SYSTEM
 ) {
     fun windowsResolution(landscape: Boolean) = if (resolution == "auto") {
         if (landscape) "1280x720" else "1280x960"
@@ -70,22 +76,29 @@ internal class WolfGameOptions(context: Context, id: String) {
             storageMode = runCatching { WolfStorageMode.valueOf(it.optString("storageMode", "AUTO")) }.getOrDefault(WolfStorageMode.AUTO),
             pinchZoom = it.optBoolean("pinchZoom", false),
             // Legacy AUTO/NATIVE preferences now route to Winlator. Other per-game settings and saves stay intact.
-            runtime = WolfRuntimeMode.WINLATOR)
+            runtime = WolfRuntimeMode.WINLATOR,
+            fontPolicy = runCatching { WolfFontPolicy.valueOf(it.optString("fontPolicy", "SYSTEM")) }.getOrDefault(WolfFontPolicy.SYSTEM))
     }
     fun save(options: WolfOptions) {
         val data = json().put("performance", options.performance.name).put("resolution", options.resolution)
             .put("smooth", options.smooth).put("maxFps", options.maxFps).put("showFps", options.showFps)
             .put("directionalTouch", options.directionalTouch).put("opacity", options.opacity).put("size", options.size)
             .put("imageMode", options.imageMode.name).put("storageMode", options.storageMode.name).put("pinchZoom", options.pinchZoom)
-            .put("runtime", options.runtime.name)
+            .put("runtime", options.runtime.name).put("fontPolicy", options.fontPolicy.name)
         prefs.edit().putString(key, data.toString()).apply()
     }
     /** Changing only the engine preserves graphics settings, bindings and control presets. */
     fun runtime(mode: WolfRuntimeMode) { write(json().put("runtime", mode.name)) }
-    fun binding(id: String, fallback: XKeycode): XKeycode = WolfKeyboard.parse(json().optString("key_$id", fallback.name)) ?: fallback
+    fun binding(id: String, fallback: XKeycode): XKeycode = action(id, fallback).keys.first()
+    fun action(id: String, fallback: XKeycode): WolfControlAction = WolfControlLayout.action(json(), id, fallback)
+    fun setAction(id: String, action: WolfControlAction) {
+        require(WolfControlLayout.validId(id) && id != "joystick")
+        val encoded = WolfControlAction.encode(action)
+        write(json().put("action_$id", encoded).put("key_$id", action.keys.first().name))
+    }
     fun bind(id: String, code: XKeycode) {
         require(WolfControlLayout.validId(id) && WolfKeyboard.valid(code))
-        write(json().put("key_$id", code.name))
+        write(json().put("key_$id", code.name).apply { remove("action_$id") })
     }
     private fun write(data: JSONObject) { prefs.edit().putString(key, data.toString()).apply() }
     fun customControls() = WolfControlLayout.custom(json())
@@ -102,11 +115,12 @@ internal class WolfGameOptions(context: Context, id: String) {
         require(clean.isNotBlank() && WolfKeyboard.valid(code))
         val data = json()
         data.put("customControls", WolfControlLayout.encodeCustom(customControls().map { if (it.id == id) it.copy(label = clean, code = code) else it }))
-        data.remove("key_$id"); write(data)
+        data.remove("key_$id"); data.remove("action_$id"); write(data)
     }
     fun removeControl(id: String) {
         val data = json().put("customControls", WolfControlLayout.encodeCustom(customControls().filterNot { it.id == id }))
-        data.remove("key_$id"); data.remove("position_false_$id"); data.remove("position_true_$id"); write(data)
+        data.remove("key_$id"); data.remove("action_$id"); data.remove("size_$id"); data.remove("opacity_$id")
+        data.remove("position_false_$id"); data.remove("position_true_$id"); write(data)
     }
     fun controlLayout() = WolfControlLayout.normalized(json())
     fun loadControlLayout(layout: JSONObject) { val data = json(); WolfControlLayout.apply(data, layout); write(data) }

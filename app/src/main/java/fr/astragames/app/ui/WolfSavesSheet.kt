@@ -38,9 +38,9 @@ internal fun WolfSavesSheet(game: GameEntity, onDismiss: () -> Unit) {
             exporting = true; error = null; message = null
             try {
                 withContext(Dispatchers.IO) {
-                    requireNotNull(context.contentResolver.openOutputStream(uri, "wt")).use {
+                    try { requireNotNull(context.contentResolver.openOutputStream(uri, "wt")).use {
                         if (exportNative) WolfLegacySaves(context, game.id).export(it) else storage.exportSaves(it)
-                    }
+                    } } finally { storage.closeMount() }
                 }
                 message = "Sauvegardes exportées."
             } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
@@ -56,7 +56,8 @@ internal fun WolfSavesSheet(game: GameEntity, onDismiss: () -> Unit) {
             }
             val result = withContext(Dispatchers.IO) {
                 storage.restoreLastLocation()
-                storage.saveFiles() to "${if (storage.isDirect) "Dossier d’origine" else "Copie privée dans Astra"} :\n${storage.game.path}"
+                try { storage.saveFiles() to "${storage.accessDescription} :\n${storage.game.path}" }
+                finally { storage.closeMount() }
             }
             files = result.first; location = result.second
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }

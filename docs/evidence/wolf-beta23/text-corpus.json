@@ -1,0 +1,72 @@
+[
+  {
+    "entries": 68,
+    "file": "BasicData/CommonEvent.dat",
+    "bytes": 1055820,
+    "patched": true,
+    "version": "sample22961"
+  },
+  {
+    "entries": 17,
+    "file": "MapData/Dungeon.mps",
+    "bytes": 17315,
+    "patched": true,
+    "version": "sample22961"
+  },
+  {
+    "entries": 98,
+    "file": "MapData/SampleMapA.mps",
+    "bytes": 31990,
+    "patched": true,
+    "version": "sample22961"
+  },
+  {
+    "entries": 12,
+    "file": "MapData/SampleMapB.mps",
+    "bytes": 13155,
+    "patched": true,
+    "version": "sample22961"
+  },
+  {
+    "entries": 8,
+    "file": "MapData/TitleMap.mps",
+    "bytes": 7806,
+    "patched": true,
+    "version": "sample22961"
+  },
+  {
+    "entries": 70,
+    "file": "BasicData/CommonEvent.dat",
+    "bytes": 385224,
+    "patched": true,
+    "version": "sample3729"
+  },
+  {
+    "entries": 17,
+    "file": "MapData/Dungeon.mps",
+    "bytes": 2790,
+    "patched": true,
+    "version": "sample3729"
+  },
+  {
+    "entries": 191,
+    "file": "MapData/SampleMapA.mps",
+    "bytes": 25076,
+    "patched": true,
+    "version": "sample3729"
+  },
+  {
+    "entries": 12,
+    "file": "MapData/SampleMapB.mps",
+    "bytes": 3054,
+    "patched": true,
+    "version": "sample3729"
+  },
+  {
+    "entries": 8,
+    "file": "MapData/TitleMap.mps",
+    "bytes": 3223,
+    "patched": true,
+    "version": "sample3729"
+  }
+]

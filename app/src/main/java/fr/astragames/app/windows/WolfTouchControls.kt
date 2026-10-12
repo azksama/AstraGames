@@ -21,7 +21,10 @@ import kotlin.math.abs
 internal class WolfTouchControls(context: Context, private val key: (XKeycode, Boolean) -> Unit,
     private val quit: () -> Unit, private val store: WolfGameOptions? = null,
     private val settings: () -> Unit = {}, private val clearInput: () -> Unit = {},
-    private val menuVisibility: (Boolean) -> Unit = {}, private val cheats: (() -> Unit)? = null) : FrameLayout(context) {
+    private val menuVisibility: (Boolean) -> Unit = {}, private val cheats: (() -> Unit)? = null,
+    private val exportPreset: ((suggestedFilename: String, json: String) -> Unit)? = null,
+    private val importPreset: (() -> Unit)? = null,
+    private val performance: (() -> Unit)? = null) : FrameLayout(context) {
     private data class Control(val id: String, val label: String, val code: XKeycode, val size: Int, val arrow: Float? = null)
     private val standardDefinitions = listOf(
         Control("up", "Haut", XKeycode.KEY_UP, 52, 0f), Control("left", "Gauche", XKeycode.KEY_LEFT, 52, -90f),
@@ -30,19 +33,23 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
         Control("shift", "Shift", XKeycode.KEY_SHIFT_L, 56))
     private val definitions get() = standardDefinitions + store?.customControls().orEmpty().map { Control(it.id, it.label, it.code, 72) }
     private val buttons = mutableMapOf<String, Button>()
-    private val held = mutableMapOf<String, XKeycode>()
+    private val held = WolfHeldKeys(key)
+    private val inputHandler = android.os.Handler(android.os.Looper.getMainLooper())
+    private val scheduled = mutableMapOf<String, Runnable>()
+    private var inputEpoch = 0L
+    private var ready = false
     private var hidden = false
     var editing = false
         private set
     private var options = store?.read() ?: WolfOptions()
     private var controlLayout = store?.controlLayout() ?: org.json.JSONObject()
     private val joystick = WolfJoystickView(context, ::moveJoystick)
-    private var joystickBindings: Map<String, XKeycode> = emptyMap()
+    private var joystickBindings: Map<String, List<XKeycode>> = emptyMap()
     private val menuButton: Button
     private val editorBar = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL; visibility = View.GONE }
     private val dialogs = mutableSetOf<AlertDialog>()
     private var popupVisible = false
-    private val controlDialogs = store?.let { WolfControlDialogs(context, it, ::present) { reload() } }
+    private val controlDialogs = store?.let { WolfControlDialogs(context, it, ::present, { reload() }, exportPreset, importPreset) }
     init {
         isMotionEventSplittingEnabled = true
         definitions.forEach(::createButton)
@@ -63,6 +70,7 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
                 PopupMenu(WolfDialogs.context(context), anchor).apply {
                     menu.add("Réglages du jeu").setOnMenuItemClickListener { settings(); true }
                     cheats?.let { action -> menu.add("Cheats et variables").setOnMenuItemClickListener { action(); true } }
+                    performance?.let { action -> menu.add("Mesurer la fluidité").setOnMenuItemClickListener { action(); true } }
                     menu.add("Modifier les touches").setOnMenuItemClickListener { setEditing(true); true }
                     if (store != null) {
                         menu.add("Déplacement : ${if (WolfControlLayout.movement(controlLayout) == WolfMovementMode.JOYSTICK) "joystick" else "croix"}")
@@ -83,6 +91,7 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
         }
         addView(menuButton, LayoutParams(dp(88), dp(48), Gravity.TOP or Gravity.RIGHT).apply { topMargin = dp(8); rightMargin = dp(12) })
         reload()
+        ready = true
     }
     private fun createButton(def: Control) {
             val button = button(if (def.arrow == null) def.label else "", def.id == "accept").apply {
@@ -91,10 +100,12 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
             }
             buttons[def.id] = button
             var touchClick = false
+            var activePointer = MotionEvent.INVALID_POINTER_ID
+            var downEpoch = inputEpoch
             var downX = 0f; var downY = 0f; var originX = 0f; var originY = 0f; var dragged = false
             button.setOnClickListener {
                 if (editing) remap(definitions.first { it.id == def.id })
-                else if (!touchClick) { press(def); button.postDelayed({ release(def.id) }, 120) }
+                else if (!touchClick) activate(def, accessibleClick = true)
             }
             button.setOnTouchListener { view, event ->
                 if (editing) {
@@ -113,14 +124,31 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
                         } else view.performClick()
                         MotionEvent.ACTION_CANCEL -> { view.x = originX; view.y = originY }
                     }
-                } else when (event.actionMasked) {
-                    MotionEvent.ACTION_DOWN -> { press(def); view.isPressed = true }
-                    MotionEvent.ACTION_MOVE -> if (event.x !in 0f..view.width.toFloat() || event.y !in 0f..view.height.toFloat()) {
-                        release(def.id); view.isPressed = false
+                } else {
+                    fun finish(cancelled: Boolean) {
+                        val valid = activePointer != MotionEvent.INVALID_POINTER_ID && downEpoch == inputEpoch
+                        activePointer = MotionEvent.INVALID_POINTER_ID
+                        held.release("touch_${def.id}"); view.isPressed = false
+                        if (cancelled) cancelAction(def.id)
+                        else if (valid) {
+                            activate(def, accessibleClick = false)
+                            touchClick = true; view.performClick(); touchClick = false
+                        }
                     }
-                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                        release(def.id); view.isPressed = false
-                        if (event.actionMasked == MotionEvent.ACTION_UP) { touchClick = true; view.performClick(); touchClick = false }
+                    when (event.actionMasked) {
+                        MotionEvent.ACTION_DOWN -> {
+                            activePointer = event.getPointerId(0); downEpoch = inputEpoch
+                            val action = action(def)
+                            if (action.mode == WolfControlActionMode.HOLD) held.set("touch_${def.id}", action.keys)
+                            view.isPressed = true
+                        }
+                        MotionEvent.ACTION_MOVE -> {
+                            val index = event.findPointerIndex(activePointer)
+                            if (index < 0 || event.getX(index) !in 0f..view.width.toFloat() || event.getY(index) !in 0f..view.height.toFloat()) finish(cancelled = true)
+                        }
+                        MotionEvent.ACTION_POINTER_UP -> if (event.getPointerId(event.actionIndex) == activePointer) finish(cancelled = false)
+                        MotionEvent.ACTION_UP -> finish(cancelled = false)
+                        MotionEvent.ACTION_CANCEL -> finish(cancelled = true)
                     }
                 }
                 true
@@ -138,16 +166,21 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
     }
     fun reload() {
         releaseAll(); options = store?.read() ?: WolfOptions(); controlLayout = store?.controlLayout() ?: org.json.JSONObject()
-        joystickBindings = standardDefinitions.filter { it.id in WolfControlLayout.directionIds }.associate { it.id to (store?.binding(it.id, it.code) ?: it.code) }
+        joystickBindings = standardDefinitions.filter { it.id in WolfControlLayout.directionIds }.associate { it.id to action(it).keys }
         val useJoystick = WolfControlLayout.movement(controlLayout) == WolfMovementMode.JOYSTICK
         val current = definitions
         buttons.keys.filter { id -> current.none { it.id == id } }.toList().forEach { removeView(buttons.remove(it)) }
         current.filter { it.id !in buttons }.forEach(::createButton)
         current.forEach { def -> buttons.getValue(def.id).apply {
-            val mapped = store?.binding(def.id, def.code) ?: def.code
-            text = if (mapped == def.code) (if (def.arrow == null) def.label else "") else keyLabel(mapped)
-            foreground = if (mapped == def.code && def.arrow != null) ArrowDrawable(def.arrow) else null
-            contentDescription = if (mapped == def.code) def.label else "${def.label} : ${keyLabel(mapped)}"
+            val action = action(def)
+            val original = action.keys == listOf(def.code)
+            val keys = action.keys.joinToString(" + ", transform = ::keyLabel)
+            val mode = when (action.mode) { WolfControlActionMode.HOLD -> ""; WolfControlActionMode.TOGGLE -> "Bascule"; WolfControlActionMode.MACRO -> "Séquence" }
+            val title = if (original) (if (def.arrow == null) def.label else if (mode.isEmpty()) "" else def.label) else keys
+            text = if (mode.isEmpty()) title else "$title\n$mode"
+            foreground = if (original && def.arrow != null && mode.isEmpty()) ArrowDrawable(def.arrow) else null
+            val description = if (original) def.label else "${def.label} : $keys"
+            contentDescription = if (mode.isEmpty()) description else "$description · $mode"
             alpha = if (editing) 1f else WolfControlLayout.opacity(controlLayout, def.id, options.opacity) / 100f
             visibility = if (hidden || useJoystick && def.id in WolfControlLayout.directionIds) View.GONE else View.VISIBLE
             val size = dp(def.size * options.size * WolfControlLayout.size(controlLayout, def.id) / 10_000).coerceAtLeast(dp(48))
@@ -207,24 +240,64 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
         releaseAll(); clearInput(); dialogs += dialog; publishMenu()
         dialog.setOnDismissListener { dialogs -= dialog; publishMenu() }; WolfDialogs.show(dialog)
     }
-    private fun press(def: Control) {
-        if (def.id in held) return
-        val current = definitions.firstOrNull { it.id == def.id } ?: return
-        val code = store?.binding(def.id, current.code) ?: current.code
-        hold(def.id, code)
+    private fun action(def: Control) = WolfControlLayout.action(controlLayout, def.id, definitions.firstOrNull { it.id == def.id }?.code ?: def.code)
+    private fun activate(def: Control, accessibleClick: Boolean) {
+        val action = action(def)
+        when (action.mode) {
+            WolfControlActionMode.HOLD -> if (accessibleClick) {
+                val owner = "access_${def.id}"
+                cancelScheduled(owner); held.set(owner, action.keys)
+                schedule(owner, 120) { held.release(owner) }
+            }
+            WolfControlActionMode.TOGGLE -> {
+                val owner = "toggle_${def.id}"
+                if (held.active(owner)) held.release(owner) else held.set(owner, action.keys)
+            }
+            WolfControlActionMode.MACRO -> {
+                val owner = "macro_${def.id}"
+                if (owner in scheduled) cancelScheduled(owner) else startSequence(owner, action.steps)
+            }
+        }
+        updateControlState(def.id)
     }
-    private fun hold(id: String, code: XKeycode) {
-        if (id in held) return
-        val alreadyHeld = code in held.values
-        held[id] = code
-        if (!alreadyHeld) key(code, true)
+    private fun schedule(owner: String, delayMs: Int, action: () -> Unit) {
+        val epoch = inputEpoch
+        lateinit var task: Runnable
+        task = Runnable {
+            if (scheduled[owner] !== task) return@Runnable
+            scheduled.remove(owner)
+            if (epoch == inputEpoch) action()
+            updateControlState(owner.substringAfter('_'))
+        }
+        scheduled[owner] = task
+        inputHandler.postDelayed(task, delayMs.toLong())
+    }
+    private fun startSequence(owner: String, steps: List<WolfMacroStep>) {
+        fun step(index: Int) {
+            if (index >= steps.size) { held.release(owner); return }
+            held.set(owner, steps[index].keys)
+            schedule(owner, steps[index].durationMs) { held.release(owner); step(index + 1) }
+        }
+        step(0)
+    }
+    private fun cancelScheduled(owner: String) {
+        scheduled.remove(owner)?.let(inputHandler::removeCallbacks)
+        held.release(owner)
+    }
+    private fun cancelAction(id: String) {
+        held.release("touch_$id"); held.release("toggle_$id")
+        cancelScheduled("access_$id"); cancelScheduled("macro_$id"); updateControlState(id)
+    }
+    private fun updateControlState(id: String) {
+        buttons[id]?.apply {
+            isSelected = held.active("toggle_$id") || "macro_$id" in scheduled
+            isActivated = isSelected
+            ((background as? RippleDrawable)?.getDrawable(0) as? GradientDrawable)?.setStroke(if (isSelected) dp(2) else 0, WolfViewStyle.accent)
+            if (android.os.Build.VERSION.SDK_INT >= 30) stateDescription = if (isSelected) "Activé" else null
+        }
     }
     private fun moveJoystick(directions: Set<String>) {
-        val before = held.values.toSet()
-        held.keys.filter { it.startsWith("joystick_") }.toList().forEach(held::remove)
-        joystickBindings.forEach { (id, code) -> if (id in directions) held["joystick_$id"] = code }
-        val after = held.values.toSet()
-        (before - after).forEach { key(it, false) }; (after - before).forEach { key(it, true) }
+        held.replaceGroup("joystick_", joystickBindings.filterKeys { it in directions }.mapKeys { "joystick_${it.key}" })
     }
     private fun configureJoystickEditing() {
         var downX = 0f; var downY = 0f; var originX = 0f; var originY = 0f; var dragged = false
@@ -249,9 +322,24 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
             true
         }
     }
-    private fun release(id: String) { val code = held.remove(id) ?: return; if (code !in held.values) key(code, false) }
-    fun releaseAll() { joystick.reset(); held.keys.toList().forEach(::release); buttons.values.forEach { it.isPressed = false } }
-    override fun onWindowFocusChanged(hasWindowFocus: Boolean) { if (!hasWindowFocus) releaseAll(); super.onWindowFocusChanged(hasWindowFocus) }
+    /** Used by the Activity after SAF reads, with validation before any preset or game state write. */
+    fun importPreset(json: String): String {
+        val store = requireNotNull(store) { "Réglages du jeu indisponibles." }
+        val imported = WolfControlPresets(context).importDocument(json)
+        releaseAll(); clearInput(); store.loadControlLayout(imported.layout); reload()
+        return imported.name
+    }
+    fun releaseAll() {
+        inputEpoch++
+        scheduled.values.toList().forEach(inputHandler::removeCallbacks); scheduled.clear()
+        joystick.reset(); held.releaseAll()
+        buttons.forEach { (id, button) -> button.isPressed = false; updateControlState(id) }
+    }
+    override fun onWindowFocusChanged(hasWindowFocus: Boolean) { if (ready && !hasWindowFocus) releaseAll(); super.onWindowFocusChanged(hasWindowFocus) }
+    override fun onVisibilityChanged(changedView: View, visibility: Int) {
+        super.onVisibilityChanged(changedView, visibility)
+        if (ready && !isShown) releaseAll()
+    }
     override fun onDetachedFromWindow() {
         releaseAll(); dialogs.toList().forEach(AlertDialog::dismiss); popupVisible = false
         menuVisibility(false); super.onDetachedFromWindow()

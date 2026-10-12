@@ -1,0 +1,11 @@
+SDK x86_64 emulator; actual Wine9/Win32 loader and file APIs; original authored fixture; imported executable bytes=0
+current=G:\
+directory_available=7959998464
+z_available=0
+current_available=7959998464
+root_available=7959998464
+legacy_available=7959998464
+mkdir_error=183
+save_written=1
+
+SAF: requêtes=265, ouvertures directes=1, publications=2, index=7 entrées (limite 100000), erreur=IOException: Broken pipe

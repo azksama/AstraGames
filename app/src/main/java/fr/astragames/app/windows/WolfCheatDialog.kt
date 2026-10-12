@@ -38,11 +38,19 @@ private class WolfCheatDialog(private val host: FragmentActivity, private val se
     private val cancel = button("Annuler la recherche") { cancelled = true; session.cancel(); status.text = "Annulation demandée…" }.apply { visibility = View.GONE }
     private val children = mutableSetOf<AlertDialog>()
     private val actions = mutableListOf<View>()
-    private val searchTab = button("Rechercher") { tracking = false; render() }
-    private val pinsTab = button("Valeurs suivies") { tracking = true; render() }
+    private val dataTab = button("Variables Wolf") { dataMode = true; tracking = false; render(); if (dataProbe == null) loadData(0, probe = true) }
+    private val searchTab = button("Mémoire") { dataMode = false; tracking = false; render() }
+        .apply { contentDescription = "Recherche en mémoire" }
+    private val pinsTab = button("Valeurs suivies") { dataMode = false; tracking = true; render() }
     private lateinit var dialog: AlertDialog
     private var busy = false
     private var tracking = false
+    private var dataMode = false
+    private var dataProbe: EngineDataProbe? = null
+    private var dataPage: EngineDataPage? = null
+    private var dataCategory: EngineDataCategory? = null
+    private var dataBank = ""
+    private var dataQuery = ""
     private var page = 0
     private var query = ""
     private var valueText = ""
@@ -53,7 +61,7 @@ private class WolfCheatDialog(private val host: FragmentActivity, private val se
 
     fun show(): AlertDialog {
         root.addView(label("Recherchez une valeur, jouez pour la faire varier, puis affinez. Les noms internes du jeu ne sont pas automatiquement connus : vous pouvez nommer vos valeurs suivies."))
-        root.addView(row(searchTab, pinsTab), params(12))
+        root.addView(row(dataTab, searchTab, pinsTab), params(12))
         root.addView(status, params(12)); root.addView(progress, params(4)); root.addView(cancel, params(4))
         root.addView(body, params(12))
         dialog = WolfDialogs.builder(host, "Cheats et variables")
@@ -99,7 +107,7 @@ private class WolfCheatDialog(private val host: FragmentActivity, private val se
     }
     private fun setBusy(value: Boolean) {
         busy = value; progress.visibility = if (value) View.VISIBLE else View.GONE; cancel.visibility = progress.visibility
-        actions.forEach { it.isEnabled = !value }; searchTab.isEnabled = !value; pinsTab.isEnabled = !value
+        actions.forEach { it.isEnabled = !value }; dataTab.isEnabled = !value; searchTab.isEnabled = !value; pinsTab.isEnabled = !value
         children.forEach { child -> listOf(AlertDialog.BUTTON_POSITIVE, AlertDialog.BUTTON_NEUTRAL).forEach { child.getButton(it)?.isEnabled = !value } }
     }
     private fun work(message: String, action: suspend () -> Unit) {
@@ -117,9 +125,10 @@ private class WolfCheatDialog(private val host: FragmentActivity, private val se
     }
     private fun render() {
         body.removeAllViews(); actions.clear(); pinsList = null
-        searchTab.alpha = if (tracking) .65f else 1f; pinsTab.alpha = if (tracking) 1f else .65f
+        dataTab.alpha = if (dataMode) 1f else .65f
+        searchTab.alpha = if (tracking || dataMode) .65f else 1f; pinsTab.alpha = if (tracking) 1f else .65f
         pinsTab.text = "Valeurs suivies (${session.pins.size})"
-        if (tracking) renderPins() else renderSearch()
+        if (dataMode) renderData() else if (tracking) renderPins() else renderSearch()
         setBusy(busy)
     }
     private fun renderSearch() {
@@ -158,6 +167,89 @@ private class WolfCheatDialog(private val host: FragmentActivity, private val se
         body.addView(label(if (result.count == 0L) "0 résultat" else "${page + 1}–${page + result.rows.size} sur ${result.count}"), params(8))
         body.addView(row(previous, next), params(4))
         body.addView(enable(button("Annuler la dernière modification") { work("Annulation de la modification…") { session.undo() } }), params(8))
+    }
+    private fun renderData() {
+        body.addView(label("Variables du moteur", true))
+        body.addView(label("Les identifiants viennent des tableaux du jeu. Les noms métier (argent, vie…) ne sont pas déduits. Seuls les formats mémoire vérifiés sont éditables."), params(4))
+        body.addView(enable(button("Actualiser la sonde Wolf") { loadData(0, probe = true) }), params(8))
+        when (val probe = dataProbe) {
+            null -> { body.addView(label("Lancez la sonde après être entré dans une partie."), params(8)); return }
+            is EngineDataProbe.Unavailable -> {
+                body.addView(label(probe.reason), params(8))
+                body.addView(enable(button("Ouvrir le scanner mémoire") { dataMode = false; tracking = false; render() }), params(8))
+                return
+            }
+            is EngineDataProbe.Supported -> body.addView(label("${probe.build} · ${probe.banks.sum()} nombres · ${probe.textCount} textes · ${probe.commonCount} événements communs", true), params(8))
+        }
+        body.addView(enable(choice(listOf("Toutes les catégories") + EngineDataCategory.entries.map { it.label }, dataCategory?.wire ?: 0) {
+            dataCategory = EngineDataCategory.entries.firstOrNull { category -> category.wire == it }
+        }), params(8))
+        body.addView(enable(field("Groupe / événement commun (vide : tous)", dataBank) { dataBank = it }), params(4))
+        body.addView(enable(field("Rechercher un ID, une valeur ou du texte", dataQuery) { dataQuery = it }), params(4))
+        body.addView(enable(button("Rechercher les variables", true) { loadData(0) }), params(8))
+        val page = dataPage ?: return
+        body.addView(label("${page.count} variable(s). Ouvrir une ligne relit sa valeur actuelle."), params(12))
+        val list = LinearLayout(theme).apply { orientation = LinearLayout.VERTICAL }
+        page.variables.forEach { variable ->
+            val value = variable.value.display.replace('\n', ' ').take(120).ifEmpty { "(texte vide)" }
+            list.addView(enable(button("${variable.id} · ${variable.category.label}\n$value${if (variable.readOnly) " · Lecture seule" else ""}") { editData(variable.id) }), params(4))
+        }
+        if (page.count == 0L) list.addView(label("Aucune variable ne correspond à cette recherche."))
+        body.addView(ScrollView(theme).apply { addView(list) }, LinearLayout.LayoutParams(-1, dp((host.resources.configuration.screenHeightDp / 3).coerceIn(144, 320))).apply { topMargin = dp(8) })
+        val previous = button("Précédent") { loadData((page.offset - 128).coerceAtLeast(0)) }
+        val next = button("Suivant") { loadData(page.offset + 128) }
+        if (page.offset > 0) enable(previous) else previous.isEnabled = false
+        if (page.offset + page.variables.size < page.count) enable(next) else next.isEnabled = false
+        body.addView(label(if (page.count == 0L) "0 variable" else "${page.offset + 1}–${page.offset + page.variables.size} sur ${page.count}"), params(8))
+        body.addView(row(previous, next), params(4))
+        if (session.engineData.canUndo) body.addView(enable(button("Annuler la dernière modification Wolf") {
+            work("Annulation et relecture de la variable…") { session.engineData.undo(); refreshDataPage() }
+        }), params(8))
+    }
+    private fun loadData(offset: Int, probe: Boolean = false) {
+        val bank = if (dataBank.isBlank()) null else dataBank.trim().toIntOrNull()
+        if (dataBank.isNotBlank() && (bank == null || bank !in 0..9999)) { status.text = "Le groupe doit être un entier entre 0 et 9999."; return }
+        work("Lecture des tableaux Wolf…") {
+            if (probe) { dataPage = null; dataProbe = session.engineData.probe() }
+            if (dataProbe is EngineDataProbe.Supported) {
+                val result = session.engineData.search(dataCategory, bank, dataQuery, offset)
+                dataProbe = result.probe; dataPage = result
+            }
+        }
+    }
+    private suspend fun refreshDataPage() {
+        val bank = if (dataBank.isBlank()) null else dataBank.trim().toIntOrNull()
+        val result = session.engineData.search(dataCategory, bank, dataQuery, dataPage?.offset ?: 0)
+        dataProbe = result.probe; dataPage = result
+    }
+    private fun editData(id: Int) {
+        work("Relecture de la variable $id…") {
+            val before = session.engineData.read(id)
+            val column = WolfDialogs.column(host)
+            column.addView(label("${before.id} · ${before.category.label}\nGroupe ${before.bank} · Index ${before.index}"))
+            val value = field("Nouvelle valeur Wolf", before.value.display) {}.apply {
+                filters = arrayOf(android.text.InputFilter.LengthFilter(WolfEngineDataProtocol.MAX_TEXT_BYTES))
+                if (before.value is EngineDataValue.Text) { isSingleLine = false; maxLines = 5 }
+                isEnabled = !before.readOnly
+            }
+            column.addView(value, params(8))
+            column.addView(label(if (before.value is EngineDataValue.Text) "Capacité du jeu : ${before.capacityBytes} octets. Le texte doit tenir dans cette capacité et son encodage. La valeur et le tableau sont vérifiés avant et après l’écriture."
+                else "Entier signé 32 bits. La valeur et le tableau sont vérifiés avant et après l’écriture."), params(8))
+            val child = WolfDialogs.builder(host, "Variable ${before.id}").setView(column)
+                .setPositiveButton(if (before.readOnly) "Fermer" else "Modifier", null).setNegativeButton("Annuler", null).create()
+            child.setOnShowListener {
+                child.getButton(AlertDialog.BUTTON_POSITIVE).setOnClickListener {
+                    if (before.readOnly) { child.dismiss(); return@setOnClickListener }
+                    val after = if (before.value is EngineDataValue.Number) {
+                        val number = value.text.toString().trim().toIntOrNull()
+                        if (number == null) { value.error = "Entier requis entre ${Int.MIN_VALUE} et ${Int.MAX_VALUE}."; return@setOnClickListener }
+                        EngineDataValue.Number(number)
+                    } else EngineDataValue.Text(value.text.toString())
+                    work("Écriture et relecture de la variable…") { session.engineData.write(before, after); child.dismiss(); refreshDataPage() }
+                }
+            }
+            present(child)
+        }
     }
     private fun search(op: Int, mode: Int, type: WolfCheatType) {
         val values = try {

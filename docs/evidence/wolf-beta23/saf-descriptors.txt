@@ -1,0 +1,1 @@
+SDK instrumentation; actual FD/mmap/SCM_RIGHTS; prepareMs=27; unusedAssets=5001; importedAssets=0; queries=8/14; SAF: requêtes=11, ouvertures directes=2, publications=1, index=8 entrées (limite 100000), erreur=ErrnoException: mkdir failed: EEXIST (File exists)

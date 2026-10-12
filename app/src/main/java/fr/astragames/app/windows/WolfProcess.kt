@@ -25,9 +25,7 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         private set
     private var lastChildren = emptyList<Int>()
     private var childrenCheckedAt = 0L
-    private val fontConfig = File(storage.directory, "fonts.conf").apply {
-        writeText("""<?xml version="1.0"?><!DOCTYPE fontconfig SYSTEM "fonts.dtd"><fontconfig><dir>${runtime.path}/fonts</dir><dir>/system/fonts</dir><cachedir>${storage.directory.path}/font-cache</cachedir><alias binding="strong"><family>MS Gothic</family><prefer><family>IPAexGothic</family></prefer></alias></fontconfig>""")
-    }
+    private val fontConfig = WolfFontConfiguration.prepare(context, runtime, storage.directory, options.fontPolicy)
     val log = File(storage.directory, "runtime.log")
     private val environment = mapOf(
         "WINEDLLPATH" to File(runtime, "proton/lib/wine").path,
@@ -62,7 +60,7 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         "WINEDLLOVERRIDES" to "winemenubuilder.exe,mscoree,mshtml=d",
         // warn+all floods the pipe with asset probes and starves audio on large games.
         "WINEDEBUG" to if (diagnostics?.verbose == true) "-all,err+all,warn+seh,+timestamp,+pid,+tid,+loaddll" else "-all,err+all"
-    ) + options.performance.environment() + mapOf("PULSE_SERVER" to "unix:${pulseSocket.path}", "PULSE_LATENCY_MSEC" to "80")
+    ) + options.performance.environment() + storage.runtimeEnvironment() + mapOf("PULSE_SERVER" to "unix:${pulseSocket.path}", "PULSE_LATENCY_MSEC" to "80")
 
     private fun startAudio() {
         stage(5, "Démarrage audio…")
@@ -162,8 +160,14 @@ internal class WolfProcess(private val context: Context, private val runtime: Fi
         val file = safeFile(storage.game, executable)
         check(file.isFile && file.extension.equals("exe", true)) { "Exécutable Windows introuvable : $executable" }
         gameDrive.mount()
-        val free = gameDrive.verifyWritable(requireNotNull(file.parentFile))
-        diagnostics?.event("Sauvegardes : écriture vérifiée dans le dossier du jeu ; espace disponible sur G: = $free octets ; stockage Astra = ${storage.directory.usableSpace} octets")
+        if (storage.isSaf) {
+            storage.verifyRuntimeAccess()
+            diagnostics?.event("${storage.accessDescription}; journal privé disponible=${storage.directory.usableSpace} octets ; espace du fournisseur SAF non exposé par Android")
+        } else {
+            val free = gameDrive.verifyWritable(requireNotNull(file.parentFile))
+            diagnostics?.event("Sauvegardes : écriture vérifiée dans le dossier du jeu ; espace disponible sur G: = $free octets ; stockage Astra = ${storage.directory.usableSpace} octets")
+        }
+        storage.refreshDiagnosticLog(executable)
         diagnostics?.gameErrorLog(requireNotNull(file.parentFile), beforeLaunch = true)
         return start(wine, listOf(gameDrive.executable(executable)), workingDirectory = requireNotNull(file.parentFile),
             extraEnvironment = mapOf("ASTRA_GAME_SESSION" to gameToken))

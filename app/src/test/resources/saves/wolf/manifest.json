@@ -1,0 +1,1751 @@
+{
+  "origin": "Synthetic fixtures, not game assets",
+  "layout": "Sinflower/WolfSave @537ceba4262368c61bfb9c4fa5333341a115c662, MIT",
+  "cipher": "Native Windows msvcrt.dll srand/rand",
+  "fixtures": {
+    "format-0060-utf8.sav": {
+      "format": 96,
+      "utf8": true,
+      "size": 995,
+      "sha256": "7e91d96fb2e62f403fd1edbe390e53330b422f68d78a7222f3519181b08454ce",
+      "sections": {
+        "1": [
+          46,
+          250
+        ],
+        "2": [
+          250,
+          420
+        ],
+        "3": [
+          420,
+          504
+        ],
+        "4": [
+          504,
+          758
+        ],
+        "5": [
+          758,
+          856
+        ],
+        "6": [
+          856,
+          982
+        ],
+        "7": [
+          982,
+          994
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 893,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 897,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 932,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 936,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 978,
+          "value": 77
+        }
+      }
+    },
+    "format-0060-cp932.sav": {
+      "format": 96,
+      "utf8": false,
+      "size": 989,
+      "sha256": "bb6d0f788681f989918a22b6826a74b4a804712e2eecf8e1302e9cc5c98ab79a",
+      "sections": {
+        "1": [
+          43,
+          247
+        ],
+        "2": [
+          247,
+          417
+        ],
+        "3": [
+          417,
+          501
+        ],
+        "4": [
+          501,
+          755
+        ],
+        "5": [
+          755,
+          853
+        ],
+        "6": [
+          853,
+          976
+        ],
+        "7": [
+          976,
+          988
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 890,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 894,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 926,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 930,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 972,
+          "value": 77
+        }
+      }
+    },
+    "format-0064-utf8.sav": {
+      "format": 100,
+      "utf8": true,
+      "size": 1061,
+      "sha256": "4f6c57c71688d1d61a6a5dfb6f8a2f4688ca9bb0a46f644f90dbb5c2f5ae04aa",
+      "sections": {
+        "1": [
+          46,
+          256
+        ],
+        "2": [
+          256,
+          486
+        ],
+        "3": [
+          486,
+          570
+        ],
+        "4": [
+          570,
+          824
+        ],
+        "5": [
+          824,
+          922
+        ],
+        "6": [
+          922,
+          1048
+        ],
+        "7": [
+          1048,
+          1060
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 959,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 963,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 998,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1002,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1044,
+          "value": 77
+        }
+      }
+    },
+    "format-0064-cp932.sav": {
+      "format": 100,
+      "utf8": false,
+      "size": 1055,
+      "sha256": "932720eb5e2de25f7369ac84530ede77f64a60a154f25b86cdd86b99e4d3efab",
+      "sections": {
+        "1": [
+          43,
+          253
+        ],
+        "2": [
+          253,
+          483
+        ],
+        "3": [
+          483,
+          567
+        ],
+        "4": [
+          567,
+          821
+        ],
+        "5": [
+          821,
+          919
+        ],
+        "6": [
+          919,
+          1042
+        ],
+        "7": [
+          1042,
+          1054
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 956,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 960,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 992,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 996,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1038,
+          "value": 77
+        }
+      }
+    },
+    "format-0069-utf8.sav": {
+      "format": 105,
+      "utf8": true,
+      "size": 1213,
+      "sha256": "3a8c5b3845adb1b825f6cb6a0b9a29e31602ac3b1f4d6532e467a2abc38f51c0",
+      "sections": {
+        "1": [
+          46,
+          288
+        ],
+        "2": [
+          288,
+          566
+        ],
+        "3": [
+          566,
+          650
+        ],
+        "4": [
+          650,
+          904
+        ],
+        "5": [
+          904,
+          1074
+        ],
+        "6": [
+          1074,
+          1200
+        ],
+        "7": [
+          1200,
+          1212
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1111,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1115,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1150,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1154,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1196,
+          "value": 77
+        }
+      }
+    },
+    "format-0069-cp932.sav": {
+      "format": 105,
+      "utf8": false,
+      "size": 1207,
+      "sha256": "e8f79d17c7b48324145cb339f1443b2574b79803274a9a82a67a98427348feb1",
+      "sections": {
+        "1": [
+          43,
+          285
+        ],
+        "2": [
+          285,
+          563
+        ],
+        "3": [
+          563,
+          647
+        ],
+        "4": [
+          647,
+          901
+        ],
+        "5": [
+          901,
+          1071
+        ],
+        "6": [
+          1071,
+          1194
+        ],
+        "7": [
+          1194,
+          1206
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1108,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1112,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1144,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1148,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1190,
+          "value": 77
+        }
+      }
+    },
+    "format-006f-utf8.sav": {
+      "format": 111,
+      "utf8": true,
+      "size": 1280,
+      "sha256": "86ffe4f697767ded838f075eb9371d9e2ff31bb85dab72bd1578a07da365f552",
+      "sections": {
+        "1": [
+          46,
+          288
+        ],
+        "2": [
+          288,
+          628
+        ],
+        "3": [
+          628,
+          716
+        ],
+        "4": [
+          716,
+          970
+        ],
+        "5": [
+          970,
+          1141
+        ],
+        "6": [
+          1141,
+          1267
+        ],
+        "7": [
+          1267,
+          1279
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1178,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1182,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1217,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1221,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1263,
+          "value": 77
+        }
+      }
+    },
+    "format-006f-cp932.sav": {
+      "format": 111,
+      "utf8": false,
+      "size": 1274,
+      "sha256": "e779016e40372f15c33cbd6f3da5df101ee90a9af7852fa58594657e2bd2a9d1",
+      "sections": {
+        "1": [
+          43,
+          285
+        ],
+        "2": [
+          285,
+          625
+        ],
+        "3": [
+          625,
+          713
+        ],
+        "4": [
+          713,
+          967
+        ],
+        "5": [
+          967,
+          1138
+        ],
+        "6": [
+          1138,
+          1261
+        ],
+        "7": [
+          1261,
+          1273
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1175,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1179,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1211,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1215,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1257,
+          "value": 77
+        }
+      }
+    },
+    "format-0072-utf8.sav": {
+      "format": 114,
+      "utf8": true,
+      "size": 1364,
+      "sha256": "f6941e426ccf316d080a305087989e6c635d19e0ffc1acecd108ef57ea08d42e",
+      "sections": {
+        "1": [
+          46,
+          334
+        ],
+        "2": [
+          334,
+          674
+        ],
+        "3": [
+          674,
+          762
+        ],
+        "4": [
+          762,
+          1020
+        ],
+        "5": [
+          1020,
+          1225
+        ],
+        "6": [
+          1225,
+          1351
+        ],
+        "7": [
+          1351,
+          1363
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1262,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1266,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1301,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1305,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1347,
+          "value": 77
+        }
+      }
+    },
+    "format-0072-cp932.sav": {
+      "format": 114,
+      "utf8": false,
+      "size": 1358,
+      "sha256": "9f124fdc5130f05d15fec81e0c156c2570b674de8e9a4e476154937c1717618e",
+      "sections": {
+        "1": [
+          43,
+          331
+        ],
+        "2": [
+          331,
+          671
+        ],
+        "3": [
+          671,
+          759
+        ],
+        "4": [
+          759,
+          1017
+        ],
+        "5": [
+          1017,
+          1222
+        ],
+        "6": [
+          1222,
+          1345
+        ],
+        "7": [
+          1345,
+          1357
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1259,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1263,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1295,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1299,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1341,
+          "value": 77
+        }
+      }
+    },
+    "format-0073-utf8.sav": {
+      "format": 115,
+      "utf8": true,
+      "size": 1505,
+      "sha256": "773f1f9cda8e0299e93d32e6c879f4ed124c3121f0ef0430f4743a90e4b2e5ee",
+      "sections": {
+        "1": [
+          46,
+          403
+        ],
+        "2": [
+          403,
+          743
+        ],
+        "3": [
+          743,
+          831
+        ],
+        "4": [
+          831,
+          1121
+        ],
+        "5": [
+          1121,
+          1366
+        ],
+        "6": [
+          1366,
+          1492
+        ],
+        "7": [
+          1492,
+          1504
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1403,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1407,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1442,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1446,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1488,
+          "value": 77
+        }
+      }
+    },
+    "format-0073-cp932.sav": {
+      "format": 115,
+      "utf8": false,
+      "size": 1499,
+      "sha256": "bfc2b19fdf9dd61d1be7ff82a3b2f8e1a265004e2a91fc7ce20d85367c45556c",
+      "sections": {
+        "1": [
+          43,
+          400
+        ],
+        "2": [
+          400,
+          740
+        ],
+        "3": [
+          740,
+          828
+        ],
+        "4": [
+          828,
+          1118
+        ],
+        "5": [
+          1118,
+          1363
+        ],
+        "6": [
+          1363,
+          1486
+        ],
+        "7": [
+          1486,
+          1498
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1400,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1404,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1436,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1440,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1482,
+          "value": 77
+        }
+      }
+    },
+    "format-0076-utf8.sav": {
+      "format": 118,
+      "utf8": true,
+      "size": 1561,
+      "sha256": "b26626d7b09cb57e9773347a6f280c60161e45507103056ef7e6a47914c37880",
+      "sections": {
+        "1": [
+          46,
+          403
+        ],
+        "2": [
+          403,
+          743
+        ],
+        "3": [
+          743,
+          831
+        ],
+        "4": [
+          831,
+          1121
+        ],
+        "5": [
+          1121,
+          1422
+        ],
+        "6": [
+          1422,
+          1548
+        ],
+        "7": [
+          1548,
+          1560
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1459,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1463,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1498,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1502,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1544,
+          "value": 77
+        }
+      }
+    },
+    "format-0076-cp932.sav": {
+      "format": 118,
+      "utf8": false,
+      "size": 1555,
+      "sha256": "26fe9f764f6a9dc2e39cefe99c4152d6566595a912ed01ec4f2b00266f3daea4",
+      "sections": {
+        "1": [
+          43,
+          400
+        ],
+        "2": [
+          400,
+          740
+        ],
+        "3": [
+          740,
+          828
+        ],
+        "4": [
+          828,
+          1118
+        ],
+        "5": [
+          1118,
+          1419
+        ],
+        "6": [
+          1419,
+          1542
+        ],
+        "7": [
+          1542,
+          1554
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1456,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1460,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1492,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1496,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1538,
+          "value": 77
+        }
+      }
+    },
+    "format-0080-utf8.sav": {
+      "format": 128,
+      "utf8": true,
+      "size": 1605,
+      "sha256": "dc5c3a1b16c9c1a9428354868cb58f82a334d8484b17c15737acefdc722b5faa",
+      "sections": {
+        "1": [
+          46,
+          407
+        ],
+        "2": [
+          407,
+          779
+        ],
+        "3": [
+          779,
+          867
+        ],
+        "4": [
+          867,
+          1165
+        ],
+        "5": [
+          1165,
+          1466
+        ],
+        "6": [
+          1466,
+          1592
+        ],
+        "7": [
+          1592,
+          1604
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1503,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1507,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1542,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1546,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1588,
+          "value": 77
+        }
+      }
+    },
+    "format-0080-cp932.sav": {
+      "format": 128,
+      "utf8": false,
+      "size": 1599,
+      "sha256": "4905ef0389a95bb382545a590722f714bc085993fd0f92f1aa667c73b78cfcf8",
+      "sections": {
+        "1": [
+          43,
+          404
+        ],
+        "2": [
+          404,
+          776
+        ],
+        "3": [
+          776,
+          864
+        ],
+        "4": [
+          864,
+          1162
+        ],
+        "5": [
+          1162,
+          1463
+        ],
+        "6": [
+          1463,
+          1586
+        ],
+        "7": [
+          1586,
+          1598
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1500,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1504,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1536,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1540,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1582,
+          "value": 77
+        }
+      }
+    },
+    "format-0081-utf8.sav": {
+      "format": 129,
+      "utf8": true,
+      "size": 1697,
+      "sha256": "6cf8dafd973b7bf63ed370f3d4ec5a8dfd5b77fb98017c1d83fd581d8ecdebb5",
+      "sections": {
+        "1": [
+          46,
+          407
+        ],
+        "2": [
+          407,
+          787
+        ],
+        "3": [
+          787,
+          875
+        ],
+        "4": [
+          875,
+          1173
+        ],
+        "5": [
+          1173,
+          1558
+        ],
+        "6": [
+          1558,
+          1684
+        ],
+        "7": [
+          1684,
+          1696
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1595,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1599,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1634,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1638,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1680,
+          "value": 77
+        }
+      }
+    },
+    "format-0081-cp932.sav": {
+      "format": 129,
+      "utf8": false,
+      "size": 1691,
+      "sha256": "e08832b5246c421d95ea1ca9c9f8133057c0c3a490fabb8eb3e533d8eada8435",
+      "sections": {
+        "1": [
+          43,
+          404
+        ],
+        "2": [
+          404,
+          784
+        ],
+        "3": [
+          784,
+          872
+        ],
+        "4": [
+          872,
+          1170
+        ],
+        "5": [
+          1170,
+          1555
+        ],
+        "6": [
+          1555,
+          1678
+        ],
+        "7": [
+          1678,
+          1690
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1592,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1596,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1628,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1632,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1674,
+          "value": 77
+        }
+      }
+    },
+    "format-0089-utf8.sav": {
+      "format": 137,
+      "utf8": true,
+      "size": 1935,
+      "sha256": "07874e1ad6283b20b366c1402a36d3f4963ea2b96fec26271ed553f77725b46d",
+      "sections": {
+        "1": [
+          46,
+          419
+        ],
+        "2": [
+          419,
+          937
+        ],
+        "3": [
+          937,
+          1025
+        ],
+        "4": [
+          1025,
+          1347
+        ],
+        "5": [
+          1347,
+          1796
+        ],
+        "6": [
+          1796,
+          1922
+        ],
+        "7": [
+          1922,
+          1934
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1833,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1837,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1872,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1876,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1918,
+          "value": 77
+        }
+      }
+    },
+    "format-0089-cp932.sav": {
+      "format": 137,
+      "utf8": false,
+      "size": 1929,
+      "sha256": "1ae360e23cac2c64c0c3afa78e3199744bada1bc301bdff0034035fabc0e5249",
+      "sections": {
+        "1": [
+          43,
+          416
+        ],
+        "2": [
+          416,
+          934
+        ],
+        "3": [
+          934,
+          1022
+        ],
+        "4": [
+          1022,
+          1344
+        ],
+        "5": [
+          1344,
+          1793
+        ],
+        "6": [
+          1793,
+          1916
+        ],
+        "7": [
+          1916,
+          1928
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 1830,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 1834,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 1866,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 1870,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 1912,
+          "value": 77
+        }
+      }
+    },
+    "format-008a-utf8.sav": {
+      "format": 138,
+      "utf8": true,
+      "size": 2173,
+      "sha256": "9fb149b74b9d61d527a32fc0feb9db877c8efede9da3c6d6077c60facab79794",
+      "sections": {
+        "1": [
+          46,
+          554
+        ],
+        "2": [
+          554,
+          1117
+        ],
+        "3": [
+          1117,
+          1205
+        ],
+        "4": [
+          1205,
+          1585
+        ],
+        "5": [
+          1585,
+          2034
+        ],
+        "6": [
+          2034,
+          2160
+        ],
+        "7": [
+          2160,
+          2172
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 2071,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 2075,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 2110,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 2114,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 2156,
+          "value": 77
+        }
+      }
+    },
+    "format-008a-cp932.sav": {
+      "format": 138,
+      "utf8": false,
+      "size": 2167,
+      "sha256": "22ed53aed1da4f933c2f2eba9a5d40feded5e34181c01fecb56afd9bd0e2fb61",
+      "sections": {
+        "1": [
+          43,
+          551
+        ],
+        "2": [
+          551,
+          1114
+        ],
+        "3": [
+          1114,
+          1202
+        ],
+        "4": [
+          1202,
+          1582
+        ],
+        "5": [
+          1582,
+          2031
+        ],
+        "6": [
+          2031,
+          2154
+        ],
+        "7": [
+          2154,
+          2166
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 2068,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 2072,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 2104,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 2108,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 2150,
+          "value": 77
+        }
+      }
+    },
+    "format-008b-utf8.sav": {
+      "format": 139,
+      "utf8": true,
+      "size": 2185,
+      "sha256": "a9879535d4e7196619f45548f27ec150e87789cea6939b92a155d65aaa1fcccc",
+      "sections": {
+        "1": [
+          46,
+          558
+        ],
+        "2": [
+          558,
+          1121
+        ],
+        "3": [
+          1121,
+          1209
+        ],
+        "4": [
+          1209,
+          1597
+        ],
+        "5": [
+          1597,
+          2046
+        ],
+        "6": [
+          2046,
+          2172
+        ],
+        "7": [
+          2172,
+          2184
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 2083,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 2087,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 2122,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 2126,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 2168,
+          "value": 77
+        }
+      }
+    },
+    "format-008b-cp932.sav": {
+      "format": 139,
+      "utf8": false,
+      "size": 2179,
+      "sha256": "711e1b875c4b466d4f9e79c65f7bf1623f31e0328fe7e8ff411eab2ff373a69b",
+      "sections": {
+        "1": [
+          43,
+          555
+        ],
+        "2": [
+          555,
+          1118
+        ],
+        "3": [
+          1118,
+          1206
+        ],
+        "4": [
+          1206,
+          1594
+        ],
+        "5": [
+          1594,
+          2043
+        ],
+        "6": [
+          2043,
+          2166
+        ],
+        "7": [
+          2166,
+          2178
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 2080,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 2084,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 2116,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 2120,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 2162,
+          "value": 77
+        }
+      }
+    },
+    "format-008c-utf8.sav": {
+      "format": 140,
+      "utf8": true,
+      "size": 2197,
+      "sha256": "fa026c8a8f4e34d33e09823fc59377cdaf663c8b543e566ace91d48067ed2b71",
+      "sections": {
+        "1": [
+          46,
+          562
+        ],
+        "2": [
+          562,
+          1125
+        ],
+        "3": [
+          1125,
+          1213
+        ],
+        "4": [
+          1213,
+          1609
+        ],
+        "5": [
+          1609,
+          2058
+        ],
+        "6": [
+          2058,
+          2184
+        ],
+        "7": [
+          2184,
+          2196
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 2095,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 2099,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 2134,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 2138,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 2180,
+          "value": 77
+        }
+      }
+    },
+    "format-008c-cp932.sav": {
+      "format": 140,
+      "utf8": false,
+      "size": 2191,
+      "sha256": "9dc8b20555209ed16b29f5057e54a969f390b569e47b49c8a1a2afd32447fe56",
+      "sections": {
+        "1": [
+          43,
+          559
+        ],
+        "2": [
+          559,
+          1122
+        ],
+        "3": [
+          1122,
+          1210
+        ],
+        "4": [
+          1210,
+          1606
+        ],
+        "5": [
+          1606,
+          2055
+        ],
+        "6": [
+          2055,
+          2178
+        ],
+        "7": [
+          2178,
+          2190
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 2092,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 2096,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 2128,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 2132,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 2174,
+          "value": 77
+        }
+      }
+    },
+    "format-008d-utf8.sav": {
+      "format": 141,
+      "utf8": true,
+      "size": 2469,
+      "sha256": "844d82cfee2e286ede56ae5b94617053d007cbfcb5222980572cb9d643d9b929",
+      "sections": {
+        "1": [
+          46,
+          562
+        ],
+        "2": [
+          562,
+          1397
+        ],
+        "3": [
+          1397,
+          1485
+        ],
+        "4": [
+          1485,
+          1881
+        ],
+        "5": [
+          1881,
+          2330
+        ],
+        "6": [
+          2330,
+          2456
+        ],
+        "7": [
+          2456,
+          2468
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 2367,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 2371,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 2406,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 2410,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 2452,
+          "value": 77
+        }
+      }
+    },
+    "format-008d-cp932.sav": {
+      "format": 141,
+      "utf8": false,
+      "size": 2463,
+      "sha256": "7f9cbfab0f469a0d3039faadc69e0f1af444f04ae98e12363ff001ffc741c761",
+      "sections": {
+        "1": [
+          43,
+          559
+        ],
+        "2": [
+          559,
+          1394
+        ],
+        "3": [
+          1394,
+          1482
+        ],
+        "4": [
+          1482,
+          1878
+        ],
+        "5": [
+          1878,
+          2327
+        ],
+        "6": [
+          2327,
+          2450
+        ],
+        "7": [
+          2450,
+          2462
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 2364,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 2368,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 2400,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 2404,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 2446,
+          "value": 77
+        }
+      }
+    },
+    "format-008e-utf8.sav": {
+      "format": 142,
+      "utf8": true,
+      "size": 2473,
+      "sha256": "9e7ec362734f2383eb90f334a79163cc32cc778f1d158ef6233797bf3cd01bf2",
+      "sections": {
+        "1": [
+          46,
+          562
+        ],
+        "2": [
+          562,
+          1401
+        ],
+        "3": [
+          1401,
+          1489
+        ],
+        "4": [
+          1489,
+          1885
+        ],
+        "5": [
+          1885,
+          2334
+        ],
+        "6": [
+          2334,
+          2460
+        ],
+        "7": [
+          2460,
+          2472
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 2371,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 2375,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 2410,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 2414,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 2456,
+          "value": 77
+        }
+      }
+    },
+    "format-008e-cp932.sav": {
+      "format": 142,
+      "utf8": false,
+      "size": 2467,
+      "sha256": "25ca9b8c72c6eadc50a76f68d05539be3b653458f981c9e4d7f73a1e2f7da1cc",
+      "sections": {
+        "1": [
+          43,
+          559
+        ],
+        "2": [
+          559,
+          1398
+        ],
+        "3": [
+          1398,
+          1486
+        ],
+        "4": [
+          1486,
+          1882
+        ],
+        "5": [
+          1882,
+          2331
+        ],
+        "6": [
+          2331,
+          2454
+        ],
+        "7": [
+          2454,
+          2466
+        ]
+      },
+      "numbers": {
+        "root.variableDatabase.types[0].rows[0].fields[0]": {
+          "offset": 2368,
+          "value": 100
+        },
+        "root.variableDatabase.types[0].rows[0].fields[2]": {
+          "offset": 2372,
+          "value": -5
+        },
+        "root.variableDatabase.types[0].rows[1].fields[0]": {
+          "offset": 2404,
+          "value": 2147483647
+        },
+        "root.variableDatabase.types[0].rows[1].fields[2]": {
+          "offset": 2408,
+          "value": -2147483648
+        },
+        "root.variableDatabase.types[1].rows[0].fields[0]": {
+          "offset": 2450,
+          "value": 77
+        }
+      }
+    }
+  },
+  "cipherVector": {
+    "plaintextHex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+    "ciphertextHex": "000102030405060708090a0b0c0d0e0f1011121314141217181a1a1c1f1a1e1924212225202324242c2e292d282e2d2f37363233313131333f3a3d3b383c3b3b"
+  }
+}

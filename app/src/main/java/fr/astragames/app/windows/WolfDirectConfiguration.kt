@@ -10,14 +10,18 @@ internal class WolfDirectConfiguration(private val directory: File) {
 
     fun apply(root: File, executable: String?) {
         restore()
-        val parent = executable?.let { safeFile(root, it).parentFile } ?: root
+        // Android's /data/data and /data/user/0 aliases denote the same directory.
+        // Keep containment checks and relative paths in one canonical namespace.
+        val canonicalRoot = root.canonicalFile
+        val parent = executable?.let { safeFile(canonicalRoot, it).parentFile } ?: canonicalRoot
         val ini = parent!!.listFiles()?.firstOrNull { it.name.equals("Game.ini", true) } ?: File(parent, "Game.ini")
-        safeFile(root, ini.relativeTo(root).invariantSeparatorsPath)
+        val relativePath = ini.relativeTo(canonicalRoot).invariantSeparatorsPath
+        safeFile(canonicalRoot, relativePath)
         val original = if (ini.isFile) ini.readBytes() else null
         val configured = wolfSoftwareConfiguration(original?.toString(Charsets.ISO_8859_1).orEmpty()).toByteArray(Charsets.ISO_8859_1)
         if (original != null && original.contentEquals(configured)) return
         directory.mkdirs()
-        val record = JSONObject().put("root", root.canonicalPath).put("path", ini.relativeTo(root).invariantSeparatorsPath)
+        val record = JSONObject().put("root", canonicalRoot.path).put("path", relativePath)
             .put("original", original?.let { Base64.encodeToString(it, Base64.NO_WRAP) } ?: JSONObject.NULL)
             .put("configured", java.security.MessageDigest.getInstance("SHA-256").digest(configured).hexString())
         val pending = File(directory, "source-configuration.new").apply {

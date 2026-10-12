@@ -5,7 +5,7 @@ API 36.1 x86_64. Les exemples officiels Wolf **2.2961 et 3.729** atteignent la p
 affichent personnages et dialogues japonais, et répondent au bouton Valider d'Astra.
 Le test ne couvre pas une partie complète, tous les jeux, ni un téléphone ARM64.
 
-Depuis la bêta 14, ce parcours reste le **secours Windows** du [moteur Android expérimental](wolf-native/IMPLEMENTATION.md). Le choix par jeu dans **Fiche → Compatibilité → Moteur de lancement**, aussi disponible dans les réglages Wolf RPG, conserve Winlator pour les sessions Windows existantes et les données natives incompatibles. La progression Windows reste dans les emplacements décrits ici ; elle n'est pas convertie en sauvegarde native.
+Depuis la bêta 21, Wolf utilise uniquement **Winlator/Wine/Box64**. Le moteur Android natif expérimental a été retiré ; ses anciens fichiers restent conservés et exportables. **Fiche → Compatibilité → Profil de lancement** permet de corriger le moteur détecté ou de choisir une application externe. La progression Windows reste dans les emplacements décrits ici.
 
 ## Utilisation
 
@@ -14,8 +14,7 @@ est Astra · Wolf intégré. Les profils externes explicitement choisis restent 
 Les composants sont téléchargés au premier usage par HTTPS et vérifiés avec un SHA-256 épinglé.
 Le runtime reste dans `noBackupFilesDir/wolf-runtime/wine9-astra-2` ; les jeux importés et leurs
 préfixes restent dans `files/wolf-games/<SHA-256 de l'identifiant du jeu>`.
-La taille nécessaire comprend le runtime partagé et un préfixe Windows par jeu. Une copie du jeu
-est ajoutée uniquement lorsque le mode copie est choisi ou que l’accès direct est impossible.
+La taille nécessaire comprend le runtime partagé et un préfixe Windows par jeu. Depuis beta.23, l’accès automatique choisit le dossier physique, puis un [montage SAF à la demande](wolf-saf-on-demand.md) pour les fournisseurs compatibles, puis la copie de secours. Seule cette dernière importe les ressources ; les raisons d’un repli sont affichées dans la préparation et le diagnostic.
 
 Le scan d'un sous-dossier s'effectue depuis Paramètres → Sources et scan → Sous-dossier…,
 en naviguant dans un parent déjà autorisé. Il ne marque pas les jeux des autres branches absents.
@@ -29,7 +28,7 @@ en naviguant dans un parent déjà autorisé. Il ne marque pas les jeux des autr
 - `windows-runtime` : sous-ensemble LGPL de Winlator pour X11, rendu OpenGL ES, entrées,
   sockets et mémoire partagée. Aucune installation externe Winlator/GameNative/JoiPlay.
 - `WolfRuntimeActivity` : affichage dans Astra, pavé tactile, clavier, D-pad et boutons A/B,
-  fermeture sérialisée des sessions, verrouillage Astra au retour de l'arrière-plan et protection des captures.
+  fermeture sérialisée des sessions, verrouillage Astra au retour de l'arrière-plan et captures Android autorisées pendant le jeu.
 - `WolfProcessRecovery` : arrêt des anciens enfants Windows/audio identifiés par l’UID, leurs
   chemins privés et leur environnement ; contrôle de l’identité du processus avant le signal.
 - `WolfLoadingView` : étapes réelles et durée, commandes masquées jusqu’à la première image
@@ -37,7 +36,7 @@ en naviguant dans un parent déjà autorisé. Il ne marque pas les jeux des autr
 - `WolfTouchInput` et `ViewTransformation` : Retour à deux doigts, zoom optionnel de 1× à 4×,
   déplacement à deux doigts et conversion des coordonnées tactiles dans le même cadrage.
 - PulseAudio Bionic et sortie Android AAudio ; IPAexGothic pour les caractères japonais.
-- `WolfGameStorage` : dossier d’origine accessible ou copie SAF/file, détection des écritures locales non synchronisées,
+- `WolfGameStorage` : dossier d’origine, montage SAF à la demande ou copie SAF/file, détection des écritures locales non synchronisées,
   synchronisation avec comparaison de l'original, sauvegarde de l'ancienne version et export ZIP.
 
 Wine et les jeux s'exécutent sous l'UID d'Astra. Le moteur **n'est pas un bac à sable de sécurité**

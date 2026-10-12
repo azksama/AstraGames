@@ -45,6 +45,7 @@ internal object WolfCheatProtocol {
             6 -> "Recherche annulée. Les résultats précédents sont conservés."
             8 -> "Mémoire de recherche ou liste de valeurs figées pleine."
             10 -> "La valeur a changé entre la lecture et la modification. Relisez-la avant de modifier."
+            11 -> "L’écriture n’a pas pu être confirmée par relecture. Relisez la valeur."
             else -> "Recherche incompatible. Commencez une nouvelle recherche avec ce type de valeur."
         } }
         require(type in WolfCheatType.entries.indices && count in 0..2_097_152 && scanned >= 0 && length in 0..128 && bytes.size == 48 + length * 16)

@@ -1,0 +1,15 @@
+{
+  "platform": "Windows Win32, official Wolf 2.2961 unchanged executable",
+  "directory": "build/wolf-research/wolf-data-proof/offline-reload-1791838131297822300",
+  "gameSha256": "795203a6e875618d7fbdc7dd1f409a445c60262c911745553d040081bedb6ac0",
+  "saveSha256": "26a67b594055a573e32c1d647f0585d8d123c7a6cd66855f2cee647ac921878c",
+  "dataChange": "Copied official CommonEvent48.init: append SaveLoad[1,1]; no variable assignment/save",
+  "variant": "Kotlin patched",
+  "variableId": 2000017,
+  "firstObserved": "0",
+  "afterLoad": "314159",
+  "expected": "314159",
+  "observedThrough": "Astra original helper op13, live verified Wolf layout",
+  "status": "passed",
+  "androidWineProof": false
+}

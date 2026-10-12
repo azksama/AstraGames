@@ -25,7 +25,7 @@ data class GameSave(
 sealed interface SaveData {
     /** Sauvegarde JSON (RPG Maker MV/MZ), éditable. */
     data class JsonSave(val json: org.json.JSONObject) : SaveData
-    /** Extraction lecture seule (pickle Ren'Py, marshal RGSS). */
+    /** Valeurs reconnues d'un format binaire ; l'éditabilité est propre à chaque champ. */
     data class RawSave(val entries: List<SaveEntry>) : SaveData
 }
 
@@ -92,6 +92,7 @@ class SaveFinder(private val context: Context) {
             "RPG_MAKER_MV" -> listOf("www/save", "save", "www")
             "RPG_MAKER_MZ" -> listOf("save", "www/save")
             "RPG_MAKER_XP", "RPG_MAKER_VX", "RPG_MAKER_VX_ACE" -> listOf("Save", "save")
+            "WOLF_RPG" -> listOf("Save", "save", "SaveData", "Data/Save", "Data/SaveData", "Save_MTool", "Data/Save_MTool")
             else -> listOf("saves", "save", "savedata")
         }
         val folders = linkedSetOf<DocumentFile>()
@@ -127,6 +128,7 @@ class SaveFinder(private val context: Context) {
             "RPG_MAKER_VX" -> lower.endsWith(".rvdata") && lower.startsWith("save", ignoreCase = true)
             "RPG_MAKER_VX_ACE" -> lower.endsWith(".rvdata2") && lower.startsWith("save", ignoreCase = true)
             "RENPY" -> lower.endsWith(".save") && !lower.equals("persistent")
+            "WOLF_RPG" -> lower.endsWith(".sav")
             else -> lower.endsWith(".save") || lower.endsWith(".sav") || lower.endsWith(".rpgsave")
         }
     }

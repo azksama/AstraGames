@@ -86,11 +86,48 @@ class WolfRuntimeActivity : FragmentActivity() {
     private var diagnosticOverlay: ComposeView? = null
     private var lockOverlay: ComposeView? = null
     private var settings: fr.astragames.app.settings.AstraSettings? = null
+    private var pendingPresetExport: ByteArray? = null
+    private var measuredScene: String? = null
+    private var measurementDeadline = 0L
     private val settingsRepository by lazy { (application as fr.astragames.app.AstraApplication).container.settings }
     private val exportPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("application/zip")) { uri ->
         if (uri != null) lifecycleScope.launch {
-            runCatching { gameStorage?.exportSaves(requireNotNull(contentResolver.openOutputStream(uri, "wt"))) }
+            runCatching {
+                try { gameStorage?.exportSaves(requireNotNull(contentResolver.openOutputStream(uri, "wt"))) }
+                finally { if (!playable) gameStorage?.closeMount() }
+            }
                 .onFailure { android.widget.Toast.makeText(this@WolfRuntimeActivity, it.message, android.widget.Toast.LENGTH_LONG).show() }
+        }
+    }
+    private val exportControlsPicker = registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+        val bytes = pendingPresetExport
+        pendingPresetExport = null
+        if (uri != null && bytes != null) lifecycleScope.launch {
+            val outcome = withContext(Dispatchers.IO) { runCatching {
+                val empty = contentResolver.openInputStream(uri)?.use { it.read() == -1 } ?: error("Fichier d’export inaccessible.")
+                require(empty) { "Choisissez un nouveau fichier vide pour exporter les commandes." }
+                contentResolver.openOutputStream(uri, "wt")?.use { it.write(bytes) } ?: error("Écriture du preset impossible.")
+                val verified = contentResolver.openInputStream(uri)?.use { fr.astragames.app.translation.readTranslationBytes(it, WolfControlPresetCodec.MAX_BYTES) }
+                check(verified?.contentEquals(bytes) == true) { "Export incomplet. Choisissez un autre emplacement." }
+            } }
+            android.widget.Toast.makeText(this@WolfRuntimeActivity, outcome.exceptionOrNull()?.message ?: "Preset exporté", android.widget.Toast.LENGTH_LONG).show()
+        }
+    }
+    private val importControlsPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) lifecycleScope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching {
+                val bytes = contentResolver.openInputStream(uri)?.use { fr.astragames.app.translation.readTranslationBytes(it, WolfControlPresetCodec.MAX_BYTES) }
+                    ?: error("Preset inaccessible.")
+                val text = Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .decode(java.nio.ByteBuffer.wrap(bytes)).toString()
+                WolfControlPresetCodec.decode(text)
+                text
+            } }
+            val message = result.fold({ text -> runCatching {
+                check(::controls.isInitialized && playable && !closing) { "Ouvrez une session pour importer les commandes." }
+                "Preset chargé : ${controls.importPreset(text)}"
+            }.getOrElse { it.message ?: "Preset invalide" } }, { it.message ?: "Preset invalide" })
+            android.widget.Toast.makeText(this@WolfRuntimeActivity, message, android.widget.Toast.LENGTH_LONG).show()
         }
     }
 
@@ -177,7 +214,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                 storage = WolfGameStorage(this@WolfRuntimeActivity, id, uri, preferDirect = gameOptions.storageMode == WolfStorageMode.AUTO)
                 gameStorage = storage
                 storage.prepare(executable, ::progress)
-                diagnostic?.event("Stockage du jeu : ${if (storage.isDirect) "dossier d’origine" else "copie privée"}; dossier=${storage.game.path}; préfixe=${storage.prefix.path}")
+                diagnostic?.event("Stockage du jeu : ${storage.accessDescription}; dossier=${storage.game.path}; préfixe=${storage.prefix.path}")
                 val sockets = File(cacheDir, "wolf-sockets").apply { mkdirs() }
                 val xSocket = UnixSocketConfig.create(sockets.path, "/x/X0")
                 val shmSocket = UnixSocketConfig.create(sockets.path, "/shm/SM0")
@@ -185,7 +222,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                 withContext(Dispatchers.Main) { setupDisplay() }
                 x11 = XServerComponent(server, xSocket).also { it.start() }
                 shm = SysVSharedMemoryComponent(server, shmSocket).also { it.start() }
-                diagnostic?.event("Options : profil=${gameOptions.performance}; écran=${server!!.screenInfo.width}x${server!!.screenInfo.height}; cadrage=${gameOptions.imageMode}; lissage=${gameOptions.smooth}; limite=${gameOptions.maxFps}")
+                diagnostic?.event("Options : profil=${gameOptions.performance}; polices=${gameOptions.fontPolicy}; écran=${server!!.screenInfo.width}x${server!!.screenInfo.height}; cadrage=${gameOptions.imageMode}; lissage=${gameOptions.smooth}; limite=${gameOptions.maxFps}")
                 runner = WolfProcess(this@WolfRuntimeActivity, runtime, storage, xSocket.path, shmSocket.path, diagnostic, gameOptions, ::progress)
                 runInterruptible(Dispatchers.IO) { runner.initialize() }
                 storage.captureWindowsSaveBaseline()
@@ -236,7 +273,9 @@ class WolfRuntimeActivity : FragmentActivity() {
                     runCatching { runner?.stop() }.onFailure { diagnostic?.failure("Échec de l’arrêt du runtime", it) }
                     process?.let { if (it.isAlive) it.destroyForcibly() }
                     if (storage != null && runner != null) {
+                        runCatching { storage.refreshDiagnosticLog(requireNotNull(intent.getStringExtra("executable"))) }
                         runCatching { diagnostic?.gameErrorLog(safeFile(storage.game, requireNotNull(intent.getStringExtra("executable"))).parentFile!!) }
+                        diagnostic?.event("Accès fichiers : ${storage.storageStatistics()}")
                         val syncStarted = android.os.SystemClock.elapsedRealtime()
                         runCatching { storage.synchronize(::progress) }.onSuccess { conflicts ->
                             synchronized = conflicts == 0
@@ -254,6 +293,7 @@ class WolfRuntimeActivity : FragmentActivity() {
                         diagnostic?.failure("Restauration de la configuration du jeu", it)
                         failure = listOfNotNull(failure, it.message).joinToString("\n")
                     }
+                    runCatching { storage?.closeMount() }.onFailure { diagnostic?.failure("Fermeture du montage SAF", it) }
                 }
                 runCatching { x11?.stop() }.onFailure { diagnostic?.failure("Arrêt X11", it) }; x11 = null
                 runCatching { shm?.stop() }.onFailure { diagnostic?.failure("Arrêt mémoire partagée", it) }; shm = null
@@ -320,7 +360,16 @@ class WolfRuntimeActivity : FragmentActivity() {
         }, ::releaseKeys, cheats = {
             releaseKeys()
             if (playable && lockOverlay == null) cheatSession?.let { cheatDialog = showWolfCheats(this, it) }
-        }).apply { visibility = View.GONE }
+        }, exportPreset = { filename, json ->
+            releaseKeys()
+            val bytes = json.toByteArray(Charsets.UTF_8)
+            require(bytes.size <= WolfControlPresetCodec.MAX_BYTES)
+            pendingPresetExport = bytes
+            exportControlsPicker.launch(filename)
+        }, importPreset = {
+            releaseKeys()
+            importControlsPicker.launch(arrayOf("application/json", "text/plain", "application/octet-stream"))
+        }, performance = ::choosePerformanceScene).apply { visibility = View.GONE }
         root.addView(controls, FrameLayout.LayoutParams(-1, -1))
         fpsLabel = TextView(this).apply { visibility = View.GONE; setTextColor(Color.WHITE); setBackgroundColor(0xAA17121E.toInt()); textSize = 12f; setPadding(dp(8), dp(4), dp(8), dp(4)) }
         root.addView(fpsLabel, FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.LEFT).apply { leftMargin = dp(8); topMargin = dp(8) })
@@ -380,14 +429,34 @@ class WolfRuntimeActivity : FragmentActivity() {
                 val total = display?.renderer?.contentFrameCount ?: previous
                 val fps = (total - previous) * 1000f / (now - started).coerceAtLeast(1)
                 fpsLabel?.text = "Images modifiées : %.1f/s".format(java.util.Locale.ROOT, fps)
-                fpsLabel?.visibility = if (gameOptions.showFps) View.VISIBLE else View.GONE
+                if (measuredScene != null) fpsLabel?.append(" · mesure ${(measurementDeadline - now).coerceAtLeast(0) / 1000}s")
+                fpsLabel?.visibility = if (gameOptions.showFps || measuredScene != null) View.VISIBLE else View.GONE
                 if (++seconds % 10 == 0) {
                     val metrics = display?.renderer?.performanceSnapshot.orEmpty()
-                    withContext(Dispatchers.IO) { diagnostic?.event("Images modifiées affichées : %.1f/s\n%s".format(java.util.Locale.ROOT, fps, metrics)) }
+                    val scene = measuredScene ?: "session"
+                    withContext(Dispatchers.IO) { diagnostic?.event("Scène : %s ; images modifiées affichées : %.1f/s\n%s\n%s"
+                        .format(java.util.Locale.ROOT, scene, fps, metrics, WolfPerformanceDevice.snapshot(this@WolfRuntimeActivity))) }
+                }
+                if (measuredScene != null && now >= measurementDeadline) {
+                    diagnostic?.event("Fin de mesure : $measuredScene")
+                    measuredScene = null
+                    android.widget.Toast.makeText(this@WolfRuntimeActivity, "Mesure terminée · résultats dans le diagnostic", android.widget.Toast.LENGTH_LONG).show()
                 }
                 previous = total; started = now
             }
         }
+    }
+    private fun choosePerformanceScene() {
+        releaseKeys()
+        if (!playable || closing || lockOverlay != null) return
+        val scenes = arrayOf("Grande carte et déplacements", "Texte progressif", "Images et animations")
+        optionsDialog = WolfDialogs.builder(this, "Mesurer une scène pendant 60 secondes")
+            .setItems(scenes) { _, index ->
+                measuredScene = scenes[index]
+                measurementDeadline = android.os.SystemClock.elapsedRealtime() + 60_000
+                diagnostic?.event("Début de mesure : $measuredScene ; profil=${gameOptions.performance}; polices=${gameOptions.fontPolicy}")
+                android.widget.Toast.makeText(this, "Jouez cette scène pendant une minute. Le rapport conservera les temps de rendu et l’état Android.", android.widget.Toast.LENGTH_LONG).show()
+            }.setNegativeButton("Annuler", null).create().also(WolfDialogs::show)
     }
     private fun closeSession() {
         if (closing) return

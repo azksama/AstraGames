@@ -7,6 +7,7 @@ internal object SaveCodec {
         "RPG_MAKER_MV", "RPG_MAKER_MZ" -> SaveData.JsonSave(RpgMakerSaveCodec.decode(bytes).json)
         "RPG_MAKER_XP", "RPG_MAKER_VX", "RPG_MAKER_VX_ACE" ->
             SaveData.RawSave(MarshalFlattener.flatten(rgssRoot(Marshal.loadAll(bytes))))
+        "WOLF_RPG" -> SaveData.RawSave(WolfSaveCodec.read(bytes).entries())
         else -> error("Moteur non pris en charge.")
     }
 
@@ -53,6 +54,7 @@ internal object SaveCodec {
                 edits.forEach { JsonSaveEditor.apply(decoded.json, it) }
                 RpgMakerSaveCodec.encode(decoded)
             }
+            "WOLF_RPG" -> WolfSaveCodec.patch(original, edits)
             else -> {
                 // Keep the actual stream roots mutable too: XP/VX store scalar headers in separate streams.
                 val roots = Marshal.loadAll(original).toMutableList()

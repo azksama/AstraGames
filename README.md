@@ -14,7 +14,7 @@ Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été 
 - scan ciblé depuis **Paramètres → Sources et scan → Sous-dossier…** : navigation dans une source déjà autorisée, puis analyse du dossier choisi avec les options de récursivité de la source. Ce scan ajoute ou retrouve les jeux sans marquer les autres absents ; le scan complet reste nécessaire pour vérifier les suppressions ;
 - scan récursif hors thread principal (garde-fous de 128 niveaux et 100 000 dossiers), avec arrêt et remontée dès qu'un dossier contient un exécutable, et écran de progression indiquant source, chemin, profondeur, dossiers et jeux ;
 - détection RPG Maker MV/MZ, Ren'Py, HTML5, Tyrano, Construct, Twine, Electron, Wolf RPG et Godot 3/4 (packs PCK, projets et packs intégrés aux exécutables) ;
-- moteur Wolf intégré expérimental : Wine, Box64 sur ARM64, affichage et commandes dans Astra, import SAF et synchronisation prudente des sauvegardes ;
+- moteur Wolf intégré : Wine, Box64 sur ARM64, affichage et commandes dans Astra, accès SAF à la demande ou copie de secours et synchronisation prudente des sauvegardes ;
 - Wolf RPG exécuté uniquement avec Winlator ; anciennes sauvegardes natives conservées en lecture seule et exportables ;
 - fingerprint, reconnaissance de déplacement, doublons et jeux manquants ;
 - rapport détaillé et persistant après chaque scan : ajoutés, actualisés, déjà connus, déplacés, manquants, ignorés et erreurs avec chemin et raison ;
@@ -55,10 +55,10 @@ Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été 
 - verrouillage biométrique et code chiffré, historique des sessions, bouton Outils, éditeur de sauvegardes et gestionnaire de mods ;
 - retour à la page et au brouillon précédents après déverrouillage, sans afficher leur contenu pendant le verrouillage ;
 - option **Paramètres → Optimisation de la batterie** ouvrant la demande Android pour Astra, avec état actualisé au retour ;
-- traduction locale des textes RPG Maker MV/MZ avec Google Translate (ML Kit), sans compte ni clé API, cache réutilisable et restauration des originaux ;
+- traduction locale des textes reconnus RPG Maker MV/MZ/XP/VX/VX Ace, Wolf et Ren’Py avec Google Translate (ML Kit), sans compte ni clé API, cache réutilisable et restauration des originaux ;
 - analyse des textes déclenchée uniquement par l’utilisateur, avec résultat persistant et réutilisation des extractions lorsque les fichiers restent identiques ;
 - mises à jour d’Astra depuis les releases GitHub publiques, vérification et téléchargement périodiques, contrôle SHA-256 et signature APK avant confirmation Android ;
-- mode manuel de traduction MV/MZ : export JSON pour l’IA de votre choix, commandes protégées par marqueurs, import validé et restauration des originaux ;
+- mode manuel de traduction : export JSON pour l’IA de votre choix, commandes protégées par marqueurs, import validé et restauration des originaux ;
 - payload et Intent JoiPlay sans appel à `ShortcutActivity` ;
 - diagnostic de compatibilité par jeu et profils de lancement personnalisables (moteur, dossier, fichier d'entrée, arguments ou application externe) avec test direct ;
 - scan au lancement et worker périodique prêt à être planifié ;
@@ -80,7 +80,7 @@ data/mods    import ZIP, installation et restauration journalisées
 data/backup  archives chiffrées du catalogue
 launcher/    JoiPlay et futur MTool
 windows/     moteur intégré Winlator / Wine / Box64 et sauvegardes Windows
-translation/ ML Kit, extraction MV/MZ, cache et restauration journalisée
+translation/ ML Kit, lecteurs de textes par moteur, cache et restauration journalisée
 updates/     releases GitHub, téléchargement vérifié et installation Android
 settings/    DataStore
 worker/      WorkManager
@@ -123,7 +123,7 @@ La génération réelle reste volontairement explicite avec `:app:generateBaseli
 
 ## Sauvegardes de jeux et mods
 
-L’éditeur reconnaît les sauvegardes Ren’Py ZIP contenant `log` (pickle), les anciens conteneurs bruts/zlib, RPG Maker MV (LZ-String), MZ (base64/zlib) et RGSS XP/VX/VX Ace (Marshal, y compris plusieurs flux). Il conserve le conteneur d’origine, crée une copie de sécurité avant écriture et relit le résultat. Une sauvegarde modifiée depuis l’ouverture de l’éditeur doit être rechargée. Les structures non prises en charge sont refusées avant écriture ; la compatibilité n’est pas universelle pour les jeux utilisant un format personnalisé.
+L’éditeur reconnaît les sauvegardes Ren’Py ZIP contenant `log` (pickle), les anciens conteneurs bruts/zlib, RPG Maker MV (LZ-String), MZ (base64/zlib), RGSS XP/VX/VX Ace (Marshal, y compris plusieurs flux) et certaines sauvegardes Wolf. Pour Wolf, les cellules numériques des structures reconnues sont modifiables ; les textes et banques inconnues restent en lecture seule. Le format récent de sauvegarde Wolf 3.729 est actuellement refusé. Il conserve le conteneur d’origine, crée une copie de sécurité avant écriture et relit le résultat. Une sauvegarde modifiée depuis l’ouverture de l’éditeur doit être rechargée. Les structures non prises en charge sont refusées avant écriture ; la compatibilité n’est pas universelle pour les jeux utilisant un format personnalisé. Voir les [formats et preuves Wolf](docs/research/WOLF-CONTROLS-AND-SAVES.md).
 
 Après modification, Ren’Py peut demander d’autoriser le chargement de la sauvegarde. Les métadonnées et la capture restent dans l’archive ; la signature du contenu original n’est pas réutilisée. Les tests utilisent des fixtures synthétiques générées par CPython, avec des références partagées, des cycles et des caractères Unicode. Vérification indépendante après les tests Gradle :
 
@@ -153,7 +153,7 @@ Les archives du catalogue `.astra` utilisent la clé Android Keystore de l’ins
 
 Les bilans et limites des vérifications figurent dans l’[audit du 5 octobre](docs/AUDIT_2026-10-05.md), la [revue sauvegardes/mods du 16 septembre](docs/AUDIT_2026-09-16.md) et la [revue technique/UI du 19 septembre](docs/AUDIT_2026-09-19.md).
 
-## Traduction RPG Maker MV/MZ
+## Traduction des jeux
 
 Le mode **Fichier pour IA** permet d’exporter tous les textes standards pris en charge, avec leur contexte, puis d’importer le fichier traduit. Il ne nécessite ni modèle ML Kit ni compte connecté dans Astra. Seuls les champs `translation` doivent changer ; les marqueurs `⟦ASTRA_…⟧` protègent les commandes RPGM. Le jeu doit rester dans la même version entre export et import. Voir le [guide complet et le prompt prêt à utiliser](docs/MANUAL_TRANSLATION.md).
 
@@ -161,7 +161,7 @@ Depuis **Fiche du jeu → Outils → Traduire le jeu**, toucher **Analyser les t
 
 L’ouverture de l’écran ne lance aucune extraction. Une analyse terminée est conservée dans le stockage privé de l’application et réaffichée à la prochaine ouverture. **Actualiser l’analyse** permet de la relancer explicitement. Avant traduction, export ou import, les empreintes des fichiers sont contrôlées et les fichiers modifiés sont relus ; une analyse interrompue ou invalide ne remplace pas le dernier résultat complet.
 
-Le module lit les JSON standards dans `data` ou `www/data` : dialogues, choix, noms affichés, descriptions, termes des menus et messages de combat. Les commandes de mise en forme et variables comme `\N[1]`, `\V[2]`, `\C[3]`, `%1` et les retours à la ligne sont conservés. Les textes identiques sont traduits une seule fois, avec un cache distinct pour chaque paire de langues. Les scripts, notes, noms de ressources, images, contenus propres aux plugins et sauvegardes du joueur ne sont pas traduits. XP, VX et VX Ace ne sont pas couverts par ce module.
+Le module lit les JSON standards MV/MZ dans `data` ou `www/data`, les données Marshal standards XP/VX/VX Ace, les dialogues et choix des cartes et événements communs Wolf décompressés, et les dialogues/choix Ren’Py dans les sources `.rpy`. Les commandes de mise en forme et variables comme `\N[1]`, `\V[2]`, `\C[3]`, `%1`, ainsi que les interpolations et balises Ren’Py, sont conservées. Les textes identiques sont traduits une seule fois, avec un cache distinct pour chaque paire de langues. Les scripts exécutables, notes, noms de ressources, images, contenus propres aux plugins et sauvegardes du joueur ne sont pas traduits. Les archives Wolf protégées, les scripts Ren’Py compilés `.rpyc` et les textes produits dynamiquement ne sont pas extraits.
 
 Le temps restant est estimé après quelques fragments, à partir des caractères effectivement traités pendant cette tentative ; le téléchargement des modèles et les traductions déjà en cache sont exclus de ce calcul. Les retours à la ligne ajoutés par le modèle dans un fragment sont normalisés en espaces, sans toucher aux retours à la ligne du jeu. Une sortie vide ou contenant des commandes inattendues laisse le fragment original en place au lieu de bloquer toute la traduction. Le bilan indique le nombre de fragments uniques conservés et reste disponible après réouverture de l’écran. Ces fragments ne sont pas mis en cache comme des traductions réussies ; ils peuvent être retentés après restauration des originaux.
 
@@ -196,7 +196,7 @@ Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique a
 
 ## Jouer à Wolf RPG dans Astra
 
-Disponible dans la [préversion 1.12.0-beta.22](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.22). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+Disponible dans la [préversion 1.12.0-beta.23](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.23). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
 
 Wolf RPG utilise désormais **Winlator · Wine et Box64**. Le moteur natif et le choix entre moteurs sont retirés. **Fiche du jeu → Compatibilité → Profil de lancement** permet toujours de corriger le moteur détecté ou de configurer explicitement une application externe. La bibliothèque, les filtres et la fiche affichent le moteur choisi ; rétablir la détection automatique conserve le résultat original du scan.
 
@@ -205,6 +205,8 @@ L’analyseur de compatibilité natif a également été retiré : ses verdicts 
 La beta.21 réduit les transferts GPU des sprites éloignés sans réduire la résolution ni sauter d’images. Elle supervise les jeux qui relancent leur propre exécutable, propose **Menu → Déplacement → Joystick à huit directions** et une taille/opacité individuelles dans **Modifier les touches**. Les presets conservent ces réglages. Les [mesures de rendu](docs/wolf-wine-performance-beta21.md) ne garantissent pas une cadence minimale sur chaque téléphone.
 
 **Menu → Cheats et variables** permet de rechercher, affiner, modifier, annuler une modification et figer des valeurs numériques dans la session Wine. Les valeurs suivies peuvent être nommées et recherchées. Les adresses ne sont pas réutilisées à la session suivante ; les noms internes et données chiffrées ne sont pas automatiquement décodés. Voir le [guide du cheat](docs/wolf-cheats.md).
+
+La bêta 23 ajoute l’onglet **Variables Wolf** aux moteurs officiels 2.2961 et 3.729 identifiés exactement : recherche par ID ou valeur, numériques et textes communs, écriture vérifiée et annulation. Une chaîne peut être remplacée dans sa capacité existante ; son agrandissement est refusé. Les autres exécutables conservent le scanner générique. **Modifier les touches** propose aussi des combinaisons, des bascules et des séquences, avec import/export JSON des presets. **Menu → Mesurer la fluidité** enregistre 60 secondes de mesures de rendu et l’état thermique Android dans le diagnostic. Les polices Wine utilisent un cache partagé entre jeux ; le réglage **Polices embarquées** permet d’éviter le catalogue Android pour les jeux dont les caractères sont couverts. Voir les [preuves et limites de beta.23](docs/VALIDATION_1.12.0-beta.23.md).
 
 **Paramètres → Optimisation de la batterie** ouvre la demande Android pour autoriser Astra à fonctionner en arrière-plan. Le déverrouillage retrouve désormais la page et son état enregistrable. La détection JoiPlay reconnaît aussi les plugins Ren’Py officiels versionnés, sous contrôle de leur signature.
 
@@ -220,7 +222,7 @@ Depuis la bêta 10, **Outils → Réglages Wolf RPG → Fichiers du jeu** utilis
 si son accès direct est possible. Pour un dossier local sur Android 11+, le bouton **Accès à tous
 les fichiers · réglages Android** permet d’accorder l’autorisation facultative nécessaire.
 Les ressources ne sont alors pas importées et le jeu écrit directement dans son dossier.
-La copie privée reste disponible pour les fournisseurs cloud, les accès refusés ou les conflits
+Depuis beta.23, sans accès physique, un fournisseur SAF fournissant des descripteurs seekables et une écriture vérifiable est monté à la demande : les ressources sont ouvertes depuis leur dossier, sans import complet. Les écritures du jeu passent par un journal privé avant publication vérifiée. La copie privée reste disponible pour les fournisseurs cloud, les accès refusés ou les conflits
 de sauvegarde. Chaque jeu conserve son propre préfixe Windows ; son premier démarrage peut
 encore demander une initialisation, même sans import. Les composants sont partagés entre jeux.
 

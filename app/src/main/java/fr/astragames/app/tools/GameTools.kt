@@ -41,7 +41,7 @@ object SaveEditorTool : GameTool {
 
     val SUPPORTED_ENGINES = setOf(
         "RENPY", "RPG_MAKER_MV", "RPG_MAKER_MZ",
-        "RPG_MAKER_XP", "RPG_MAKER_VX", "RPG_MAKER_VX_ACE"
+        "RPG_MAKER_XP", "RPG_MAKER_VX", "RPG_MAKER_VX_ACE", "WOLF_RPG"
     )
 }
 
@@ -84,10 +84,10 @@ object RescanGameTool : GameTool {
 object TranslateGameTool : GameTool {
     override val id = "translate"
     override val title = "Traduire le jeu"
-    override val description = "Traduction locale sans compte — RPG Maker MV/MZ"
+    override val description = "Traduction locale et import/export — textes source reconnus"
     override val icon = Icons.Default.Translate
     override val section = "Jeu"
-    override fun isAvailable(game: GameEntity) = game.engine in setOf("RPG_MAKER_MV", "RPG_MAKER_MZ")
+    override fun isAvailable(game: GameEntity) = game.engine in fr.astragames.app.translation.GameTextDocuments.engines
 }
 
 /** Registre des outils disponibles sur la fiche d'un jeu. */

@@ -12,6 +12,7 @@
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <stddef.h>
+#include "saf_bridge.h"
 
 extern char **environ;
 static const char *linker = "/system/bin/linker64";
@@ -52,6 +53,8 @@ int mprotect(void *address, size_t length, int protection) {
 char *realpath(const char *path, char *resolved) {
     char *(*real)(const char *, char *) = dlsym(RTLD_NEXT, "realpath");
     const char *wine = getenv("ASTRA_WINE_LOADER");
+    char *virtual = astra_saf_realpath(path, resolved);
+    if (virtual) return virtual == (char *)-1 ? NULL : virtual;
     return real(wine && strcmp(path, "/proc/self/exe") == 0 ? wine : path, resolved);
 }
 

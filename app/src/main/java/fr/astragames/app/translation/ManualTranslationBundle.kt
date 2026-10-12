@@ -22,7 +22,8 @@ internal fun localTranslationReplacements(documents: List<TranslationSnapshot>, 
 internal object ManualTranslationBundle {
     const val MAX_BYTES = 64 * 1024 * 1024
     private const val MAX_ENTRIES = 200_000
-    private const val FORMAT = "astra-rpgm-translation"
+    private const val FORMAT = "astra-game-translation"
+    private const val LEGACY_FORMAT = "astra-rpgm-translation"
     private const val IDENTITY_REASON = "This actor name is used by a game condition and may exist in player saves. Keep its source unchanged."
     data class Imported(val source: String, val target: String, val replacements: Map<String, Map<String, String>>, val preserved: Int)
 
@@ -32,7 +33,7 @@ internal object ManualTranslationBundle {
         val protectedGroups = protectedActorNameGroups(documents)
         val entries = JSONArray()
         documents.forEach { document -> document.entries.forEach { entry ->
-            val masked = ProtectedText.mask(entry.text)
+            val masked = ProtectedText.mask(entry.text, renpy = engine == "RENPY")
             entries.put(JSONObject().put("id", id(document.name, entry))
                 .put("file", document.name).put("path", entry.path)
                 .put("source", masked.source).put("protectedTokens", tokens(masked)).put("translation", "")
@@ -41,12 +42,13 @@ internal object ManualTranslationBundle {
                     if (entry.identityGroup in protectedGroups) put("preserveOriginal", true).put("readOnlyReason", IDENTITY_REASON)
                 })
         } }
-        val value = JSONObject().put("format", FORMAT).put("version", 1)
+        val legacy = engine in setOf("RPG_MAKER_MV", "RPG_MAKER_MZ")
+        val value = JSONObject().put("format", if (legacy) LEGACY_FORMAT else FORMAT).put("version", if (legacy) 1 else 2)
             .put("gameId", gameKey(gameId, engine)).put("gameTitle", title).put("engine", engine)
             .put("sourceLanguage", source).put("targetLanguage", target).put("sourceHash", sourceHash(documents))
             .put("instructions", "Translate every entry.source into targetLanguage and place the result in entry.translation. " +
                 "Only edit translation. Keep every entry, id, file, path, source, protectedTokens and all metadata unchanged. " +
-                "Copy each ⟦ASTRA_…⟧ marker exactly once in the same order. Do not add line breaks or RPG Maker commands. " +
+                "Copy each ⟦ASTRA_…⟧ marker exactly once in the same order. Do not add line breaks or game commands. " +
                 "Entries with the same identityGroup must have exactly the same translation, including unchanged actor names and name comparisons. " +
                 "If preserveOriginal is true, copy source unchanged into translation or leave translation empty. These names are logical identifiers. " +
                 "Empty translation means keep the original text. Return only the complete UTF-8 JSON file, without Markdown.")
@@ -57,7 +59,8 @@ internal object ManualTranslationBundle {
 
     fun import(bytes: ByteArray, gameId: String, engine: String, documents: List<TranslationSnapshot>): Imported {
         val value = TranslationJson.parse(bytes, MAX_BYTES) as? JSONObject ?: error("Objet JSON de traduction attendu.")
-        require(string(value, "format") == FORMAT && value.opt("version") == 1) { "Format ou version d’export inconnu." }
+        val legacy = string(value, "format") == LEGACY_FORMAT && value.opt("version") == 1 && engine in setOf("RPG_MAKER_MV", "RPG_MAKER_MZ")
+        require(legacy || string(value, "format") == FORMAT && value.opt("version") == 2) { "Format ou version d’export inconnu." }
         require(string(value, "gameId") == gameKey(gameId, engine) && string(value, "engine") == engine) { "Ce fichier de traduction appartient à un autre jeu." }
         require(string(value, "sourceHash") == sourceHash(documents)) { "Le jeu a changé depuis l’export. Exportez à nouveau ses textes." }
         val source = string(value, "sourceLanguage"); val target = string(value, "targetLanguage")
@@ -85,7 +88,7 @@ internal object ManualTranslationBundle {
             val id = string(row, "id")
             require(seen.add(id)) { "Identifiant de texte dupliqué : $id" }
             val (file, entry) = expected[id] ?: error("Identifiant de texte inconnu : $id")
-            val masked = ProtectedText.mask(entry.text)
+            val masked = ProtectedText.mask(entry.text, renpy = engine == "RENPY")
             require(string(row, "file") == file && string(row, "path") == entry.path && string(row, "source") == masked.source) {
                 "Texte source ou emplacement modifié : $file${entry.path}"
             }
@@ -105,7 +108,7 @@ internal object ManualTranslationBundle {
             // Marker expansion is transport overhead, not translated text. Existing long sources can round-trip.
             require(translation.length.toLong() <= maximum.toLong() + masked.markers.sumOf { it.length.toLong() }) { "Traduction trop longue : $file${entry.path}" }
             val replacement = if (translation.isBlank()) entry.text else try {
-                ProtectedText.unmask(entry.text, translation, masked)
+                ProtectedText.unmask(entry.text, translation, masked, renpy = engine == "RENPY")
             } catch (failure: IllegalArgumentException) {
                 throw IllegalArgumentException("$file${entry.path} : ${failure.message}", failure)
             }

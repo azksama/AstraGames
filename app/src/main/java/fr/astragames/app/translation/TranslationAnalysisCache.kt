@@ -8,6 +8,7 @@ import java.io.File
 
 /** Private, persistent extraction cache. Opening a screen reads only its small summary. */
 internal class TranslationAnalysisCache(root: File, game: GameEntity) {
+    private val engine = game.engine
     private val identity = "${game.id}\n${game.engine}\n${game.documentUri}"
     private val directory = File(root, textHash(identity.toByteArray(Charsets.UTF_8)))
 
@@ -24,7 +25,7 @@ internal class TranslationAnalysisCache(root: File, game: GameEntity) {
         (0 until array.length()).map { index ->
             val document = array.getJSONObject(index)
             val name = document.getString("name")
-            require(RpgTextDocument.accepts(name))
+            require(GameTextDocuments.accepts(engine, name))
             val entries = document.getJSONArray("entries")
             TranslationSnapshot(name, document.getString("hash"), (0 until entries.length()).map { i ->
                 val entry = entries.getJSONObject(i)

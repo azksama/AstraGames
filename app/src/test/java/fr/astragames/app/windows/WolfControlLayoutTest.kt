@@ -46,7 +46,7 @@ class WolfControlLayoutTest {
     }
     @Test fun unknownVersionCannotPartiallyReplaceTheCurrentLayout() {
         val data = JSONObject().put("key_left", "KEY_A")
-        try { WolfControlLayout.apply(data, JSONObject().put("version", 3)); fail() } catch (_: IllegalArgumentException) { }
+        try { WolfControlLayout.apply(data, JSONObject().put("version", WolfControlLayout.VERSION + 1)); fail() } catch (_: IllegalArgumentException) { }
         assertEquals("KEY_A", data.getString("key_left"))
     }
     @Test fun joystickAndIndividualAppearanceRoundTripAndLegacyPresetsMigrate() {

@@ -1,0 +1,1 @@
+Real Wine Win32 APIs / x86_64; Wolf 3.729; logical numeric 15022499 and text 15022405; read/write/reread/undo, stale expected/token rejection, capacity refusal and category/ID search passed. Official EXE unchanged, copied sample data only.

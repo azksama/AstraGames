@@ -10,6 +10,14 @@ Ouvrir **Menu → Cheats et variables** pendant le jeu. Aucune recherche ne tour
 
 Le gel continue lorsque le panneau est fermé et s’arrête avec le jeu. Adresses, noms et gels sont limités à cette session ; ils ne sont pas appliqués automatiquement au prochain lancement. Une valeur figée doit être libérée avant modification manuelle. La recherche garde au maximum 2 097 152 candidats et signale explicitement toute troncature ; un affinage ne réintroduit pas les adresses écartées par cette limite.
 
+## Variables du moteur Wolf
+
+Depuis beta.23, l’onglet **Variables Wolf** interroge directement les données reconnues du moteur. Il reconnaît les exécutables officiels Wolf **2.2961 et 3.729** par leur SHA-256 exact ; une autre identité affiche un refus et laisse disponible le scanner générique.
+
+Choisir numérique ou texte commun, rechercher par ID/catégorie/groupe ou valeur, puis ouvrir une variable. La modification exige que la valeur et la session correspondent encore à la lecture. Le helper relit le résultat ; **Annuler** exige également que la valeur modifiée n’ait pas changé depuis. Les chaînes japonaises ont été testées en UTF-8, mais leur remplacement est limité à la capacité existante : aucun agrandissement d’allocation du jeu n’est tenté.
+
+Les variables DB, système et self, les exécutables personnalisés et toutes les versions du moteur ne sont pas couverts. Les IDs sont présentés avec leur groupe ; aucun nom de variable n’est inventé. Les [identités, structures et preuves](research/WOLF-DATA-ADAPTER.md) distinguent tests Windows, Wine sur émulateur Android et formats hors jeu.
+
 ## Couverture et limites
 
 L’outil recherche des valeurs numériques dans les pages accessibles en lecture/écriture du processus. Il ne connaît pas automatiquement les noms internes des variables. Les valeurs encodées, chiffrées, recalculées immédiatement, non alignées ou placées dans un autre processus peuvent ne pas être trouvées ou ne pas rester modifiées. Il ne s’agit pas d’une garantie pour tous les jeux. Une modification d’un compteur peut être enregistrée par le jeu dans sa sauvegarde : son annulation en mémoire ne restaure pas une sauvegarde déjà écrite.

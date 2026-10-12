@@ -7,33 +7,33 @@ internal object ProtectedText {
     private data class Part(val value: String, val protected: Boolean)
     data class Masked(val source: String, val tokens: List<String>, val markers: List<String>)
 
-    fun controls(text: String): List<String> = parts(text).filter { it.protected }.map { it.value }
-    fun fragments(text: String): List<String> = parts(text).filterNot { it.protected }
+    fun controls(text: String, renpy: Boolean = false): List<String> = parts(text, renpy).filter { it.protected }.map { it.value }
+    fun fragments(text: String, renpy: Boolean = false): List<String> = parts(text, renpy).filterNot { it.protected }
         .flatMap { chunks(it.value) }.map(String::trim).filter { it.any(Char::isLetter) }
 
-    fun render(text: String, translated: Map<String, String>): String = buildString {
-        parts(text).forEach { part ->
+    fun render(text: String, translated: Map<String, String>, renpy: Boolean = false): String = buildString {
+        parts(text, renpy).forEach { part ->
             if (part.protected) append(part.value)
             else chunks(part.value).forEach { chunk ->
                 val value = translated[chunk.trim()]
                 if (value == null) append(chunk)
                 else {
-                    require(value.isNotBlank() && controls(value).isEmpty()) { "Traduction invalide." }
+                    require(value.isNotBlank() && controls(value, renpy).isEmpty()) { "Traduction invalide." }
                     append(chunk.takeWhile(Char::isWhitespace)).append(value)
                         .append(chunk.takeLastWhile(Char::isWhitespace))
                 }
             }
         }
-    }.also { require(controls(it) == controls(text)) { "Commande RPG Maker altérée." } }
+    }.also { require(controls(it, renpy) == controls(text, renpy)) { "Commande du jeu altérée." } }
 
     /** The namespace is source-specific, so literal text resembling a placeholder remains legal. */
-    fun mask(text: String): Masked {
+    fun mask(text: String, renpy: Boolean = false): Masked {
         var namespace = "ASTRA_${textHash(text.toByteArray()).take(12)}_"
         while (text.contains("⟦$namespace")) namespace += "X"
         val tokens = mutableListOf<String>()
         val markers = mutableListOf<String>()
         val source = buildString {
-            parts(text).forEach { part ->
+            parts(text, renpy).forEach { part ->
                 if (!part.protected) append(part.value)
                 else {
                     val marker = "⟦${namespace}${tokens.size}⟧"
@@ -44,7 +44,7 @@ internal object ProtectedText {
         return Masked(source, tokens, markers)
     }
 
-    fun unmask(original: String, translated: String, masked: Masked = mask(original)): String {
+    fun unmask(original: String, translated: String, masked: Masked = mask(original), renpy: Boolean = false): String {
         if (translated == masked.source) return original
         require(translated.isNotBlank()) { "Texte traduit vide." }
         require(translated.none { it < ' ' && it != '\t' }) { "Caractère de contrôle ajouté dans la traduction." }
@@ -66,15 +66,15 @@ internal object ProtectedText {
         // Reject newly invented placeholders and raw commands, including tokens joined at a boundary.
         val originalMarkers = markerPattern.findAll(original).map { it.value }.toList()
         require(markerPattern.findAll(value).map { it.value }.toList() == originalMarkers) { "Balise protégée inconnue." }
-        require(controls(original) == controls(value)) { "Commande RPG Maker ajoutée ou altérée." }
+        require(controls(original, renpy) == controls(value, renpy)) { "Commande du jeu ajoutée ou altérée." }
         return value
     }
 
-    private fun parts(text: String): List<Part> {
+    private fun parts(text: String, renpy: Boolean = false): List<Part> {
         val result = mutableListOf<Part>()
         var start = 0; var i = 0
         while (i < text.length) {
-            val end = tokenEnd(text, i)
+            val end = tokenEnd(text, i, renpy)
             if (end == i) { i++; continue }
             if (start < i) result += Part(text.substring(start, i), false)
             result += Part(text.substring(i, end), true)
@@ -84,14 +84,26 @@ internal object ProtectedText {
         return result
     }
 
-    private fun tokenEnd(text: String, start: Int): Int {
+    private fun tokenEnd(text: String, start: Int, renpy: Boolean): Int {
         val c = text[start]
         if (c == '\r') return start + if (text.getOrNull(start + 1) == '\n') 2 else 1
         if (c == '\n' || c == '\u000c' || c == '\u0085' || c == '\u2028' || c == '\u2029') return start + 1
         if (c == '%') {
+            if (renpy && text.getOrNull(start + 1) == '%') return start + 2
+            if (renpy && text.getOrNull(start + 1) == '(') {
+                val close = argumentEnd(text, start + 1)
+                var end = close
+                while (text.getOrNull(end)?.let { it in "#0- +.0123456789" } == true) end++
+                if (text.getOrNull(end)?.let { it in "diouxXeEfFgGcrsa" } == true) return end + 1
+                return close
+            }
             var end = start + 1
             while (end < text.length && text[end].isDigit()) end++
             return if (end > start + 1) end else start
+        }
+        if (renpy && (c == '[' || c == '{')) {
+            if (text.getOrNull(start + 1) == c) return start + 2
+            return argumentEnd(text, start)
         }
         if (c == '<') {
             var end = start + 1

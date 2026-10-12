@@ -9,6 +9,7 @@ typedef void *H;
 void *memset(void *p,int value,U length) { volatile unsigned char *b=p;for(U i=0;i<length;i++)b[i]=(unsigned char)value;return p; }
 #define API __declspec(dllimport)
 API H CreateFileA(const char*,D,D,void*,D,D,H);
+API H CreateFileW(const W*,D,D,void*,D,D,H);
 API int ReadFile(H,void*,D,D*,void*);
 API int WriteFile(H,const void*,D,D*,void*);
 API int CloseHandle(H);
@@ -22,6 +23,11 @@ API H CreateToolhelp32Snapshot(D,D);
 typedef struct { D size,usage,pid; U heap; D module,threads,parent; long priority; D flags; W name[260]; } PE;
 API int Process32FirstW(H,PE*);
 API int Process32NextW(H,PE*);
+typedef struct { D size,module,pid,globalUsage,processUsage; unsigned char *base; D imageSize; H handle; W name[256],path[260]; } ME;
+API int Module32FirstW(H,ME*);
+API int Module32NextW(H,ME*);
+API int MultiByteToWideChar(D,D,const char*,int,W*,int);
+API int WideCharToMultiByte(D,D,const W*,int,char*,int,const char*,int*);
 API H OpenProcess(D,int,D);
 API int QueryFullProcessImageNameW(H,D,W*,D*);
 API int CompareStringOrdinal(const W*,int,const W*,int,int);
@@ -41,6 +47,7 @@ typedef struct { U address,value; } Row;
 typedef struct { D magic,id,status,type; U count,scanned; D flags,error,rows,reserved; } Response;
 typedef struct { U address,value,allocation; D type,enabled; } Pin;
 static H target;
+static D targetPid;
 static W expected[2048], image[2048];
 static Row *found, *previous;
 static U count, oldCount, scanned, oldScanned, lastFreeze;
@@ -111,7 +118,7 @@ static void findTarget(void) {
         D length=2048;
         if(QueryFullProcessImageNameW(p,0,image,&length) && CompareStringOrdinal(image,-1,expected,-1,1)==2) {
             if(target) { CloseHandle(target);CloseHandle(p);target=0;break; } /* ambiguous: refuse */
-            target=p;
+            target=p;targetPid=entry.pid;
         } else CloseHandle(p);
     }while(Process32NextW(snapshot,&entry));
     CloseHandle(snapshot);
@@ -163,6 +170,7 @@ cancel:
     VirtualFree(next,0,0x8000);response.status=6;
 }
 static Row rows[128];
+#include "wolf_data.h"
 static void respond(void) {
     response.magic=MAGIC;response.id=request.id;
     response.type=scanType;response.count=count;response.scanned=scanned;response.flags=scanFlags;
@@ -174,6 +182,7 @@ static void respond(void) {
 }
 static void handle(void) {
     response=(Response){0};
+    if(request.op>=11 && request.op<=14){dataHandle();return;}
     if(request.magic!=MAGIC||request.type>5||request.mode>6){response.status=2;respond();return;}
     if(request.op==9){respond();ExitProcess(0);}
     if(!target)findTarget();
@@ -187,7 +196,9 @@ static void handle(void) {
         break;
       case 4: { U current;
         if(!readValue(request.address,request.type,&current)||current!=mask(request.other,request.type)){response.status=10;break;}
-        if(!writeValue(request.address,request.type,request.value)){response.status=5;response.error=GetLastError();}
+        if(!writeValue(request.address,request.type,request.value)){response.status=5;response.error=GetLastError();break;}
+        if(!readValue(request.address,request.type,&current)||current!=mask(request.value,request.type)){response.status=11;break;}
+        rows[0]=(Row){request.address,current};response.rows=1;
         break;
       }
       case 5:
@@ -216,7 +227,8 @@ void mainCRTStartup(void) {
     for(;;) {
         H f=CreateFileA("request.bin",0x80000000,3,0,3,0,0);
         if(f!=(H)-1) {
-            D n=0;int ok=ReadFile(f,&request,sizeof(request),&n,0);CloseHandle(f);
+            D n=0;int ok=ReadFile(f,&request,sizeof(request),&n,0);
+            dataReadRequest(f);CloseHandle(f);
             if(ok && n==sizeof(request) && request.id!=lastId) {
                 lastId=request.id;lastCommand=GetTickCount64();handle();
             }

@@ -23,9 +23,28 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
                       private val preferDirect: Boolean = true) {
     val directory = File(context.filesDir, "wolf-games/${MessageDigest.getInstance("SHA-256").digest(gameId.toByteArray()).joinToString("") { "%02x".format(it) }}")
     private val copiedGame = File(directory, "game")
+    private val safState = File(directory, "saf-${MessageDigest.getInstance("SHA-256").digest(sourceUri.toByteArray()).hexString().take(24)}")
+    private val safGame = File(safState, "game")
+    private var safMount: WolfSafMount? = null
     var game: File = copiedGame
         private set
-    val isDirect get() = game != copiedGame
+    val isSaf get() = game == safGame
+    val isDirect get() = game != copiedGame && !isSaf
+    val accessDescription get() = when {
+        isSaf -> safMount?.description ?: "SAF à la demande · écritures conservées dans Astra"
+        isDirect -> "Dossier d’origine · aucun transfert du jeu"
+        else -> "Copie privée dans Astra"
+    }
+    internal fun runtimeEnvironment(): Map<String, String> = safMount?.environment.orEmpty()
+    internal fun verifyRuntimeAccess() { safMount?.verifyAccess() }
+    internal fun refreshDiagnosticLog(executable: String) { safMount?.refreshDiagnosticLog(executable) }
+    internal fun closeMount() { safMount?.close(); safMount = null }
+    internal fun storageStatistics() = safMount?.statistics ?: accessDescription
+    internal suspend fun savedFileChanged(file: File) = withContext(Dispatchers.IO) {
+        restoreLastLocation()
+        if (isSaf && !file.canonicalFile.toPath().startsWith(prefix.canonicalFile.toPath()))
+            requireNotNull(safMount).savedFileChanged(file)
+    }
     val prefix = File(directory, "prefix")
     private val manifest = File(directory, "source-hashes.json")
     private val cache = File(directory, "import-state.json")
@@ -40,6 +59,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
 
     suspend fun prepare(executable: String? = null, progress: (String) -> Unit): File = withContext(Dispatchers.IO) {
         val started = android.os.SystemClock.elapsedRealtime()
+        closeMount()
         game = copiedGame
         progress("Récupération de la configuration du jeu…")
         configuration.restore()
@@ -48,6 +68,13 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
         progress("Vérification de l’accès au dossier d’origine…")
         val direct = if (preferDirect) directDirectory(executable) else null
         val migrated = lastMode.optString("mode") == "DIRECT" && lastMode.optString("source") == sourceUri
+        val previousSaf = lastMode.optString("mode") == "SAF" && lastMode.optString("source") == sourceUri
+        if (direct != null && previousSaf && executable != null) {
+            // Publish journaled writes before changing from virtual descriptors to a physical path.
+            createSafMount(executable).use { old -> old.prepare(executable, progress); check(old.flush() == 0) {
+                "Conflit dans une sauvegarde SAF ; sauvegarde locale conservée."
+            } }
+        }
         if (direct != null && migrated) {
             // An interrupted direct session does not depend on a legacy import index or SAF query.
             progress("Configuration du dossier d’origine…")
@@ -58,8 +85,8 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
             return@withContext game
         }
         progress("Lecture de l’index de la copie privée…")
-        hashes = if (manifest.isFile) JSONObject(manifest.readText()) else JSONObject()
-        val state = if (cache.isFile) JSONObject(cache.readText()) else JSONObject()
+        hashes = if (!previousSaf && manifest.isFile) JSONObject(manifest.readText()) else JSONObject()
+        val state = if (!previousSaf && cache.isFile) JSONObject(cache.readText()) else JSONObject()
         stamps = state.optJSONObject("stamps") ?: JSONObject()
         if (direct != null) {
             // Migrate pending private writes once, before changing the working directory.
@@ -76,10 +103,46 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
                 return@withContext game
             }
             progress("$conflicts conflit(s) de sauvegarde · copie privée conservée")
-        } else if (preferDirect) progress("Accès direct indisponible · copie privée utilisée")
+        }
+        if (direct == null && preferDirect && executable != null && DocumentsContract.isTreeUri(sourceUri.toUri())) {
+            check(documentDir(context, sourceUri.toUri()) != null) { "Le dossier du jeu est inaccessible." }
+            val conflicts = if (!previousSaf && manifest.isFile && copiedGame.isDirectory)
+                synchronize(null, progress) else 0
+            if (conflicts == 0) {
+                val candidate = createSafMount(executable)
+                try {
+                    candidate.prepare(executable, progress)
+                    configuration.apply(safGame, executable)
+                    game = safGame; safMount = candidate
+                    writeWorkingMode("SAF", executable)
+                    refresh.delete()
+                    progress(candidate.description)
+                    return@withContext game
+                } catch (error: Exception) {
+                    candidate.close()
+                    android.util.Log.w("WolfSAF", "Source descriptor mount unavailable: ${error.message}", error)
+                    // A failed provider cannot silently abandon existing pending user writes.
+                    if (candidate.hasPendingWrites) throw IllegalStateException(
+                        "Accès SAF indisponible (${error.message}) ; écritures conservées dans Astra. Réautorisez le dossier ou exportez les sauvegardes.", error)
+                    progress("SAF à la demande indisponible : ${error.message} · import privé nécessaire")
+                }
+            } else progress("$conflicts conflit(s) de sauvegarde · copie privée conservée")
+        } else if (direct == null && preferDirect) progress("Accès direct indisponible · copie privée utilisée")
         progress("Vérification de l’autorisation du dossier source…")
         val source = requireNotNull(documentDir(context, sourceUri.toUri())) { "Le dossier du jeu est inaccessible." }
         check(source.canRead()) { "Autorisation du dossier expirée." }
+        if (previousSaf && !preferDirect) {
+            // An explicit switch to COPY also retains an interrupted virtual session's data.
+            createSafMount(executable ?: lastMode.optString("executable", "Game.exe")).use { old ->
+                for (save in old.pendingSaveFiles()) {
+                    val target = safeFile(copiedGame, save.path).apply { parentFile!!.mkdirs() }
+                    save.file.copyTo(target, overwrite = true)
+                    val baseline = old.baseline(save.path)
+                    if (baseline != null) hashes.put(save.path, baseline)
+                }
+            }
+            requestRefresh()
+        }
         if (lastMode.optString("mode") == "DIRECT") requestRefresh()
         game.mkdirs()
         // Older releases already completed a full import before creating the Wine prefix.
@@ -189,16 +252,21 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
     }.getOrNull()
 
     private fun readWorkingMode() = runCatching { JSONObject(workingMode.readText()) }.getOrDefault(JSONObject())
-    private fun writeWorkingMode(mode: String) {
+    private fun writeWorkingMode(mode: String, executable: String? = null) {
         directory.mkdirs()
         val pending = File(directory, "working-mode.new").apply {
-            writeText(JSONObject().put("source", sourceUri).put("mode", mode).toString())
+            writeText(JSONObject().put("source", sourceUri).put("mode", mode).put("executable", executable).toString())
         }
         check(pending.renameTo(workingMode))
     }
 
     internal fun restoreLastLocation() {
         val last = readWorkingMode()
+        if (last.optString("mode") == "SAF" && last.optString("source") == sourceUri) {
+            game = safGame
+            if (safMount == null) safMount = createSafMount(last.optString("executable", "Game.exe"))
+            return
+        }
         if (last.optString("mode") == "DIRECT" && last.optString("source") == sourceUri) {
             val path = FileAccessResolver(context).physicalPath(sourceUri.toUri())
             game = path?.let(::File)?.takeIf { it.isDirectory && it.canRead() }
@@ -209,6 +277,11 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
     }
 
     internal fun restoreSourceConfiguration() = configuration.restore()
+
+    private fun createSafMount(executable: String): WolfSafMount {
+        val folder = executable.substringBeforeLast('/', "")
+        return WolfSafMount(context, sourceUri.toUri(), safGame, safState, if (folder.isEmpty()) "Game.ini" else "$folder/Game.ini")
+    }
 
     internal suspend fun captureWindowsSaveBaseline() = withContext(Dispatchers.IO) {
         windowsSaveFiles() // Retain writes from an interrupted earlier session before resetting the baseline.
@@ -228,6 +301,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
 
     internal suspend fun saveFiles(): List<SaveFile> = withContext(Dispatchers.IO) {
         restoreLastLocation()
+        if (isSaf) return@withContext (requireNotNull(safMount).saveFiles() + windowsSaveFiles()).sortedBy { it.path }
         val saves = mutableListOf<SaveFile>()
         for (file in game.walkTopDown().onEnter { !java.nio.file.Files.isSymbolicLink(it.toPath()) }.filter { it.isFile }) {
             coroutineContext.ensureActive()
@@ -301,6 +375,15 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
     /** Never overwrites a source edited since import. Conflicting saves remain local. */
     suspend fun synchronize(progress: (String) -> Unit = {}): Int = withContext(Dispatchers.IO) {
         if (isDirect) return@withContext 0 // The game already writes into its original folder.
+        if (isSaf) {
+            val mount = requireNotNull(safMount)
+            progress("Publication des sauvegardes SAF journalisées…")
+            configuration.restore()
+            mount.publishConfiguration()
+            val conflicts = mount.flush()
+            progress(mount.statistics)
+            return@withContext conflicts
+        }
         synchronize(directDirectory(null), progress)
     }
 

@@ -7,6 +7,16 @@ internal object WolfKeyboard {
     val keys = XKeycode.entries.filter { it != XKeycode.KEY_NONE && it != XKeycode.KEY_MAX && !it.isCustomKey }
     fun valid(code: XKeycode) = code in keys
     fun parse(name: String): XKeycode? = runCatching { XKeycode.valueOf(name) }.getOrNull()?.takeIf(::valid)
+    /** Portable presets may use a symbolic name or an exact physical X11 key number. */
+    fun parseValue(value: Any?): XKeycode? = when (value) {
+        is String -> parse(value)
+        is Number -> value.toDouble().takeIf { it.isFinite() && it % 1.0 == 0.0 && it in 1.0..255.0 }
+            ?.toInt()?.let { id -> keys.firstOrNull { (it.id.toInt() and 255) == id } }
+        else -> null
+    }
+    fun comboOrder(keys: List<XKeycode>) = keys.sortedBy {
+        if (it in setOf(XKeycode.KEY_CTRL_L, XKeycode.KEY_CTRL_R, XKeycode.KEY_SHIFT_L, XKeycode.KEY_SHIFT_R, XKeycode.KEY_ALT_L, XKeycode.KEY_ALT_R)) 0 else 1
+    }
     fun label(code: XKeycode): String = when (code) {
         XKeycode.KEY_ENTER -> "Entrée"; XKeycode.KEY_ESC -> "Échap"; XKeycode.KEY_SPACE -> "Espace"
         XKeycode.KEY_BKSP -> "Retour arrière"; XKeycode.KEY_TAB -> "Tabulation"

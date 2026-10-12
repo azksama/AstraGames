@@ -24,3 +24,5 @@ captures/
 # Local code graph and query caches
 graphify-out/
 .impeccable/
+**/__pycache__/
+*.pyc
