@@ -1,250 +1,287 @@
 # Wolf RPG Windows dans Astra
 
-État du 9 octobre 2026 : moteur intégré expérimental fonctionnel sur l'émulateur Android
-API 36.1 x86_64. Les exemples officiels Wolf **2.2961 et 3.729** atteignent la partie,
-affichent personnages et dialogues japonais, et répondent au bouton Valider d'Astra.
-Le test ne couvre pas une partie complète, tous les jeux, ni un téléphone ARM64.
+Wolf utilise **Winlator, Wine et Box64** dans Astra. Le moteur Android natif
+expérimental a été retiré ; ses anciennes sauvegardes restent conservées et
+exportables. **Fiche → Compatibilité → Profil de lancement** permet de corriger
+le moteur détecté ou de choisir explicitement une application externe.
 
-Depuis la bêta 21, Wolf utilise uniquement **Winlator/Wine/Box64**. Le moteur Android natif expérimental a été retiré ; ses anciens fichiers restent conservés et exportables. **Fiche → Compatibilité → Profil de lancement** permet de corriger le moteur détecté ou de choisir une application externe. La progression Windows reste dans les emplacements décrits ici.
+Ce guide décrit le fonctionnement et la reconstruction du moteur. Les
+[notes beta.24](RELEASE_1.12.0-beta.24.md) présentent les changements, et le
+[bilan de validation](VALIDATION_1.12.0-beta.24.md) distingue les contrôles du
+nouvel APK des preuves antérieures. L’exécution ARM64 reste non démontrée.
 
-## Utilisation
+## Installer et lancer un jeu
 
-Scanner un jeu Windows décompressé, ouvrir sa fiche et choisir Jouer. Le profil Wolf par défaut
-est Astra · Wolf intégré. Les profils externes explicitement choisis restent externes.
-Les composants sont téléchargés au premier usage par HTTPS et vérifiés avec un SHA-256 épinglé.
-Le runtime reste dans `noBackupFilesDir/wolf-runtime/wine9-astra-2` ; les jeux importés et leurs
-préfixes restent dans `files/wolf-games/<SHA-256 de l'identifiant du jeu>`.
-La taille nécessaire comprend le runtime partagé et un préfixe Windows par jeu. Depuis beta.23, l’accès automatique choisit le dossier physique, puis un [montage SAF à la demande](wolf-saf-on-demand.md) pour les fournisseurs compatibles, puis la copie de secours. Seule cette dernière importe les ressources ; les raisons d’un repli sont affichées dans la préparation et le diagnostic.
+Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan.
+Astra détecte `Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la
+fiche et choisir **Jouer** : le profil par défaut est **Astra · Wolf intégré**.
+Les profils externes explicitement choisis restent externes.
 
-Le scan d'un sous-dossier s'effectue depuis Paramètres → Sources et scan → Sous-dossier…,
-en naviguant dans un parent déjà autorisé. Il ne marque pas les jeux des autres branches absents.
+Les composants sont téléchargés au premier usage par HTTPS et vérifiés avec un
+SHA-256 épinglé. Ils sont partagés entre jeux, mais chaque jeu conserve son propre
+préfixe Windows. Le premier démarrage peut demander une initialisation du préfixe,
+même lorsque les ressources du jeu ne sont pas importées.
 
-## Architecture livrée
+**Outils → Réglages Wolf RPG → Fichiers du jeu** utilise le dossier physique
+lorsqu’Android fournit un chemin réellement accessible. Sans cet accès, Astra
+essaie un [montage SAF à la demande](wolf-saf-on-demand.md) pour les fournisseurs
+compatibles, puis une copie privée de secours. Seule cette dernière importe les
+ressources ; la préparation et le diagnostic indiquent la raison d’un repli.
 
-- `WolfRuntimeInstaller` : installation sérialisée, téléchargements annulables, empreintes,
-  extraction confinée, reprises par composant, bibliothèques Bionic adaptées à l'ABI.
-- `WolfProcess` : Wine 9 WoW64 ; Box64 Bionic 0.4.2 pour ARM64, Wine natif pour x86_64.
-  L'application conserve minSdk 26 et targetSdk 36. Android 64 bits est requis.
-- `windows-runtime` : sous-ensemble LGPL de Winlator pour X11, rendu OpenGL ES, entrées,
-  sockets et mémoire partagée. Aucune installation externe Winlator/GameNative/JoiPlay.
-- `WolfRuntimeActivity` : affichage dans Astra, pavé tactile, clavier, D-pad et boutons A/B,
-  fermeture sérialisée des sessions, verrouillage Astra au retour de l'arrière-plan et captures Android autorisées pendant le jeu.
-- `WolfProcessRecovery` : arrêt des anciens enfants Windows/audio identifiés par l’UID, leurs
-  chemins privés et leur environnement ; contrôle de l’identité du processus avant le signal.
-- `WolfLoadingView` : étapes réelles et durée, commandes masquées jusqu’à la première image
-  non noire du jeu dans le renderer. Les fenêtres de préparation et les consoles sont exclues.
-- `WolfTouchInput` et `ViewTransformation` : Retour à deux doigts, zoom optionnel de 1× à 4×,
-  déplacement à deux doigts et conversion des coordonnées tactiles dans le même cadrage.
-- PulseAudio Bionic et sortie Android AAudio ; IPAexGothic pour les caractères japonais.
-- `WolfGameStorage` : dossier d’origine, montage SAF à la demande ou copie SAF/file, détection des écritures locales non synchronisées,
-  synchronisation avec comparaison de l'original, sauvegarde de l'ancienne version et export ZIP.
+Le mode direct vérifie la lecture de l’exécutable et la création d’un fichier
+temporaire dans le dossier choisi. Sur Android 11+, **Accès à tous les fichiers ·
+réglages Android** permet d’accorder l’autorisation facultative nécessaire aux
+lectures natives de Wine/Box64 dans le stockage partagé. Le sélecteur SAF reste
+utilisé pour le catalogue. Voir la [documentation Android](https://developer.android.com/training/data-storage/manage-all-files).
 
-Wine et les jeux s'exécutent sous l'UID d'Astra. Le moteur **n'est pas un bac à sable de sécurité**
-pour exécutables inconnus. Le jeu peut accéder aux fichiers privés accessibles à cet UID.
+Le runtime est stocké dans `noBackupFilesDir/wolf-runtime/wine9-astra-2` ; les
+copies des jeux et leurs préfixes sont dans
+`files/wolf-games/<SHA-256 de l’identifiant du jeu>`. Prévoir l’espace pour les
+composants partagés, le préfixe et, si nécessaire, la copie privée du jeu.
 
-## Adaptations techniques
+Le scan ciblé d’un sous-dossier est disponible dans **Paramètres → Sources et
+scan → Sous-dossier…**, sous un parent déjà autorisé. Il ne marque pas les jeux
+des autres branches comme absents.
 
-Le pont `scripts/wolf-runtime/exec_bridge.c`, compilé pour les deux ABI par le NDK 29,
-charge les ELF dynamiques du runtime via `/system/bin/linker64` et adapte les processus enfants,
-la résolution de `/proc/self/exe` et le socket X11. Les pages PE privées modifiées nécessitant
-une permission exécutable sont recopiées dans une allocation anonyme lorsque Android refuse
-`mprotect` sur la projection du fichier. Ce petit pont est compilé à `-O0` dans les deux
-variantes : à `-O2`, le sample Wolf 3.729 provoquait un débordement de pile Wine sur
-l'émulateur x86_64. Le remplacement du seul pont corrige le défaut ; le reste de
-l'application, le serveur X11 et le renderer gardent leur optimisation release.
+## Commandes et affichage
 
-La distribution de Wine possède une réservation d'adresses adaptée à Box64. Sur x86_64 natif,
-`WolfRuntimeInstaller.patchNativeX64` corrige quatre bornes 39 bits en bornes 47 bits dans le
-`ntdll.so` dont l'empreinte exacte est vérifiée. Cette correction n'est pas appliquée à ARM64.
-Le hash attendu après correction est
-`d927858a6db35029e13f943067098fafe247e2f955de074719d69b48ce1a0d22`.
-`WINE_DISABLE_FULLSCREEN_HACK=1` évite une récursion du pilote sans RandR.
+Les flèches, Valider, Retour et Shift sont disponibles à l’écran ; clavier et
+boutons de manette sont également routés au jeu. **Menu** permet de masquer les
+commandes ou de quitter. Les captures d’écran Android sont autorisées pendant
+le jeu. Le verrou Astra s’applique au retour de l’arrière-plan.
 
-En mode copie, le mode logiciel Wolf et le mode fenêtré sont imposés dans la **copie privée** de `Game.ini`,
-créée si elle n'existe pas. Les sources utilisateur ne sont pas modifiées pour cela.
-Les événements FocusIn/FocusOut et SetInputFocus du serveur X11 ont été corrigés pour que
-les commandes tactiles atteignent réellement le jeu.
+**Menu → Modifier les touches → Ajouter** crée des boutons nommés avec le clavier
+proposé, dont F1–F12, les modificateurs et le pavé numérique. Déplacer un bouton
+change sa position ; le toucher dans l’éditeur permet de régler son action,
+sa taille et son opacité. Les positions portrait/paysage et les réglages sont
+mémorisés par jeu. Les combinaisons, bascules et séquences sont prises en charge.
+**Presets** enregistre ou charge ces réglages, avec import/export JSON, sans
+changer les sauvegardes des jeux.
 
-## Sauvegardes et récupération
+Le tactile propose le clic à l’endroit touché ou le maintien d’une direction
+depuis le centre de l’image ; ce dernier mode ne calcule pas un chemin vers une
+destination. **Menu → Déplacement → Joystick à huit directions** offre un autre
+contrôle du déplacement.
 
-Depuis beta.20, le lien `prefix/dosdevices/g:` raccorde **G:** au dossier utilisé pour le jeu : dossier d’origine en mode direct, ou `game/` dans la copie privée. Wine reçoit l’exécutable sous `G:\…` ; son dossier de travail reste le parent réel de l’exécutable, y compris pour un jeu imbriqué. Les sauvegardes relatives restent aux mêmes endroits. Les liens C:/Z: sont créés par Wine avant d’ajouter G: à un nouveau préfixe ; aucun préfixe ou fichier de progression n’est supprimé pour appliquer ce changement.
+Un toucher bref de l’image avec deux doigts envoie la touche **Retour** configurée.
+**Outils → Réglages Wolf RPG → Zoom à deux doigts** permet le pincement de 1× à 4×
+et le déplacement de l’image agrandie. Ce réglage est désactivé par défaut,
+mémorisé par jeu et immédiat ; le désactiver restaure le cadrage. Les gestes
+déplacés ou annulés ne déclenchent pas Retour.
 
-Android peut annoncer zéro octet libre sur son volume système `/`, alors que le dossier du jeu dispose d’espace. Un lancement depuis Z: peut donc faire échouer le contrôle Windows de place libre avec « Not enough space on HDD ». Le lecteur G: évite ce contrôle du mauvais volume. Avant le lancement, Astra vérifie une écriture temporaire dans le dossier de l’exécutable et les dossiers de sauvegarde existants, puis consigne l’espace réellement disponible dans le diagnostic. Un véritable manque d’espace ou un refus d’accès reste une erreur. Voir la [validation beta.20](VALIDATION_1.12.0-beta.20.md) pour la reproduction par les API Windows réelles.
+**Outils → Réglages Wolf RPG**, également accessible dans **Menu → Réglages du
+jeu**, propose les profils Équilibré/Rapide/Stable, une définition de 800×600 à
+1920×1080, le lissage et une limite de 30/60 images par seconde. Les profils
+Box64 et la définition prennent effet au prochain lancement ; les réglages
+d’affichage immédiats sont appliqués pendant la session.
 
-Après une fermeture normale, les fichiers changés sont réécrits vers la source si leur version
-source correspond à celle importée. Une ancienne version est gardée sous `.astra-wolf-backup-*`.
-En mode direct, le jeu écrit immédiatement dans son dossier d’origine. Avant de passer d’une
-ancienne copie au mode direct, les modifications privées sont synchronisées avec comparaison
-de la version source. Un conflit maintient le lancement depuis la copie privée.
-En cas de conflit, les deux versions restent disponibles ; le bilan propose Exporter les sauvegardes.
-Une fermeture forcée conserve la copie privée pour la prochaine ouverture. Ne pas effacer les
-données d'Astra ou désinstaller avant d'avoir synchronisé/exporté les sauvegardes.
+Le **Cadrage** propose **Image entière** (défaut, proportions conservées),
+**Remplir** (recadrage sans déformation) et **Étirer** (plein écran avec déformation).
+Le bureau Windows automatique est de 1280×960 en portrait et 1280×720 en paysage ;
+une définition choisie manuellement reste conservée. Cette définition ne change
+pas la résolution interne du jeu.
 
-`Game.ini`, les EXE et les DLL sont exclus de la synchronisation. Les fichiers supprimés dans le
-jeu ne sont pas supprimés automatiquement de la source. Les exports du catalogue `.astra`
-ne contiennent pas les copies privées Wolf ni les préfixes Windows.
+Le compteur **Images modifiées** compte les images renouvelées, pas la cadence
+interne de Wolf : une valeur faible sur une scène immobile peut être normale.
+**Menu → Mesurer la fluidité** ajoute au diagnostic une mesure de rendu de
+60 secondes et l’état thermique Android. Le réglage **Polices embarquées** permet
+d’utiliser les polices fournies pour les jeux dont elles couvrent les caractères ;
+le catalogue de polices Wine utilise un cache partagé.
 
-Depuis la bêta 10, la fiche du jeu propose **Outils → Dossier des sauvegardes** : repérage de
-`Save`, `Saves`, `SaveData`, `SaveFiles`, `.sav`, `.save`, et des écritures de la copie privée.
-Les données utilisateur Windows du préfixe sont aussi repérées et incluses dans le ZIP sous
-`Windows/drive_c/users/…`, y compris les fichiers d’une version ancienne. Les liens symboliques
-ne sont pas suivis par cet inventaire. Les sauvegardes Windows ne sont pas réécrites dans la source.
+**Menu → Cheats et variables** recherche, affine et modifie des valeurs pendant
+la session. Les limites, l’annulation et les versions reconnues du moteur sont
+décrites dans le [guide dédié](wolf-cheats.md).
 
-Le mode direct résout uniquement les chemins locaux pris en charge par `FileAccessResolver`,
-vérifie la lecture de l’exécutable et la création d’un fichier temporaire dans le dossier choisi.
-Sur Android 11+, l’autorisation facultative `MANAGE_EXTERNAL_STORAGE` permet les lectures natives
-de Wine/Box64 dans le stockage partagé. Le sélecteur SAF reste utilisé pour le catalogue et le
-mode copie ; les fournisseurs sans chemin local restent compatibles avec cette copie.
-Voir la [documentation Android](https://developer.android.com/training/data-storage/manage-all-files).
+## Sauvegardes, actualisation et récupération
 
-En mode direct, `WolfDirectConfiguration` conserve l’original de `Game.ini` dans un journal privé
-avant d’activer temporairement les deux modes. Une fermeture normale restaure l’original ; après
-un arrêt du processus, le lancement suivant reprend la restauration. Les autres préférences
-écrites par le jeu sont conservées. Une modification concurrente des modes bloque la restauration
-et conserve le journal original, au lieu d’écraser le fichier source.
+Enregistrer la partie dans le jeu avant **Quitter**. En mode direct, le jeu écrit
+immédiatement dans son dossier d’origine. En mode copie, une fermeture normale
+réécrit les fichiers modifiés vers la source si celle-ci correspond encore à la
+version importée. Une ancienne version est conservée sous `.astra-wolf-backup-*`.
+Le [mode SAF à la demande](wolf-saf-on-demand.md) utilise son journal de publication.
 
-## Chargement et fermeture interrompue
+Avant de passer d’une ancienne copie au mode direct, Astra récupère les écritures
+privées avec comparaison de la version source. Un conflit conserve les deux
+versions, maintient le lancement depuis la copie privée et propose l’export ZIP.
+Une fermeture forcée conserve la copie privée pour la prochaine ouverture ; elle
+ne sauvegarde pas une progression que le jeu n’a pas écrite.
 
-Depuis la bêta 11, le lancement affiche huit phases : récupération, composants du moteur,
-dossier du jeu, affichage X11, audio et Box64, Windows, lancement, puis première image du jeu.
-Le téléchargement affiche son volume ; l’extraction affiche le nombre de fichiers et la part
-de l’archive compressée lue. Windows et le jeu ne fournissent pas de pourcentage fiable :
-ces phases affichent le temps réellement écoulé et un indicateur d’activité. Le lancement peut
-être annulé pendant la préparation. L’extraction vérifie aussi l’interruption dans les fichiers.
+Une sauvegarde Wolf restaurée depuis une archive du catalogue reste protégée au
+prochain lancement et lors d’une actualisation des ressources, même lorsqu’elle
+était inchangée à l’export. Si la source a évolué, le conflit conserve la copie
+restaurée au lieu de l’écraser. Les contrôles restent liés au jeu et à sa source.
 
-Une nouvelle session attend la fermeture et la synchronisation de l’ancienne avant de réutiliser
-les sockets. Après la disparition du processus Android, Astra repère et arrête uniquement les
-anciens processus de son runtime avant de reprendre le dossier et sa configuration journalisée.
-Le préfixe et les sauvegardes ne sont pas supprimés. Le marqueur Windows prêt doit correspondre
-à la révision du runtime et aux fichiers essentiels du préfixe, sinon son initialisation est reprise.
-Une fermeture brutale ne sauvegarde pas la progression qui n’a pas été écrite par le jeu.
+**Outils → Dossier des sauvegardes** repère les dossiers `Save`, `Saves`, `SaveData`,
+`SaveFiles`, les fichiers `.sav`/`.save` et les écritures de la copie privée. Les
+données utilisateur du préfixe Windows sont également exportables en ZIP sous
+`Windows/drive_c/users/…`. Les liens symboliques ne sont pas suivis par cet
+inventaire ; les sauvegardes du préfixe ne sont pas réécrites dans la source.
 
-La première image du jeu active les commandes ; ni la présence d’une fenêtre ni un framebuffer
-noir ne suffisent. Si le jeu termine avant d’afficher une image, ou n’en affiche aucune en trois
-minutes après son lancement, un message renvoie vers le diagnostic. Le contrôle des pixels est
-limité au démarrage et cesse après cette première image.
+Les archives du catalogue `.astra` peuvent contenir les sauvegardes privées Wolf
+prises en charge ; elles ne contiennent pas la copie complète du jeu, son préfixe
+Windows ou les permissions SAF. Leur clé est liée à l’installation Android.
+Conserver séparément les dossiers des jeux et ne pas désinstaller Astra avant
+d’avoir synchronisé ou exporté les données nécessaires. Voir le
+[format des archives](BACKUP_FORMAT.md).
 
-Le toucher bref à deux doigts utilise la touche **Retour** configurée pour le jeu. Activer
-**Outils → Réglages Wolf RPG → Zoom à deux doigts** permet de pincer et de déplacer l’image
-agrandie. Les gestes déplacés ou annulés ne déclenchent pas Retour. Voir la
-[validation de la bêta 11](VALIDATION_1.12.0-beta.11.md).
+Les EXE et DLL sont exclus de la synchronisation des fichiers de la copie.
+Les fichiers supprimés dans le jeu ne sont pas supprimés automatiquement de la
+source. `Game.ini` dispose d’un traitement distinct : les réglages de rendu sont
+privés en mode copie et temporairement journalisés en mode direct. Une fermeture
+normale ou le lancement suivant reprend la restauration en conservant les
+préférences écrites par le jeu. Une modification concurrente des modes conserve
+le journal au lieu d’écraser le fichier source.
 
-La bêta 12 distingue les sous-étapes de récupération de la configuration, de lecture du mode
-précédent, d’accès au dossier et de migration des sauvegardes. Une reprise en mode direct avec
-la même source évite entièrement les anciens index de copie et les requêtes SAF. Les migrations
-depuis une copie et leurs contrôles de conflits sont conservés. Les opérations de préparation et
-les écritures du diagnostic restent sur le dispatcher d’entrées/sorties ; l’interface est actualisée
-avant la persistance du libellé. La transition vers l’étape 3 précède la création du stockage.
+Pour une mise à jour externe du jeu, un mod installé par un autre outil ou une
+sauvegarde dans un emplacement personnalisé, utiliser **Fiche du jeu → Outils →
+Actualiser les fichiers du jeu**, puis relancer. Les mods installés/désinstallés
+dans Astra déclenchent cette actualisation automatiquement. Les sauvegardes
+connues sont vérifiées à chaque lancement ; les ressources inchangées sont
+réutilisées. Aucun effacement des données n’est nécessaire.
 
-Le bouton **Diagnostic du lancement** ouvre le rapport courant pendant l’attente. Son état est
-lu depuis un instantané en mémoire afin de ne pas perturber une écriture atomique en cours.
-Après 20 secondes sans changement de message, un flux `loading` séparé conserve l’état des
-threads Astra, y compris les workers dans l’APK obfusqué. Ce délai n’est pas un diagnostic de crash.
-Les détails de cette livraison figurent dans la [validation de la bêta 12](VALIDATION_1.12.0-beta.12.md).
+Le lecteur Windows **G:** pointe sur le dossier effectivement utilisé par le jeu.
+Le répertoire de travail reste le parent réel de l’exécutable, y compris pour un
+jeu imbriqué. Cette correspondance évite de mesurer l’espace libre du volume
+système Android à la place du dossier de sauvegarde. Un véritable manque
+d’espace ou un refus d’accès reste une erreur.
 
-La bêta 13 corrige l’attente dans la migration d’une ancienne copie privée : lorsque le dossier
-physique est accessible, les sauvegardes y sont récupérées directement. Les ressources dont
-les métadonnées restent identiques ne sont pas relues. Les fichiers modifiés, y compris ceux
-hors d’un dossier Save, sont comparés à leur version initiale avant récupération. La progression
-indique les fichiers vérifiés, récupérés et en conflit, avec des mises à jour regroupées.
-L’index complet n’est plus réécrit après chaque fichier ; une annulation conserve son état,
-et une écriture terminée avant la mort du processus est reconnue au prochain lancement.
-Le remplacement local prépare un fichier complet et une copie de sécurité avant le renommage.
-Une version source divergente reste intacte et empêche le passage au mode direct.
+## Chargement et diagnostic
 
-Pour une source uniquement SAF, les noms et types sont lus par dossier, puis remis à jour
-pour vérifier chaque fichier modifié avant remplacement. Les requêtes de cette récupération
-acceptent un signal d’annulation. Les preuves de conservation, d’annulation, de migration de
-70 000 fichiers en cache et de reprise de l’APK optimisé figurent dans la
-[validation de la bêta 13](VALIDATION_1.12.0-beta.13.md).
+Le lancement affiche huit phases : récupération, composants du moteur, dossier
+du jeu, affichage X11, audio et Box64, Windows, lancement, puis première image du
+jeu. Les téléchargements indiquent leur volume et les extractions leur
+progression. Lorsque Windows ou le jeu ne fournit pas de pourcentage fiable,
+Astra affiche le temps écoulé et un indicateur d’activité. La préparation est
+annulable ; elle respecte les animations désactivées du système.
 
-## Fluidité Wine en beta.20
+Une nouvelle session attend la fermeture et la synchronisation de la précédente.
+Après un arrêt du processus Android, Astra identifie et arrête uniquement les
+anciens processus de son runtime avant de reprendre le dossier et sa configuration.
+Le préfixe et les sauvegardes sont conservés. Si le marqueur Windows prêt ne
+correspond plus à la révision du runtime ou aux fichiers essentiels du préfixe,
+son initialisation est reprise.
 
-Le renderer repère les fenêtres rectangulaires entièrement couvertes par une fenêtre opaque dessinée au-dessus. Il évite leur capture CPU, transfert de texture et dessin GLES. Leurs pixels restent marqués comme modifiés et sont transférés quand elles redeviennent visibles. Les menus partiels, fenêtres transparentes et curseurs conservent leur rendu ; la définition du jeu et le filtre d’image ne sont pas réduits. Le diagnostic expose le nombre de fenêtres visibles et ignorées.
+Les commandes sont masquées pendant la préparation, les consoles et les images
+noires ; elles apparaissent avec la première image du jeu. Si le jeu termine
+avant cette image ou n’en affiche aucune dans les trois minutes après son
+lancement, un message ouvre le diagnostic. La relance proposée avec le profil
+Stable ne garantit pas la compatibilité du jeu.
 
-**Outils → Réglages Wolf RPG → Fluidité → Rapide**, puis relancer le jeu, active des réglages Box64 supplémentaires : `SAFEFLAGS=1`, `CALLRET=1` et `FORWARD=1024` avec le profil rapide existant. Wine utilise eSync pour ce profil ; fSync reste désactivé. Équilibré et Stable conservent la synchronisation habituelle. Ces options correspondent à la [documentation Box64 v0.4.2](https://github.com/ptitSeb/box64/blob/v0.4.2/docs/USAGE.md) ; elles ne constituent pas une garantie de compatibilité de chaque jeu.
+**Diagnostic du lancement** reste accessible pendant l’attente. Les opérations
+de préparation et les écritures du diagnostic s’effectuent hors du fil d’affichage.
+Après 20 secondes sans changement de sous-étape, le rapport ajoute un état des
+threads Astra ; ce délai ne constitue pas à lui seul un diagnostic de crash.
 
-La [validation beta.20](VALIDATION_1.12.0-beta.20.md) sépare le benchmark GLES, le parcours réel Wine de l’exemple officiel et les limites du téléphone ARM64. Le benchmark conserve les mêmes pixels, mesure un bureau statique puis un bureau modifié à chaque frame, et attend la fin du travail GPU. Il exclut la VM Wolf Windows, Box64, le décodage des images et la présentation à l’écran : son gain ne se transpose pas directement en FPS du jeu. Le compteur « Images modifiées » compte les images renouvelées ; une scène immobile peut avoir un faible compteur sans ralentissement.
+Pour plus de détails, activer **Paramètres → Diagnostic Wolf RPG → Mode debug
+Wolf RPG**, puis relancer. Le rapport conserve les étapes, codes de sortie,
+exceptions et journaux de Wine/Box64 et de l’audio. Le mode debug ajoute les
+informations du chargeur, un contrôle de démarrage Box64 sur ARM64 et Logcat
+limité au processus Astra. `Game_ErrorLog.txt` est distingué selon qu’il est
+historique ou modifié pendant la session.
+
+Après une session interrompue, le rapport peut être présenté à la réouverture,
+après déverrouillage. Fermer l’aperçu le conserve dans les paramètres ; **Partager
+le rapport** l’exporte volontairement. Les cinq dernières sessions sont conservées
+localement avec rotation des journaux (512 Kio × deux fichiers et 64 Kio de début
+par flux). Les rapports sont exclus de la sauvegarde système. Leur export peut
+contenir des noms de jeux et des chemins ; aucun envoi automatique n’a lieu.
+
+Android 11 ou supérieur peut fournir la raison de l’arrêt du processus. Si elle
+manque, le diagnostic le précise. Le mode debug ne garantit pas la résolution
+du problème.
+
+## Architecture et adaptations
+
+- `WolfRuntimeInstaller` sérialise l’installation, vérifie les empreintes et
+  reprend les composants avec extraction confinée et téléchargements annulables.
+- `WolfProcess` utilise Wine 9 WoW64, Box64 Bionic 0.4.2 sur ARM64 et Wine natif sur
+  x86_64. Android 64 bits est requis ; l’application conserve minSdk 26 et targetSdk 36.
+- `windows-runtime` fournit le sous-ensemble LGPL de Winlator pour X11, le rendu
+  OpenGL ES, les entrées, les sockets et la mémoire partagée.
+- `WolfRuntimeActivity` gère l’affichage, les commandes, le verrou et la fermeture
+  des sessions. `WolfGameStorage` gère les modes d’accès et les conflits de données.
+- PulseAudio Bionic fournit la sortie Android AAudio ; IPAexGothic fournit les
+  caractères japonais.
+
+Wine et les jeux s’exécutent sous l’UID d’Astra. Le moteur n’est pas un bac à sable
+de sécurité pour des exécutables inconnus : le jeu peut accéder aux fichiers
+privés accessibles à cet UID.
+
+Le pont [exec_bridge.c](../scripts/wolf-runtime/exec_bridge.c), compilé pour les
+deux ABI par le NDK 29, charge les ELF du runtime via `/system/bin/linker64` et
+adapte les processus enfants, `/proc/self/exe` et le socket X11. Les pages PE
+privées nécessitant une permission exécutable sont recopiées dans une allocation
+anonyme lorsque `mprotect` est refusé sur la projection du fichier. Ce pont est
+compilé à `-O0` à cause d’une récursion Wine observée avec `-O2` ; le reste de
+l’application et du rendu conserve l’optimisation release.
+
+Sur x86_64, `WolfRuntimeInstaller.patchNativeX64` adapte les bornes d’adresses du
+`ntdll.so` dont l’empreinte exacte est vérifiée. Cette correction n’est pas
+appliquée à ARM64. `WINE_DISABLE_FULLSCREEN_HACK=1` évite une récursion du pilote
+sans RandR. Les empreintes attendues et les transformations sont dans
+[WolfRuntimeInstaller.kt](../app/src/main/java/fr/astragames/app/windows/WolfRuntimeInstaller.kt).
+
+Le rendu évite les transferts des fenêtres entièrement couvertes par une fenêtre
+opaque, conserve les pixels en attente et réutilise les zones inchangées. Les
+menus partiels, fenêtres transparentes et curseurs conservent leur rendu. Les
+buffers partagés et GPU restent synchronisés ; la définition du jeu n’est pas
+réduite. Les réglages Box64 du profil **Rapide** sont décrits dans les sources et
+la [documentation Box64](https://github.com/ptitSeb/box64/blob/v0.4.2/docs/USAGE.md).
+Ces optimisations ne garantissent pas une cadence minimale sur chaque appareil.
 
 ## Provenance et reconstruction
 
-Le code Winlator est épinglé à `3981d86efa4f333b2a34a7da8b6521476cd8c8b9` :
-https://github.com/brunodev85/winlator-app
-Voir `windows-runtime/NOTICE.md`, `windows-runtime/LICENSE` et les notices embarquées dans
-`app/src/main/assets/windows/THIRD-PARTY-NOTICES.txt`.
-La police officielle provient de https://moji.or.jp/ipafont/ et sa licence IPA est embarquée.
+Le code Winlator est épinglé à la révision
+`3981d86efa4f333b2a34a7da8b6521476cd8c8b9` du
+[dépôt amont](https://github.com/brunodev85/winlator-app). Voir les
+[modifications et notices](../windows-runtime/NOTICE.md), le
+[texte LGPL](../windows-runtime/LICENSE) et les
+[notices embarquées](../app/src/main/assets/windows/THIRD-PARTY-NOTICES.txt).
+La police officielle provient du [projet IPA](https://moji.or.jp/ipafont/) ; sa
+[licence](../app/src/main/assets/windows/IPA-FONT-LICENSE.txt) est fournie.
 
-Les URLs exactes et SHA-256 des paquets téléchargés sont centralisés dans
-`WolfRuntimeInstaller.kt`. Wine provient de https://downloads.gamenative.app/proton-9.0-x86_64.txz ;
-les bibliothèques ARM de https://downloads.gamenative.app/imagefs_bionic.txz ; Box64 et l'audio
-sont épinglés aux dépôts GameNative et GameNative-x64 par révision. Aucun code Java/Kotlin
-GameNative n'est embarqué. Aucun jeu ni police Microsoft n'est distribué dans l'APK.
-Les empreintes identifient les binaires fournisseurs ; la reproductibilité de ces binaires depuis
-leurs sources correspondantes n'a pas été démontrée. Une distribution publique autonome des
-paquets doit traiter cette correspondance et les obligations de toutes leurs licences.
+Les URL et SHA-256 des composants téléchargés sont centralisés dans
+`WolfRuntimeInstaller.kt`. Wine, Box64 et l’audio proviennent des fournisseurs
+GameNative et GameNative-x64 épinglés par révision. Aucun code Java/Kotlin
+GameNative, jeu ou police Microsoft n’est embarqué. Les empreintes identifient
+les binaires fournisseurs ; leur reconstruction depuis les sources n’a pas été
+démontrée. Une redistribution autonome de ces paquets doit traiter cette
+correspondance et les obligations de leurs licences.
 
-Construire avec JDK 17+, SDK 36, NDK 29.0.14206865, CMake 3.22.1 :
-
-```powershell
-./gradlew.bat :app:testDebugUnitTest :app:lintDebug :windows-runtime:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease
-```
-
-Le module modifié est intégralement fourni ; le remplacer dans `windows-runtime` puis reconstruire
-permet de tester une autre version. L'APK release Gradle est non signé ; signer une copie avec
-sa propre clé ou utiliser le debug. Une signature différente ne permet pas une mise à jour en place.
-
-## Reproduire les tests Android
-
-Uniquement Android Emulator officiel et ADB. Les échantillons sont téléchargés séparément :
-https://silversecond.com/WolfRPGEditor/Data/WolfRPGEditor_22961.zip et
-https://silversecond.com/WolfRPGEditor/Data/WolfRPGEditor_3.729.zip.
-Décompresser les noms ZIP avec CP932, conserver les données, Game.exe, Game.ini éventuel et DLL.
-Préparer les fixtures dans `files/wolf-probe/game` et `files/wolf-probe/game3729` du debug.
-L'instrumentation importe ensuite le jeu et utilise l'installateur et le moteur de production.
-
-```text
-adb -s emulator-5584 shell am instrument -w -e wolfIntegration true -e wolfSample game3729 -e class fr.astragames.app.windows.WolfIntegratedRuntimeTest fr.astragames.app.test/androidx.test.runner.AndroidJUnitRunner
-adb -s emulator-5584 shell am instrument -w -e class fr.astragames.app.data.local.StorageWorkflowsTest,fr.astragames.app.ui.SourceSubfolderDialogTest,fr.astragames.app.windows.WolfGameStorageTest fr.astragames.app.test/androidx.test.runner.AndroidJUnitRunner
-```
-
-Le test de jeu vérifie le parcours de lancement et envoie une commande ; les captures titre/partie
-nécessitent une revue visuelle. Il désactive FLAG_SECURE uniquement dans l'instrumentation.
-Les anciens tests `WindowsRuntimeProbeTest` et `WindowsDisplayProbeTest` sont des sondes de
-diagnostic opt-in ; ils ne remplacent pas le test du parcours complet.
-
-## Limites constatées
-
-- Exécution ARM64/Box64 non validée sur matériel physique ; 16 Ko de pages non validés.
-- Rendu logiciel : pas de promesse de performances ou de prise en charge des effets GPU particuliers.
-- Deux versions officielles testées, pas toutes les variantes, DLL tierces, DRM, médias ou jeux commerciaux.
-- Le MIDI nécessitant une banque GM et les codecs particuliers peuvent manquer.
-- Une mise en arrière-plan suspend le rendu et libère les touches ; le processus Windows peut continuer.
-- Le téléchargement initial nécessite le réseau ; aucune preuve Google Play ou de redistribution
-  autonome du runtime. L'installation suivante réutilise les composants vérifiés.
-
-
-## Bilan de validation initiale du moteur
-
-- 210 tests JVM : réussis ; lint application et module : aucune erreur (avertissements conservés).
-- 14 tests Android : stockage SAF, scan de sous-dossier, interface de sélection,
-  sauvegardes Wolf avec conflits/export ZIP et sortie sonore Windows vers PulseAudio : réussis.
-- Wolf 2.2961 et 3.729 : lancement du jeu original et entrée dans la partie confirmés par
-  instrumentation et revue des captures sur Android Emulator API 36.1 x86_64, pages de 4 Ko.
-- La fixture audio Windows appelle PlaySound sur une onde synthétique. Le test observe un
-  flux PulseAudio actif ; il ne constitue pas une appréciation auditive de latence/qualité ni
-  une validation des musiques MIDI de tous les jeux.
-- La sonde release est indépendante d'AndroidX/Kotlin pour fonctionner avec les classes
-  obfusquées. Elle lance le moteur, envoie Valider, rejette une image de jeu vide et ferme
-  la session. Les captures restent soumises à revue visuelle.
+Construire avec JDK 17+, SDK 36, NDK 29.0.14206865 et CMake 3.22.1 :
 
 ```powershell
-python scripts/wolf-runtime/create-audio-fixture.py
-python scripts/wolf-runtime/build-release-probe.py
-adb -s emulator-5584 install -r build/wolf-research/release-probe/probe.apk
-adb -s emulator-5584 shell am instrument -w fr.astragames.releaseprobe/.ReleaseRuntimeProbe
+.\gradlew.bat :app:testDebugUnitTest :app:lintDebug :windows-runtime:lintDebug :app:assembleDebug :app:assembleDebugAndroidTest :app:assembleRelease
 ```
 
-La sonde et l'APK cible doivent être signés avec la même clé. Les scripts de test utilisent
-la clé debug Android locale. Le fichier de livraison `Astra-1.12.0-beta.1.apk` est une
-construction release optimisée signée avec cette clé, distincte d'une publication stable.
-Les données et preuves de test ne sont pas intégrées aux sources ni à l'APK.
+Le module modifié est intégralement fourni ; le remplacer dans `windows-runtime`
+puis reconstruire permet de tester une autre version. L’APK release produit par
+Gradle est non signé : signer une copie avec sa propre clé ou utiliser la variante
+debug. Une signature différente ne permet pas une mise à jour en place.
+
+## Tests et portée
+
+Les tests instrumentés sont prévus pour Android Emulator et les outils SDK, sur
+un environnement dédié aux fixtures. Les tests de stockage créent leurs données
+synthétiques ; les scénarios utilisant les exemples officiels Wolf demandent de
+les obtenir séparément. Les sources ne redistribuent pas ces jeux.
+
+Le test optionnel `WolfIntegratedRuntimeTest` utilise l’installateur et le moteur
+réels. Les programmes synthétiques des tests Wine vérifient séparément les
+sauvegardes, les accès SAF et l’audio. Le [bilan beta.24](VALIDATION_1.12.0-beta.24.md)
+indique quels scénarios ont réellement été exécutés et sur quel APK ; la présence
+d’un test dans les sources ne constitue pas une preuve d’exécution.
+
+L’observation d’un flux PulseAudio actif ne mesure pas la qualité ni la latence
+sonore. Un benchmark GLES ne mesure pas la cadence complète du jeu. Un test de
+stockage sur une image SDK 16 Kio ne qualifie pas à lui seul Wine ou Box64 sur
+un appareil à noyau 16 Kio.
+
+- L’exécution ARM64/Box64 sur appareil physique reste non démontrée.
+- Les pages applicatives de 16 Kio de l’image SDK reposent sur un noyau/MMU de 4 Kio.
+- Les variantes de jeux, DLL tierces, DRM, effets GPU et médias particuliers ne
+  sont pas universellement pris en charge ; le MIDI peut nécessiter une banque GM.
+- Le passage en arrière-plan suspend le rendu et libère les touches ; le
+  processus Windows peut continuer.
+- Le téléchargement initial nécessite le réseau ; les lancements suivants
+  réutilisent les composants vérifiés. Aucune validation Google Play n’est revendiquée.

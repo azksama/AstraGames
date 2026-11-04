@@ -6,7 +6,7 @@ enum class GameEngine {
     ELECTRON, WOLF_RPG, GODOT_3, GODOT_4, UNKNOWN
 }
 
-enum class GameLauncherType { JOIPLAY, EXTERNAL, MTOOL, NONE, ASTRA_WINDOWS }
+enum class GameLauncherType { JOIPLAY, EXTERNAL, MTOOL, NONE, ASTRA_WINDOWS, ASTRA_MKXPZ }
 enum class ScanStatus { NEVER, RUNNING, SUCCESS, PARTIAL, FAILED }
 enum class ScanItemState { NEW, UNCHANGED, UPDATED, MOVED, MISSING, DUPLICATE }
 enum class ScanReportItemStatus { ADDED, UPDATED, UNCHANGED, MOVED, MISSING, IGNORED, ERROR }

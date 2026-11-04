@@ -59,10 +59,35 @@ class WolfSavesUiTest {
         native.directory.mkdirs()
         File(native.directory, "slot-0.astrawolf").writeBytes(byteArrayOf(1, 2, 3))
         compose.setContent { MaterialTheme { WolfSavesSheet(game) {} } }
-        compose.waitUntil(10_000) { compose.onAllNodesWithText("Anciennes sauvegardes natives").fetchSemanticsNodes().isNotEmpty() }
-        compose.onNodeWithText("Exporter les sauvegardes").assertIsNotEnabled()
-        compose.onNodeWithText("Exporter les sauvegardes natives").performScrollTo().assertIsEnabled()
-        compose.onNodeWithText("slot-0.astrawolf", substring = true).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("slot-0.astrawolf", substring = true).assertTextContains(native.directory.path, substring = true)
+        try {
+            compose.waitUntil(10_000) { compose.onAllNodesWithText("Anciennes sauvegardes natives").fetchSemanticsNodes().isNotEmpty() }
+            compose.onNodeWithText("Exporter les sauvegardes").assertIsNotEnabled()
+            val list = compose.onNode(hasScrollToIndexAction())
+            list.performScrollToNode(hasText("Exporter les sauvegardes natives"))
+            compose.onNodeWithText("Exporter les sauvegardes natives").assertIsDisplayed().assertIsEnabled()
+            // A prefetched item can already have semantics without being placed. Scroll the
+            // LazyColumn to materialize it instead of trusting that item's temporary bounds.
+            list.performScrollToNode(hasText("slot-0.astrawolf", substring = true))
+            compose.onNodeWithText("slot-0.astrawolf", substring = true).assertIsDisplayed()
+            compose.onNodeWithText("slot-0.astrawolf", substring = true).assertTextContains(native.directory.path, substring = true)
+            captureNativeEvidence("success")
+        } catch (failure: Throwable) {
+            runCatching { captureNativeEvidence("failure") }
+            throw failure
+        }
+    }
+
+    private fun captureNativeEvidence(result: String) {
+        val directory = File(context.cacheDir, "global-review-ui").apply { mkdirs() }
+        val roots = compose.onAllNodes(isRoot(), useUnmergedTree = true)
+        File(directory, "wolf-saves-native-$result.txt").writeText(buildString {
+            appendLine(context.resources.configuration.toString())
+            roots.fetchSemanticsNodes().indices.forEach { appendLine(roots[it].printToString()) }
+        })
+        val bitmap = requireNotNull(androidx.test.platform.app.InstrumentationRegistry.getInstrumentation().uiAutomation.takeScreenshot())
+        File(directory, "wolf-saves-native-$result.png").outputStream().use {
+            bitmap.compress(android.graphics.Bitmap.CompressFormat.PNG, 100, it)
+        }
+        bitmap.recycle()
     }
 }

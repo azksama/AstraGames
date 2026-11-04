@@ -71,6 +71,7 @@ internal fun SmartCollectionEditorDialog(
         value = withContext(Dispatchers.Default) { collectionPreviewCount(state, mode, snapshot) }
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             ScrollingScaffold(topBar = { CompactHeader("Collections", onBack = onDismiss) }) { padding ->
                 Box(Modifier.fillMaxSize().padding(padding).navigationBarsPadding().imePadding(), contentAlignment = Alignment.TopCenter) {

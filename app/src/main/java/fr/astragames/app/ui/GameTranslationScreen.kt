@@ -12,7 +12,6 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.semantics.Role
@@ -55,6 +54,7 @@ internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslation
         onDismissRequest = { if (!state.busy) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false, dismissOnBackPress = !state.busy, dismissOnClickOutside = false)
     ) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             Box(Modifier.fillMaxSize(), contentAlignment = Alignment.TopCenter) {
             ScrollingColumn(Modifier.widthIn(max = 920.dp).fillMaxSize(), topBar = { CompactHeader("Traduire le jeu", onBack = if (!state.busy) onDismiss else null) }) {
@@ -117,7 +117,7 @@ internal fun GameTranslationScreen(game: GameEntity, controller: GameTranslation
                     Text("Les noms utilisés par les conditions du jeu sont conservés pour rester compatibles avec vos sauvegardes.", style = MaterialTheme.typography.bodySmall)
                     Text("Originaux : .astra-translation dans le dossier de données du jeu. Conservez ce dossier.", style = MaterialTheme.typography.bodySmall)
                     if (!manual) {
-                        val uriHandler = LocalUriHandler.current
+                        val uriHandler = rememberExternalUriHandler()
                         TextButton(onClick = { uriHandler.openUri("https://developers.google.com/ml-kit/language/translation") }) { Text("À propos de Google Translate") }
                     }
                     Spacer(Modifier.height(8.dp))

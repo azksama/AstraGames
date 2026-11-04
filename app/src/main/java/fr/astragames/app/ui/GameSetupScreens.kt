@@ -45,6 +45,7 @@ internal fun ScanReportDialog(reports: List<ScanReport>, onDismiss: () -> Unit) 
     val report = reports.getOrNull(selectedIndex.coerceAtMost(reports.lastIndex)) ?: return
     val visibleItems = report.items.filter { filter == null || it.status == filter }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 Column(Modifier.fillMaxHeight().widthIn(max = 1040.dp).align(Alignment.Center)) {

@@ -4,10 +4,8 @@ import fr.astragames.app.core.runCatchingCancellable
 import android.net.Uri
 import fr.astragames.app.data.saves.GameSave
 import fr.astragames.app.data.saves.SaveEntry
+import fr.astragames.app.data.saves.SaveProvenance
 import fr.astragames.app.data.saves.SaveEdit
-import fr.astragames.app.data.saves.SaveCodec
-import fr.astragames.app.data.saves.readBytes
-import fr.astragames.app.data.saves.sha256Hex
 import fr.astragames.app.data.mods.ModCatalogItem
 import fr.astragames.app.data.local.SaveBackupEntity
 import fr.astragames.app.AstraApplication
@@ -36,6 +34,8 @@ class GameToolsController(
     val savesError = mutableSavesError.asStateFlow()
     private val mutableSaveEntries = MutableStateFlow<List<SaveEntry>>(emptyList())
     val saveEntries: StateFlow<List<SaveEntry>> = mutableSaveEntries
+    private val mutableSaveProvenance = MutableStateFlow<SaveProvenance?>(null)
+    val saveProvenance = mutableSaveProvenance.asStateFlow()
     private val mutableMods = MutableStateFlow<List<ModCatalogItem>>(emptyList())
     val modsCatalog: StateFlow<List<ModCatalogItem>> = mutableMods
     private val mutableModsLoading = MutableStateFlow(false)
@@ -60,7 +60,7 @@ class GameToolsController(
 
     fun observeSaveLocations(gameId: String) = saveManager.observeLocations(gameId)
 
-    fun observeSaveBackups(gameId: String) = saveManager.observeBackups(gameId)
+    fun observeSaveBackups(gameId: String) = saveManager.observeBackupsWithProvenance(gameId)
 
     fun detectSaveLocations(gameId: String) = scope.launch {
         val game = repository.getGame(gameId) ?: return@launch
@@ -110,27 +110,29 @@ class GameToolsController(
         if (activeSavesGameId == gameId) loadSaves(gameId)
     }
 
-    fun loadSaveEntries(save: GameSave, expectedHash: String? = null) {
+    fun loadSaveEntries(gameId: String, save: GameSave, expectedHash: String? = null) {
         if (mutableToolsBusy.value && saveLoadJob?.isActive != true) return
         val generation = ++saveLoadGeneration
         saveLoadJob?.cancel()
         mutableSaveEntries.value = emptyList()
+        mutableSaveProvenance.value = null
         mutableSaveRevision.value = null
         mutableToolsBusy.value = true
         mutableToolsError.value = null
         saveLoadJob = scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
-                    val bytes = readBytes(app, save.uri)
-                    val hash = sha256Hex(bytes)
-                    check(expectedHash == null || expectedHash == hash) {
+                    val game = repository.getGame(gameId) ?: error("Jeu introuvable.")
+                    val snapshot = saveManager.readSaveSnapshot(game, save)
+                    check(expectedHash == null || expectedHash == snapshot.sha256) {
                         "La sauvegarde a change depuis son ouverture. Fermez puis rouvrez l editeur."
                     }
-                    SaveCodec.entries(SaveCodec.read(save.engine, bytes)) to hash
+                    snapshot
                 }
                 if (generation == saveLoadGeneration) {
-                    mutableSaveEntries.value = result.first
-                    mutableSaveRevision.value = save.uri to result.second
+                    mutableSaveEntries.value = result.entries
+                    mutableSaveProvenance.value = result.provenance
+                    mutableSaveRevision.value = save.uri to result.sha256
                 }
             } catch (error: CancellationException) { throw error }
             catch (error: Exception) { if (generation == saveLoadGeneration) mutableToolsError.value = error.message ?: "Lecture impossible" }

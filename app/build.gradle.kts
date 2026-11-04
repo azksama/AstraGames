@@ -18,8 +18,8 @@ android {
         applicationId = "fr.astragames.app"
         minSdk = 26
         targetSdk = 36
-        versionCode = 51
-        versionName = "1.12.0-beta.23"
+        versionCode = 52
+        versionName = "1.12.0-beta.24"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         ndk { abiFilters += listOf("arm64-v8a", "x86_64") }
@@ -67,6 +67,7 @@ kapt {
 jacoco { toolVersion = "0.8.13" }
 
 dependencies {
+    implementation(project(":mkxpz-runtime"))
     implementation(project(":windows-runtime"))
     implementation("androidx.concurrent:concurrent-futures-ktx:1.2.0")
     val composeBom = platform("androidx.compose:compose-bom:2026.06.00")

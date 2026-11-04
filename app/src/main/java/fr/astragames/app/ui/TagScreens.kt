@@ -180,17 +180,35 @@ internal fun CategoryManager(state: AstraUiState, vm: AstraViewModel, onEdit: (T
     if (state.tagCategories.isEmpty()) CenterMessage("Créez des catégories puis classez plusieurs tags en une fois.", Modifier.fillMaxSize())
     else LazyColumn(contentPadding = PaddingValues(bottom = PageBottomPadding)) {
         items(state.tagCategories, key = { it.id }) { category ->
-            RoundedListItem(
-                headlineContent = { MaterialText(category.name) }, supportingContent = { Text("${state.tags.count { it.groupName == category.name }} tag(s)") },
-                leadingContent = { Icon(Icons.Default.Folder, null) }, trailingContent = {
-                    Row {
-                        IconButton(onClick = { vm.moveTagCategory(category.id, -1) }) { Icon(Icons.Default.ArrowUpward, "Monter") }
-                        IconButton(onClick = { vm.moveTagCategory(category.id, 1) }) { Icon(Icons.Default.ArrowDownward, "Descendre") }
-                        IconButton(onClick = { onEdit(category) }) { Icon(Icons.Default.Edit, "Renommer") }
-                        IconButton(onClick = { onDelete(category) }) { Icon(Icons.Default.DeleteOutline, "Supprimer") }
-                    }
-                }
-            )
+            TagCategoryCard(category, state.tags.count { it.groupName == category.name },
+                onMoveUp = { vm.moveTagCategory(category.id, -1) },
+                onMoveDown = { vm.moveTagCategory(category.id, 1) },
+                onEdit = { onEdit(category) }, onDelete = { onDelete(category) })
+        }
+    }
+}
+
+@Composable
+internal fun TagCategoryCard(
+    category: TagCategoryEntity, tagCount: Int,
+    onMoveUp: () -> Unit, onMoveDown: () -> Unit,
+    onEdit: () -> Unit, onDelete: () -> Unit
+) {
+    // Four 48 dp actions alongside a leading icon leave no readable title on a compact phone.
+    Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
+        Row(verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Icon(Icons.Default.Folder, null, Modifier.padding(top = 4.dp))
+            Column(Modifier.weight(1f)) {
+                MaterialText(category.name, style = MaterialTheme.typography.bodyLarge)
+                Text("$tagCount tag(s)", style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+            IconButton(onClick = onMoveUp, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.ArrowUpward, AppLocalizer.text("Monter")) }
+            IconButton(onClick = onMoveDown, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.ArrowDownward, AppLocalizer.text("Descendre")) }
+            IconButton(onClick = onEdit, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Edit, AppLocalizer.text("Renommer")) }
+            IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.DeleteOutline, AppLocalizer.text("Supprimer")) }
         }
     }
 }

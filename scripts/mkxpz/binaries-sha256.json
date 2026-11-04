@@ -1,0 +1,82 @@
+[
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/arm64-v8a/libc++_shared.so",
+    "bytes": 9290184,
+    "sha256": "0c52cfab2df0d957d8b346a2bdc5ae8d71feca2591924d77e1cd724d5bf74352"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/arm64-v8a/libmkxp-z.so",
+    "bytes": 8499648,
+    "sha256": "240a563621c39776df0f9b47e7aaad6bcf077dcf17ca102f729b565e46e0998f"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/arm64-v8a/libopenal.so",
+    "bytes": 1737808,
+    "sha256": "489bce2c9792d61619f2f9896efeaa9586e7d4df1c3e570f5d71d8f31403a06f"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/arm64-v8a/libruby.so",
+    "bytes": 12601864,
+    "sha256": "67a9b278af4dddb7f47955a6c8c11803ccaa56e23d9105bc493c645317793479"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/arm64-v8a/libSDL2.so",
+    "bytes": 1428896,
+    "sha256": "9a613fca63f3b9b80d96b4974bf6ce132cf5bd91f4419a9ae52260a2f9e67b9b"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/arm64-v8a/libSDL2_image.so",
+    "bytes": 173912,
+    "sha256": "3d03c4bcab9dc9e9d35190cffd9c9289002b58018c9014285a53595eacb04f3b"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/arm64-v8a/libSDL2_sound.so",
+    "bytes": 342968,
+    "sha256": "49790fd5841c786f4e7670c7655cab5c31f6c7b7436c89820b311e655e16b161"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/arm64-v8a/libSDL2_ttf.so",
+    "bytes": 1726256,
+    "sha256": "1928fe56acd3b9eb4c7bd178f088fba0762fac85dfe3dea1dc2855be25a4aaab"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/x86_64/libc++_shared.so",
+    "bytes": 9015544,
+    "sha256": "e28cb9e0f456caf8498d0e8562b3ac3f73bf78c07555a52b5602396f240abec3"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/x86_64/libmkxp-z.so",
+    "bytes": 8881552,
+    "sha256": "59706aaa583d0740dbf1411c087a4b94a694de387b691700e828a9ff59af1d29"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/x86_64/libopenal.so",
+    "bytes": 1779288,
+    "sha256": "0dc4a068758ada7851c121849ba97cca701bc1ae133717f3afab3705d29238c3"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/x86_64/libruby.so",
+    "bytes": 12651960,
+    "sha256": "0bb480cd6e7c4e8ad4272c8f5748da765669b4da271ede9858ad8ae1e915202a"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/x86_64/libSDL2.so",
+    "bytes": 1627216,
+    "sha256": "ed4d0dd97f4004c6024db922768531c48bff3d7ff36096c76f69fbc068ad96af"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/x86_64/libSDL2_image.so",
+    "bytes": 205520,
+    "sha256": "cbff8a7e014911ade3c601e1e5586c69f1968bca796fbe09cb7c2dca8be1d0f2"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/x86_64/libSDL2_sound.so",
+    "bytes": 394400,
+    "sha256": "184faea7f7e95692d235406b1fd7c8c72575c87f1a62120fde01e4d96e4d9bc1"
+  },
+  {
+    "path": "mkxpz-runtime/src/main/jniLibs/x86_64/libSDL2_ttf.so",
+    "bytes": 1780032,
+    "sha256": "5a7efa0edd818fdf83498da25fb8bfd971116bb8a5d3232cf1d92b3b7ba9c974"
+  }
+]

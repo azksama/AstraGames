@@ -29,7 +29,6 @@ import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.contentDescription
@@ -63,7 +62,7 @@ internal fun GameDetailScreen(
     val latestVersions by vm.latestGameVersions.collectAsStateWithLifecycle()
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
-    val uriHandler = LocalUriHandler.current
+    val uriHandler = rememberExternalUriHandler()
     var edit by rememberSaveable(id) { mutableStateOf(false) }
     var pickTags by rememberSaveable(id) { mutableStateOf(false) }
     var pickCover by rememberSaveable(id) { mutableStateOf(false) }
@@ -362,6 +361,7 @@ internal fun CompatibilityDialog(
     onDismiss: () -> Unit
 ) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 ScrollingColumn(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center), topBar = { CompactHeader("Diagnostic", game.title, onBack = onDismiss, localizeSubtitle = false) {
@@ -431,7 +431,7 @@ internal fun LaunchProfileDialog(
     onReset: () -> Unit,
     onDismiss: () -> Unit
 ) {
-    var launcherType by rememberSaveable(game.id, saved) { mutableStateOf(saved?.launcherType ?: if (game.engine == GameEngine.WOLF_RPG.name) "ASTRA_WINDOWS" else "JOIPLAY") }
+    var launcherType by rememberSaveable(game.id, saved) { mutableStateOf(saved?.launcherType ?: if (game.launcher == "ASTRA_MKXPZ") "ASTRA_MKXPZ" else if (game.engine == GameEngine.WOLF_RPG.name) "ASTRA_WINDOWS" else "JOIPLAY") }
     var engineOverride by rememberSaveable(game.id, saved) { mutableStateOf(saved?.engineOverride) }
     var executable by rememberSaveable(game.id, saved) { mutableStateOf(saved?.executableName ?: game.executableName.orEmpty()) }
     var physicalPath by rememberSaveable(game.id, saved) { mutableStateOf(saved?.physicalPath ?: game.physicalPath.orEmpty()) }
@@ -441,7 +441,10 @@ internal fun LaunchProfileDialog(
     var launcherMenu by remember { mutableStateOf(false) }
     var engineMenu by remember { mutableStateOf(false) }
     LaunchedEffect(engineOverride, game.engine) {
-        if (launcherType != "EXTERNAL") launcherType = if ((engineOverride ?: game.engine) == GameEngine.WOLF_RPG.name) "ASTRA_WINDOWS" else "JOIPLAY"
+        if (launcherType != "EXTERNAL" && !(launcherType == "ASTRA_MKXPZ" &&
+            fr.astragames.app.mkxpz.MkxpzRuntime.rgssVersion(engineOverride ?: game.engine) != null)) {
+            launcherType = if ((engineOverride ?: game.engine) == GameEngine.WOLF_RPG.name) "ASTRA_WINDOWS" else "JOIPLAY"
+        }
     }
     fun profile() = LaunchProfileEntity(
         gameId = game.id, launcherType = launcherType, engineOverride = engineOverride,
@@ -451,6 +454,7 @@ internal fun LaunchProfileDialog(
     )
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
                 ScrollingColumn(Modifier.fillMaxHeight().widthIn(max = 920.dp).align(Alignment.Center), topBar = { CompactHeader("Profil de lancement", game.title, onBack = onDismiss, localizeSubtitle = false) }) {
@@ -467,10 +471,13 @@ internal fun LaunchProfileDialog(
                         item {
                             Box {
                                 OutlinedButton(onClick = { launcherMenu = true }, Modifier.fillMaxWidth()) {
-                                    Text(when (launcherType) { "EXTERNAL" -> "Application externe"; "ASTRA_WINDOWS" -> "Astra · Wolf intégré"; else -> "JoiPlay" })
+                                    Text(when (launcherType) { "EXTERNAL" -> "Application externe"; "ASTRA_WINDOWS" -> "Astra · Wolf intégré"; "ASTRA_MKXPZ" -> "Astra · MKXP-Z (prototype)"; else -> "JoiPlay" })
                                     Spacer(Modifier.weight(1f)); Icon(Icons.Default.ArrowDropDown, null)
                                 }
                                 DropdownMenu(launcherMenu, { launcherMenu = false }) {
+                                    if (fr.astragames.app.mkxpz.MkxpzRuntime.rgssVersion(engineOverride ?: game.engine) != null) {
+                                        DropdownMenuItem({ Text("Astra · MKXP-Z (prototype)") }, { launcherType = "ASTRA_MKXPZ"; launcherMenu = false })
+                                    }
                                     if ((engineOverride ?: game.engine) == GameEngine.WOLF_RPG.name) {
                                         DropdownMenuItem({ Text("Astra · Wolf intégré") }, { launcherType = "ASTRA_WINDOWS"; launcherMenu = false })
                                     } else DropdownMenuItem({ Text("JoiPlay") }, { launcherType = "JOIPLAY"; launcherMenu = false })
@@ -498,7 +505,10 @@ internal fun LaunchProfileDialog(
                             item { EditField(packageName, { packageName = it }, "Package Android (facultatif)") }
                             item { EditField(customAction, { customAction = it }, "Action Android") }
                         }
-                        if (launcherType != "ASTRA_WINDOWS") item { EditField(arguments, { arguments = it }, "Arguments personnalisés") }
+                        if (launcherType != "ASTRA_WINDOWS" && launcherType != "ASTRA_MKXPZ") item { EditField(arguments, { arguments = it }, "Arguments personnalisés") }
+                        if (launcherType == "ASTRA_MKXPZ") item {
+                            Text("Le jeu sera copié dans Astra au premier lancement. Les sauvegardes restent dans cette copie privée ; le dossier source n'est pas modifié. Aucun RTP n'est fourni. La compatibilité dépend du jeu.")
+                        }
                     }
                     Column(Modifier.fillMaxWidth().padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

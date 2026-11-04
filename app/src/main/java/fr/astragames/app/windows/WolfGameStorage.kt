@@ -53,6 +53,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
     private val configuration = WolfDirectConfiguration(directory)
     private var hashes = JSONObject()
     private var stamps = JSONObject()
+    private var restoredPaths: Set<String> = emptySet()
 
     /** Explicit asset updates never erase the working copy or pending saves. */
     fun requestRefresh() { directory.mkdirs(); refresh.writeText("1") }
@@ -65,8 +66,14 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
         configuration.restore()
         progress("Vérification du dernier dossier utilisé…")
         val lastMode = readWorkingMode()
+        restoredPaths = WolfRestoredSavePaths.read(lastMode, directory, sourceUri)
+        // A catalogue restore owns a data-only COPY snapshot. Keep it authoritative instead
+        // of reopening older SAF journals that were deliberately retained for recovery.
+        val restoredArchive = lastMode.optBoolean("restoredArchive") && lastMode.optString("source") == sourceUri
+        // Persist legacy protection before any import can change the private copy.
+        if (restoredArchive && !lastMode.has("restoredPaths")) writeWorkingMode("COPY", restoredArchive = true)
         progress("Vérification de l’accès au dossier d’origine…")
-        val direct = if (preferDirect) directDirectory(executable) else null
+        val direct = if (preferDirect && !restoredArchive) directDirectory(executable) else null
         val migrated = lastMode.optString("mode") == "DIRECT" && lastMode.optString("source") == sourceUri
         val previousSaf = lastMode.optString("mode") == "SAF" && lastMode.optString("source") == sourceUri
         if (direct != null && previousSaf && executable != null) {
@@ -104,7 +111,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
             }
             progress("$conflicts conflit(s) de sauvegarde · copie privée conservée")
         }
-        if (direct == null && preferDirect && executable != null && DocumentsContract.isTreeUri(sourceUri.toUri())) {
+        if (direct == null && preferDirect && !restoredArchive && executable != null && DocumentsContract.isTreeUri(sourceUri.toUri())) {
             check(documentDir(context, sourceUri.toUri()) != null) { "Le dossier du jeu est inaccessible." }
             val conflicts = if (!previousSaf && manifest.isFile && copiedGame.isDirectory)
                 synchronize(null, progress) else 0
@@ -127,7 +134,8 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
                     progress("SAF à la demande indisponible : ${error.message} · import privé nécessaire")
                 }
             } else progress("$conflicts conflit(s) de sauvegarde · copie privée conservée")
-        } else if (direct == null && preferDirect) progress("Accès direct indisponible · copie privée utilisée")
+        } else if (restoredArchive) progress("Sauvegardes restaurées · copie privée conservée")
+        else if (direct == null && preferDirect) progress("Accès direct indisponible · copie privée utilisée")
         progress("Vérification de l’autorisation du dossier source…")
         val source = requireNotNull(documentDir(context, sourceUri.toUri())) { "Le dossier du jeu est inaccessible." }
         check(source.canRead()) { "Autorisation du dossier expirée." }
@@ -179,6 +187,9 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
                         lastProgress = now
                     }
                     val previous = hashes.optString(path).takeIf(String::isNotEmpty)
+                    // Restoring A explicitly selects it, even when A equals the archived
+                    // source baseline. A newer source B must be reported by synchronize.
+                    if (path in restoredPaths) continue
                     val localHash = if (target.isFile) {
                         if (!isSave(path) && stamps.optString(path) == stamp(target)) previous
                         else WolfRuntimeInstaller.hash(target)
@@ -213,7 +224,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
             // A removed mod must not remain active in the cached copy. Never remove a save
             // or anything changed locally, and never clean up after an incomplete import.
             for (path in hashes.keys().asSequence().toList()) {
-                if (path in imported || isSave(path) || path.substringAfterLast('/').equals("Game.ini", true)) continue
+                if (path in imported || path in restoredPaths || isSave(path) || path.substringAfterLast('/').equals("Game.ini", true)) continue
                 val local = safeFile(game, path)
                 if (local.isFile && WolfRuntimeInstaller.hash(local) == hashes.optString(path)) {
                     check(local.delete()) { "Actualisation impossible : $path" }
@@ -232,14 +243,14 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
         val original = if (ini.exists()) ini.readText(Charsets.ISO_8859_1) else ""
         val configured = wolfSoftwareConfiguration(original)
         if (configured != original) ini.writeText(configured, Charsets.ISO_8859_1)
-        writeWorkingMode("COPY")
+        writeWorkingMode("COPY", restoredArchive = restoredArchive)
         game
     }
 
     private fun isSave(path: String) = path.split('/').dropLast(1).any { isSaveFolder(it) } ||
         path.substringAfterLast('.').lowercase() in setOf("sav", "save")
 
-    private fun isSaveFolder(name: String) = name.lowercase() in setOf("save", "saves", "savedata", "savefiles")
+    private fun isSaveFolder(name: String) = name.lowercase() in setOf("save", "saves", "savedata", "savefiles", "save_mtool")
 
     private fun directDirectory(executable: String?): File? = runCatching {
         val root = File(requireNotNull(FileAccessResolver(context).physicalPath(sourceUri.toUri()))).canonicalFile
@@ -251,17 +262,26 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
         root
     }.getOrNull()
 
-    private fun readWorkingMode() = runCatching { JSONObject(workingMode.readText()) }.getOrDefault(JSONObject())
-    private fun writeWorkingMode(mode: String, executable: String? = null) {
+    private fun readWorkingMode() = if (workingMode.isFile) JSONObject(workingMode.readText()) else JSONObject()
+    private fun writeWorkingMode(mode: String, executable: String? = null, restoredArchive: Boolean = false) {
         directory.mkdirs()
+        val data = JSONObject().put("source", sourceUri).put("mode", mode).put("executable", executable)
+            .put("restoredArchive", restoredArchive)
+        if (restoredArchive) WolfRestoredSavePaths.write(data, directory, restoredPaths)
         val pending = File(directory, "working-mode.new").apply {
-            writeText(JSONObject().put("source", sourceUri).put("mode", mode).put("executable", executable).toString())
+            writeText(data.toString())
         }
         check(pending.renameTo(workingMode))
     }
 
     internal fun restoreLastLocation() {
         val last = readWorkingMode()
+        restoredPaths = WolfRestoredSavePaths.read(last, directory, sourceUri)
+        if (last.optBoolean("restoredArchive") && last.optString("source") == sourceUri) {
+            // A retained storage object must also abandon its pre-restore SAF mount.
+            closeMount()
+            game = copiedGame
+        }
         if (last.optString("mode") == "SAF" && last.optString("source") == sourceUri) {
             game = safGame
             if (safMount == null) safMount = createSafMount(last.optString("executable", "Game.exe"))
@@ -308,7 +328,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
             val path = file.relativeTo(game).invariantSeparatorsPath
             if (path.split('/').any { it.startsWith(".astra-") } || file.name.equals("Game.ini", true) ||
                 file.extension.lowercase() in setOf("exe", "dll") || java.nio.file.Files.isSymbolicLink(file.toPath())) continue
-            val known = isSave(path)
+            val known = isSave(path) || path in restoredPaths
             val changed = !isDirect && stamps.optString(path) != stamp(file) &&
                 WolfRuntimeInstaller.hash(file) != hashes.optString(path)
             if (known || changed) saves += SaveFile(safeFile(game, path), path)
@@ -374,6 +394,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
 
     /** Never overwrites a source edited since import. Conflicting saves remain local. */
     suspend fun synchronize(progress: (String) -> Unit = {}): Int = withContext(Dispatchers.IO) {
+        restoreLastLocation()
         if (isDirect) return@withContext 0 // The game already writes into its original folder.
         if (isSaf) {
             val mount = requireNotNull(safMount)
@@ -402,6 +423,7 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
         var checked = 0
         var recovered = 0
         var conflicts = 0
+        val reconciled = mutableSetOf<String>()
         fun report() {
             progress("Récupération des sauvegardes : $checked fichiers vérifiés · $recovered récupéré(s) · $conflicts conflit(s)")
             lastProgress = android.os.SystemClock.elapsedRealtime()
@@ -416,15 +438,17 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
                 safeFile(game, path)
                 checked++
                 // Saves are always hashed; unchanged assets need only their cached metadata.
-                val unchanged = !isSave(path) && stamps.optString(path) == stamp(file)
+                val protected = path in restoredPaths
+                val unchanged = !protected && !isSave(path) && stamps.optString(path) == stamp(file)
                 var firstRecovered = false
                 if (!unchanged) {
                     val local = wolfSaveHash(file)
                     val previous = hashes.optString(path).takeIf(String::isNotEmpty)
-                    if (local == previous) stamps.put(path, stamp(file))
+                    if (!protected && local == previous) stamps.put(path, stamp(file))
                     else if (destination.recover(file, path, previous, local)) {
                         hashes.put(path, local)
                         stamps.put(path, stamp(file))
+                        if (protected) reconciled += path
                         firstRecovered = ++recovered == 1
                     } else conflicts++
                 }
@@ -434,6 +458,12 @@ class WolfGameStorage(private val context: Context, gameId: String, private val 
             saveManifest()
             // Do not certify an incomplete import after a failed preparation.
             saveState(complete)
+            // Checkpoint the CAS baseline before dropping protection. A crash between
+            // these writes retains an extra guard; it never grants an unsafe publication.
+            if (reconciled.isNotEmpty()) {
+                restoredPaths = restoredPaths - reconciled
+                writeWorkingMode("COPY", restoredArchive = true)
+            }
         }
         report()
         progress("Anciennes sauvegardes vérifiées en ${android.os.SystemClock.elapsedRealtime() - started} ms · $recovered récupéré(s) · $conflicts conflit(s)")

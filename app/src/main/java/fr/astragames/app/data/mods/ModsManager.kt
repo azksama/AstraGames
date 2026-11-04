@@ -203,19 +203,19 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
                 UninstallWarning(record.relativePath, "Fichier modifie depuis l installation") else null
         }
         if (warnings.isNotEmpty()) return warnings
+        files.filter { it.action == "REPLACED" }.forEach { record ->
+            val backup = managedBackup(installation.id, record.backupUri)
+            check(hashOf(DocumentFile.fromFile(backup)) == record.originalHash) { "Backup original endommage." }
+        }
         dao.getGame(installation.gameId)?.takeIf { it.engine == "WOLF_RPG" }?.let {
             fr.astragames.app.windows.WolfGameStorage(context, it.id, it.documentUri).requestRefresh()
-        }
-        files.filter { it.action == "REPLACED" }.forEach { record ->
-            val backup = managedBackup(record.backupUri)
-            check(hashOf(DocumentFile.fromFile(backup)) == record.originalHash) { "Backup original endommage." }
         }
         files.forEach { record ->
             val dest = documentFile(context, Uri.parse(record.relativePath)) ?: error("Fichier inaccessible.")
             if (record.action == "ADDED") {
                 check(!dest.exists() || dest.delete()) { "Suppression impossible : ${record.relativePath}" }
             } else {
-                val backup = managedBackup(record.backupUri)
+                val backup = managedBackup(installation.id, record.backupUri)
                 check(hashOf(DocumentFile.fromFile(backup)) == record.originalHash) { "Backup original endommage." }
                 copyDocument(DocumentFile.fromFile(backup), dest)
                 check(hashOf(dest) == record.originalHash) { "Restauration incomplete." }
@@ -237,13 +237,16 @@ class ModsManager(private val context: Context, private val dao: AstraDao) {
 
     private fun backupDirectory(id: String): File {
         require(id.matches(Regex("[A-Za-z0-9_-]{1,128}"))) { "Identifiant d’installation invalide." }
-        return File(context.filesDir, "mod-backups/$id")
+        return File(context.filesDir, "mod-backups/$id").also {
+            fr.astragames.app.mkxpz.MkxpzSavePaths.requireNoSymlinks(context.filesDir, it)
+        }
     }
 
-    private fun managedBackup(path: String?): File {
-        val root = File(context.filesDir, "mod-backups").canonicalFile.toPath()
-        val file = path?.let(::File)?.canonicalFile ?: error("Backup original introuvable.")
-        require(file.toPath().startsWith(root) && file.toPath() != root && file.isFile) { "Backup original inaccessible." }
+    private fun managedBackup(installationId: String, path: String?): File {
+        val root = backupDirectory(installationId).absoluteFile
+        val file = path?.let(::File)?.absoluteFile ?: error("Backup original introuvable.")
+        fr.astragames.app.mkxpz.MkxpzSavePaths.requireNoSymlinks(context.filesDir, file)
+        require(file.parentFile == root && file.isFile) { "Ce backup n’appartient pas à l’installation du mod." }
         return file
     }
 

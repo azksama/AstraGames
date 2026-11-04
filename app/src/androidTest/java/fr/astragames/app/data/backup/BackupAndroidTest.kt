@@ -138,7 +138,7 @@ class BackupAndroidTest {
         dao.upsertGame(game)
         dao.upsertSaveLocation(GameSaveLocationEntity("location", game.id, saveFolder.uri.toString(), "CUSTOM", "Fixture", false, true, 1))
         val savedOriginal = "original save backup"
-        val backupFile = File(context.filesDir, "save-backups/${game.id}/original.save").apply {
+        val backupFile = File(context.filesDir, "save-backups/${fr.astragames.app.mkxpz.MkxpzSavePaths.ownerKey(game.id)}/original.save").apply {
             parentFile!!.mkdirs()
             writeText(savedOriginal)
         }

@@ -19,6 +19,11 @@ class CompatibilityDiagnostic(private val launcher: JoiPlayLauncher) {
         val executable = LaunchProfileResolver.executable(game, profile)
         val launcherType = LaunchProfileResolver.launcherType(game, profile)
         val internalWolf = engine == GameEngine.WOLF_RPG.name && launcherType != "EXTERNAL"
+        val internalMkxpz = launcherType == fr.astragames.app.mkxpz.MkxpzRuntime.LAUNCHER
+        val importedMkxpz = internalMkxpz && fr.astragames.app.mkxpz.MkxpzStorage(context, game.id).isImported
+        if (internalMkxpz && fr.astragames.app.mkxpz.MkxpzRuntime.rgssVersion(engine) == null) {
+            checks += error("MKXP-Z", "Seuls les jeux RPG Maker XP, VX et VX Ace sont acceptés.")
+        }
 
         checks += when {
             engine == GameEngine.UNKNOWN.name && launcherType == "EXTERNAL" -> warning("Moteur", "Moteur inconnu, lancement délégué à l'application externe")
@@ -40,13 +45,15 @@ class CompatibilityDiagnostic(private val launcher: JoiPlayLauncher) {
             }
         }.getOrDefault(false)
         checks += when {
+            importedMkxpz -> ok("Dossier", "Copie privée MKXP-Z disponible dans Astra")
             uriAccessible -> ok("Dossier", "Le dossier source est accessible à Astra")
             path?.let(::File)?.exists() == true -> warning("Dossier", "Le chemin physique existe, mais l'autorisation Android du dossier doit être renouvelée")
             else -> error("Dossier", "Dossier inaccessible : rescanner ou sélectionner à nouveau la source")
         }
 
         checks += when {
-            path.isNullOrBlank() && !internalWolf -> error("Chemin JoiPlay", "Aucun chemin physique disponible")
+            importedMkxpz -> ok("Fichier d'entrée", "Utilisation de la copie privée du jeu")
+            path.isNullOrBlank() && !internalWolf && !internalMkxpz -> error("Chemin JoiPlay", "Aucun chemin physique disponible")
             executable.isNullOrBlank() -> error("Fichier d'entrée", "Aucun exécutable ou fichier d'entrée configuré")
             path != null && File(path, executable).exists() -> ok("Fichier d'entrée", executable)
             uriAccessible -> warning("Fichier d'entrée", "$executable n'est pas vérifiable directement par Android ; utilisez Tester")
@@ -56,6 +63,9 @@ class CompatibilityDiagnostic(private val launcher: JoiPlayLauncher) {
         checks += if (launcherType == "EXTERNAL") {
             if (profile?.customAction.isNullOrBlank()) error("Lanceur", "Action Android externe manquante")
             else ok("Lanceur", listOfNotNull(profile?.packageName, profile?.customAction).joinToString(" • "))
+        } else if (internalMkxpz) {
+            fr.astragames.app.mkxpz.MkxpzRuntime.unavailableReason(context)?.let { error("MKXP-Z", it) }
+                ?: warning("MKXP-Z intégré", "Prototype · copie privée persistante du jeu et des sauvegardes dans Astra. Les modifications ultérieures du dossier source ne sont pas recopiées. Aucun RTP fourni ; compatibilité à tester par jeu.")
         } else if (internalWolf) {
             if (fr.astragames.app.windows.WolfRuntimeInstaller.supportedAbi()) warning("Moteur Astra", "Wolf via Winlator : les composants Windows seront téléchargés au premier lancement. Compatibilité selon le jeu.")
             else error("Moteur Astra", "Android ARM64 ou x86_64 requis.")

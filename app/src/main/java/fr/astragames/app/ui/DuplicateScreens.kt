@@ -19,7 +19,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -50,6 +49,7 @@ internal fun DuplicatesDialog(state: AstraUiState, vm: AstraViewModel, onDismiss
         if (primaryId != null && secondary != null) vm.previewDuplicateMerge(primaryId!!, secondary.id)
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
             ScrollingColumn(topBar = { CompactHeader(
                     selectedGroup?.let { "Comparer les doublons" } ?: "Doublons détectés",
@@ -179,6 +179,7 @@ internal fun SaveConflictStrategy.label() = when (this) {
 @Composable
 internal fun DeletedGamesDialog(games: List<DeletedGameEntity>, onRestore: (String) -> Unit, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
             ScrollingColumn(topBar = { CompactHeader("Jeux supprimés", "${games.size} jeu(x)", onBack = onDismiss) }) {
                 if (games.isEmpty()) CenterMessage("Aucun jeu supprimé", Modifier.fillMaxSize())
@@ -197,8 +198,9 @@ internal fun DeletedGamesDialog(games: List<DeletedGameEntity>, onRestore: (Stri
 
 @Composable
 internal fun RuntimeManagerDialog(runtimes: List<JoiPlayRuntimeInfo>, onDismiss: () -> Unit) {
-    val uriHandler = LocalUriHandler.current
+    val uriHandler = rememberExternalUriHandler()
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
             ScrollingColumn(topBar = { CompactHeader("Runtimes JoiPlay", "Détection locale des composants", onBack = onDismiss) }) {
                 LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {

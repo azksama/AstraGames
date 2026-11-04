@@ -57,14 +57,16 @@ import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import fr.astragames.app.data.local.GameEntity
-import fr.astragames.app.data.local.SaveBackupEntity
 import fr.astragames.app.data.saves.GameSave
+import fr.astragames.app.data.saves.SaveProvenance
+import fr.astragames.app.data.saves.SaveStorage
 import fr.astragames.app.data.saves.SaveEdit
 import fr.astragames.app.data.saves.SaveEntry
 import fr.astragames.app.data.saves.SaveEntryType
@@ -95,7 +97,15 @@ internal fun SaveListSheet(game: GameEntity, vm: AstraViewModel, onEdit: (GameSa
             error?.let { message -> item { Text(message, Modifier.padding(20.dp), color = MaterialTheme.colorScheme.error) } }
             if (!loading && error == null && saves.isEmpty()) item { Text("Aucune sauvegarde détectée.", Modifier.padding(horizontal = 20.dp, vertical = 8.dp)) }
             items(saves, key = { it.uri }) { save ->
-                ListItem(headlineContent = { MaterialText(save.name) }, supportingContent = { MaterialText((save.slot?.let { "Slot " + it + " - " } ?: "") + dateFormat.format(Date(save.lastModified))) }, trailingContent = { TextButton(enabled = !busy, onClick = { onEdit(save) }) { Text("Éditer") } })
+                ListItem(
+                    modifier = Modifier.testTag("save-${save.uri}"),
+                    headlineContent = { MaterialText(save.name) },
+                    supportingContent = { Column {
+                        SaveOriginLine(save.provenance)
+                        MaterialText((save.slot?.let { "Slot " + it + " - " } ?: "") + dateFormat.format(Date(save.lastModified)))
+                    } },
+                    trailingContent = { TextButton(enabled = !busy, onClick = { onEdit(save) }) { Text("Éditer") } }
+                )
             }
         }
     }
@@ -107,31 +117,60 @@ internal fun SaveBackupsSheet(game: GameEntity, vm: AstraViewModel, onDismiss: (
     val backups by remember(game.id, vm) { vm.tools.observeSaveBackups(game.id) }.collectAsStateWithLifecycle(emptyList())
     val dateFormat = remember { DateFormat.getDateTimeInstance(DateFormat.MEDIUM, DateFormat.SHORT) }
     val busy by vm.tools.toolsBusy.collectAsStateWithLifecycle()
-    var restore by remember { mutableStateOf<SaveBackupEntity?>(null) }
-    var delete by remember { mutableStateOf<SaveBackupEntity?>(null) }
+    var restore by remember(game.id) { mutableStateOf<String?>(null) }
+    var delete by remember(game.id) { mutableStateOf<String?>(null) }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 16.dp)) {
             item { Text("Sauvegardes de sécurité", Modifier.padding(20.dp), style = MaterialTheme.typography.titleLarge) }
             if (backups.isEmpty()) item { Text("Aucune sauvegarde de sécurité.", Modifier.padding(horizontal = 20.dp)) }
-            items(backups, key = { it.id }) { backup ->
-                ListItem(headlineContent = { MaterialText(backup.sourceName) }, supportingContent = { MaterialText(dateFormat.format(Date(backup.createdAt))) }, trailingContent = { Row { IconButton(enabled = !busy, onClick = { restore = backup }) { Icon(Icons.Default.Restore, AppLocalizer.text("Restaurer")) }; IconButton(enabled = !busy, onClick = { delete = backup }) { Icon(Icons.Default.Delete, AppLocalizer.text("Supprimer")) } } })
+            items(backups, key = { it.backup.id }) { details ->
+                val backup = details.backup
+                ListItem(
+                    modifier = Modifier.testTag("backup-${backup.id}"),
+                    headlineContent = { MaterialText(backup.sourceName) },
+                    supportingContent = { Column {
+                        SaveOriginLine(details.provenance)
+                        MaterialText(dateFormat.format(Date(backup.createdAt)))
+                    } },
+                    trailingContent = { Row {
+                        IconButton(enabled = !busy, onClick = { restore = backup.id }) { Icon(Icons.Default.Restore, AppLocalizer.text("Restaurer")) }
+                        IconButton(enabled = !busy, onClick = { delete = backup.id }) { Icon(Icons.Default.Delete, AppLocalizer.text("Supprimer")) }
+                    } }
+                )
             }
         }
     }
-    restore?.let { backup -> AlertDialog(
+    backups.firstOrNull { it.backup.id == restore }?.let { details ->
+        val backup = details.backup
+        AlertDialog(
         onDismissRequest = { restore = null },
         title = { Text("Restaurer cette sauvegarde ?") },
-        text = { Column { MaterialText(backup.sourceName); Text("Fermez le jeu. La sauvegarde actuelle sera remplacée ; une copie de sécurité sera créée avant la restauration.") } },
+        text = { Column { MaterialText(backup.sourceName); SaveOriginLine(details.provenance); Text("Fermez le jeu. La sauvegarde actuelle sera remplacée ; une copie de sécurité sera créée avant la restauration.") } },
         confirmButton = { TextButton(onClick = { restore = null; vm.tools.restoreSaveBackup(backup) }) { Text("Restaurer") } },
         dismissButton = { TextButton(onClick = { restore = null }) { Text("Annuler") } }
     ) }
-    delete?.let { backup -> AlertDialog(
+    backups.firstOrNull { it.backup.id == delete }?.let { details ->
+        val backup = details.backup
+        AlertDialog(
         onDismissRequest = { delete = null },
         title = { Text("Supprimer cette copie de sécurité ?") },
-        text = { MaterialText(backup.sourceName) },
+        text = { Column { MaterialText(backup.sourceName); SaveOriginLine(details.provenance) } },
         confirmButton = { TextButton(onClick = { delete = null; vm.tools.deleteSaveBackup(backup) }) { Text("Supprimer") } },
         dismissButton = { TextButton(onClick = { delete = null }) { Text("Annuler") } }
     ) }
+}
+
+@Composable
+private fun SaveOriginLine(provenance: SaveProvenance?) {
+    if (provenance == null) return
+    val label = when (provenance.storage) {
+        SaveStorage.MKXPZ_PRIVATE -> if (provenance.activeForCurrentLauncher == true)
+            "Copie Astra active (MKXP-Z)" else "Copie Astra · inactive pour ce lanceur"
+        SaveStorage.SOURCE -> if (provenance.activeForCurrentLauncher == false)
+            "Dossier source · non utilisé par MKXP-Z" else "Dossier source · usage selon le lanceur externe"
+    }
+    Text(label, style = MaterialTheme.typography.bodyMedium,
+        fontWeight = if (provenance.activeForCurrentLauncher == true) FontWeight.SemiBold else FontWeight.Normal)
 }
 
 private val saveDraftsSaver = mapSaver<SnapshotStateMap<String, String>>(
@@ -143,6 +182,7 @@ private val saveDraftsSaver = mapSaver<SnapshotStateMap<String, String>>(
 @Composable
 internal fun SaveEditorDialog(game: GameEntity, save: GameSave, vm: AstraViewModel, onDismiss: () -> Unit) {
     val entries by vm.tools.saveEntries.collectAsStateWithLifecycle()
+    val provenance by vm.tools.saveProvenance.collectAsStateWithLifecycle()
     val busy by vm.tools.toolsBusy.collectAsStateWithLifecycle()
     val error by vm.tools.toolsError.collectAsStateWithLifecycle()
     val saveRevision by vm.tools.saveRevision.collectAsStateWithLifecycle()
@@ -154,7 +194,7 @@ internal fun SaveEditorDialog(game: GameEntity, save: GameSave, vm: AstraViewMod
     var confirmDiscard by rememberSaveable(save.uri) { mutableStateOf(false) }
     val uiState by vm.uiState.collectAsStateWithLifecycle()
     var favorites by remember(uiState.settings.saveEditorFavorites) { mutableStateOf(uiState.settings.saveEditorFavorites.split("|").filter { it.isNotBlank() }.toSet()) }
-    LaunchedEffect(save.uri) { vm.tools.loadSaveEntries(save, openedRevision) }
+    LaunchedEffect(game.id, save.uri) { vm.tools.loadSaveEntries(game.id, save, openedRevision) }
     LaunchedEffect(saveRevision) {
         val revision = vm.tools.saveRevision.value
         if (openedRevision == null && revision?.first == save.uri) openedRevision = revision.second
@@ -174,10 +214,15 @@ internal fun SaveEditorDialog(game: GameEntity, save: GameSave, vm: AstraViewMod
         onDismissRequest = requestClose,
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
         Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
         ScrollingColumn(Modifier.fillMaxHeight().widthIn(max = 920.dp).fillMaxWidth().align(Alignment.Center).padding(horizontal = 16.dp), topBar = { CompactHeader("Éditer", save.name, onBack = if (busy) null else requestClose, localizeSubtitle = false) }) {
             if (busy) LinearProgressIndicator(Modifier.fillMaxWidth())
+            SaveOriginLine(provenance)
+            if (provenance?.storage == SaveStorage.SOURCE && provenance?.activeForCurrentLauncher == false) {
+                Text("Cette édition concerne le dossier source. La partie MKXP-Z conserve sa copie.", style = MaterialTheme.typography.bodySmall)
+            }
             Text("Fermez le jeu avant d’éditer une sauvegarde.", style = MaterialTheme.typography.bodySmall)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             validation?.let { Text(it, color = MaterialTheme.colorScheme.error) }

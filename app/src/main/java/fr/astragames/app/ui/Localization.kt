@@ -53,6 +53,10 @@ object AppLocalizer {
     ) = Translation(source, english, spanish, russian, german, chinese, japanese)
 
     private val catalog = listOf(
+        t("Impossible d’ouvrir ce lien. Vérifiez le lien et qu’un navigateur est disponible.", "Could not open this link. Check the link and make sure a browser is available.", "No se pudo abrir este enlace. Comprueba el enlace y que haya un navegador disponible.", "Не удалось открыть ссылку. Проверьте ссылку и доступность браузера.", "Dieser Link konnte nicht geöffnet werden. Prüfe den Link und ob ein Browser verfügbar ist.", "无法打开此链接。请检查链接并确认有可用的浏览器。", "このリンクを開けません。リンクとブラウザが利用可能か確認してください。"),
+        t("Monter", "Move up", "Subir", "Переместить вверх", "Nach oben", "上移", "上へ移動"),
+        t("Descendre", "Move down", "Bajar", "Переместить вниз", "Nach unten", "下移", "下へ移動"),
+        t("Renommer", "Rename", "Renombrar", "Переименовать", "Umbenennen", "重命名", "名前を変更"),
         t("Le lancement Wolf précédent a été interrompu. Voici le rapport conservé.", "The previous Wolf launch was interrupted. Here is the saved report.", "El inicio anterior de Wolf se interrumpió. Aquí está el informe guardado.", "Предыдущий запуск Wolf был прерван. Ниже сохранённый отчёт.", "Der letzte Wolf-Start wurde unterbrochen. Hier ist der gespeicherte Bericht.", "上次 Wolf 启动已中断。以下是保存的报告。", "前回の Wolf 起動が中断されました。保存されたレポートを表示します。"),
         t("Diagnostic Wolf RPG", "Wolf RPG diagnostics", "Diagnóstico de Wolf RPG", "Диагностика Wolf RPG", "Wolf-RPG-Diagnose", "Wolf RPG 诊断", "Wolf RPG 診断"),
         t("Mode debug Wolf RPG", "Wolf RPG debug mode", "Modo de depuración de Wolf RPG", "Режим отладки Wolf RPG", "Wolf-RPG-Debugmodus", "Wolf RPG 调试模式", "Wolf RPG デバッグモード"),

@@ -17,7 +17,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.compositeOver
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.navigation.compose.*
@@ -40,7 +39,7 @@ internal fun OnboardingScreen(
     var showLogin by remember { mutableStateOf(false) }
     val hasSource = state.sources.isNotEmpty()
     val hasTags = state.tags.isNotEmpty()
-    val uriHandler = LocalUriHandler.current
+    val uriHandler = rememberExternalUriHandler()
     Box(
         Modifier.fillMaxSize()
             .background(Brush.linearGradient(listOf(

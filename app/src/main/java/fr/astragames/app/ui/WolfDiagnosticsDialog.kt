@@ -43,6 +43,7 @@ internal fun WolfDiagnosticsDialog(initialReport: File? = null, recovered: Boole
         }
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState())) {
                 CompactHeader("Diagnostic Wolf RPG", onBack = onDismiss)

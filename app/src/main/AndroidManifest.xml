@@ -6,6 +6,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
     <uses-permission android:name="android.permission.USE_BIOMETRIC" />
+    <uses-permission android:name="android.permission.VIBRATE" />
     <!-- Optional native file access for the selected Windows game's directory. -->
     <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
 
@@ -83,6 +84,18 @@
         <activity
             android:name="com.canhub.cropper.CropImageActivity"
             android:theme="@style/Theme.AstraGames.Cropper" />
+        <activity
+            android:name=".mkxpz.MkxpzUnlockActivity"
+            android:exported="false"
+            android:windowSoftInputMode="adjustResize" />
+        <activity
+            android:name=".mkxpz.MkxpzActivity"
+            android:theme="@style/Theme.AstraGames.Mkxpz"
+            android:exported="false"
+            android:process=":mkxpz"
+            android:launchMode="singleTask"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="orientation|screenSize|keyboard|keyboardHidden|screenLayout|smallestScreenSize|density|uiMode" />
         <activity
             android:name=".windows.WolfRuntimeActivity"
             android:exported="false"

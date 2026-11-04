@@ -78,6 +78,8 @@ class RedesignUiTest {
 
     private fun capture(name: String) {
         compose.waitForIdle()
+        // WindowManager's dialog fade is independent of the Compose test clock.
+        android.os.SystemClock.sleep(400)
         val output = File(app.cacheDir, "ui-review").apply { mkdirs() }.resolve("redesign-$name.png")
         output.outputStream().use {
             val bitmap = if (compose.onAllNodes(isRoot()).fetchSemanticsNodes().size > 1)
@@ -108,7 +110,10 @@ class RedesignUiTest {
         compose.onNodeWithTag("home-page").performScrollToNode(hasText("Historique"))
         compose.onNodeWithTag("home-page").performTouchInput { swipeUp() }
         compose.onNodeWithText("Historique").performClick()
-        compose.onNodeWithText("Aucune session enregistree").assertExists()
+        // Other isolated runtime tests can leave play sessions on the dedicated AVD.
+        // The navigation contract is the history page and its return action, not an empty database.
+        compose.onNodeWithText("Historique").assertIsDisplayed()
+        compose.onNodeWithText("Effacer").assertExists()
         compose.onNodeWithContentDescription("Retour").performClick()
         compose.onNodeWithTag("home-page").performScrollToNode(hasText("Mises à jour"))
         compose.onNodeWithTag("home-page").performTouchInput { swipeUp() }

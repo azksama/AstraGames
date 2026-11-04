@@ -52,18 +52,23 @@ AST1 conserve son encodage historique `AST1 || IV[12] || AES-GCM(ZIP)[N + 16]`, 
 
 Les ZIP legacy reconnus commencent par une signature ZIP locale (`50 4B 03 04`) ou de fin de répertoire vide (`50 4B 05 06`). Ils passent ensuite dans les mêmes validations d'extraction, schéma SQLite et références de fichiers. Ils n'ont pas d'authentification cryptographique, comme auparavant.
 
-## Preuves locales et limites
+## Tests et portée
 
-`BackupEnvelopeTest` utilise réellement AES-GCM du JDK avec une clé de test : contenu vide, frontières exactes et partielles de bloc, lecteur indépendant du format/AAD, compatibilité AST1 et ZIP, altérations de header/identité/IV/corps/tag, troncatures y compris après un bloc entier, permutations/répétitions/blocs d'autres archives, données ajoutées après le dernier tag, tailles invalides, lectures partielles/non progressives et flux généré de plus de 3 Mio traité via un fichier avec comparaison SHA-256. Des tests vérifient aussi la comparaison après export (contenu, taille, hash, format), l'erreur d'authentification compréhensible et la conservation des erreurs d'entrée/sortie. `BackupArchiveTest` vérifie les quotas symétriques à l'écriture/lecture, les contenus très compressibles et les noms invalides/alias.
+`BackupEnvelopeTest` vérifie le format et les données authentifiées avec AES-GCM
+sur le JDK : frontières des blocs, compatibilité AST1/ZIP, altérations, troncatures,
+permutations, données ajoutées et lecture par flux. `BackupArchiveTest` vérifie
+les quotas à l’écriture et à la lecture, ainsi que les noms invalides ou alias.
+`BackupRollbackTest` exerce l’ordre inverse de récupération et la conservation
+des originaux lorsque certaines copies ou suppressions échouent.
 
-Les cinq tests `BackupRollbackTest` utilisent le filesystem local et des pannes injectées : ordre inverse et préservation des originaux, erreur de copie sans abandon des autres fichiers, suppression refusée, copie corrompue silencieusement et original absent, fichier nouveau déjà supprimé.
+Les tests Android `BackupAndroidTest` utilisent le provider Android Keystore,
+une base Room et le fournisseur de documents de test. Les tests de stockage
+complètent cette couverture avec des URI SAF, des sauvegardes et des mods.
+Les scénarios d’intégrité des archives contrôlent aussi les références de fichiers,
+leur propriétaire et les refus avant mutation. Cette description des tests ne
+signifie pas qu’ils ont tous été exécutés sur chaque APK ou chaque fournisseur.
 
-Dernier batch global vérifié 1.10.0 du 5 octobre 2026 : les onze tests `BackupEnvelopeTest`, cinq `BackupRollbackTest` et huit `BackupArchiveTest` passent dans le batch de **200 tests JVM/39 suites**, sans échec, erreur ni test ignoré. Les builds debug/release/R8 et APK de tests réussissent ; lint donne **zéro erreur et 45 avertissements**. Traces : `build/audit-verification-delivery-final-1.10.0.log` et `build/audit-unit-final-1.10.0.log`.
-
-La suite native portrait finale a réussi **61 tests Android sur 61**, dans `build/emulator-validation/instrumentation-confirmed-portrait.log`, avec le vrai modèle ML Kit activé. Les matrices paysage et portrait avec police à 150 % réussissent chacune **32 tests UI sur 32**, dans `build/emulator-validation/instrumentation-confirmed-landscape-large-text.log` et `build/emulator-validation/instrumentation-confirmed-portrait-large-text.log`. Les consignes courantes interdisent explicitement ARTEMIS : la validation utilise uniquement Android Emulator, le SDK et ADB.
-
-Les **3 tests `BackupAndroidTest`** exécutent réellement AES-GCM avec le provider Android Keystore. Ils vérifient plusieurs blocs et le conteneur vide, le refus de modifications du header/tag, ainsi que `BackupManager` sur une base Room réelle et des flux `content://` du fournisseur de documents de test. Le scénario complet exporte AST2 avec une ressource dépassant un bloc, rejette une archive corrompue avant toute mutation, puis restaure catalogue, références de sauvegardes, contenu des copies et ressource exacte. Les clés de test temporaires ne remplacent ni ne suppriment `astra_master_key`.
-
-Les **6 tests `StorageWorkflowsTest`** ajoutent des parcours natifs de stockage, dont édition/restauration SAF de sauvegarde, refus d’un éditeur obsolète, documents imbriqués avec mods et restauration du catalogue incluant les backups. Leur réussite confirme ces scénarios sur fixtures ; elle ne démontre pas l’interopérabilité avec tous les fournisseurs SAF.
-
-Le rapport global détaille les autres résultats. Aucun profil mémoire mesuré, performance matérielle, téléphone physique, fournisseur distant, jeu réel ou récupération après mort du processus n’est revendiqué. Les résultats finaux et les détails des trois matrices sont centralisés dans [ANDROID_VALIDATION_2026-10-05.md](ANDROID_VALIDATION_2026-10-05.md).
+Le [bilan public beta.24](VALIDATION_1.12.0-beta.24.md) identifie le binaire testé,
+les suites exécutées et les limites restantes. La couverture sur fixtures ne
+prouve pas la compatibilité avec tous les fournisseurs SAF, une récupération
+après toute interruption possible, ni une borne de mémoire mesurée sur téléphone.

@@ -80,6 +80,9 @@ class JoiPlayLauncher : GameLauncher {
 
     suspend fun launch(context: Context, game: GameEntity, profile: LaunchProfileEntity?): LaunchResult {
         if (LaunchProfileResolver.launcherType(game, profile) == "EXTERNAL") return launchExternal(context, game, profile)
+        if (LaunchProfileResolver.launcherType(game, profile) == fr.astragames.app.mkxpz.MkxpzRuntime.LAUNCHER) {
+            return fr.astragames.app.mkxpz.MkxpzRuntime.launch(context, game, profile)
+        }
         if (LaunchProfileResolver.engine(game, profile) == GameEngine.WOLF_RPG.name) {
             val executable = LaunchProfileResolver.executable(game, profile) ?: "Game.exe"
             val intent = fr.astragames.app.windows.WolfRuntimeActivity.intent(context, game.id, game.documentUri, executable, game.title)

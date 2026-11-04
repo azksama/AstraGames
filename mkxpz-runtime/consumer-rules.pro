@@ -1,0 +1,3 @@
+-keep class org.libsdl.app.** { *; }
+-keepclasseswithmembers class * { native <methods>; }
+-keepclassmembers class fr.astragames.app.mkxpz.MkxpzActivity { public static java.lang.String GAME_PATH; }

@@ -33,7 +33,11 @@ internal class WolfSafMount(private val context: Context, private val tree: Uri,
         val modified: Long, val flags: Int)
     private data class DirectoryIndex(val loaded: Long, val entries: List<Entry>)
     private val resolver = context.contentResolver
-    private val rootUri = DocumentsContract.buildDocumentUriUsingTree(tree, DocumentsContract.getTreeDocumentId(tree))
+    // A scanned game can be a document below the granted tree. Preserve that selected
+    // document while retaining the original tree grant; never widen the game to its parent.
+    private val rootUri = DocumentsContract.buildDocumentUriUsingTree(tree,
+        if (DocumentsContract.isDocumentUri(context, tree)) DocumentsContract.getDocumentId(tree)
+        else DocumentsContract.getTreeDocumentId(tree))
     private val index = LinkedHashMap<String, DirectoryIndex>(16, .75f, true)
     private var indexedEntries = 0
     private val writes = File(stateRoot, "writes").apply { mkdirs() }

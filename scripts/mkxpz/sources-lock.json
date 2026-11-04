@@ -1,0 +1,108 @@
+{
+  "upstream": [
+    {
+      "name": "upstream",
+      "url": "https://github.com/BookerRues9/mkxp-z-android-reworked.git",
+      "revision": "b668e08cb58edf661d56fd4d396036ac31cd8332"
+    },
+    {
+      "name": "SDL2",
+      "url": "https://github.com/libsdl-org/SDL",
+      "revision": "adf31f6ec0be0f9ba562889398f71172c7941023"
+    },
+    {
+      "name": "SDL2_image",
+      "url": "https://github.com/libsdl-org/SDL_image",
+      "revision": "d3c6d5963dbe438bcae0e2b6f3d7cfea23d02829",
+      "submodules": [
+        "52d0c1f44eff76c3773636a9805f69ec26633037 external/dav1d (1.0.0-1-g52d0c1f4)",
+        " bc27d050625f126dcba73ae5b731272de1a89dc1 external/jpeg (bc27d05)",
+        " a3e9315474deb60e39b6e3aad88798eee26dadea external/libavif (v0.10.1-1-ga3e93154)",
+        " d456eedef27d3587191f35f918c3ca2821c5a6c4 external/libjxl (v0.6-base-22-gd456eede)",
+        " 2ae7ff838d1a7ba9726ef0f9b3e42d9eadc5d252 external/libjxl/third_party/brotli (v1.0.9-1-g2ae7ff8)",
+        " ca7cb332011ec37a8436487f210f396b84bd8273 external/libjxl/third_party/brotli/research/esaxx (heads/master)",
+        " 5f60d6f026c30fb4ac296f696b3c8b0eb71bd428 external/libjxl/third_party/brotli/research/libdivsufsort (2.0.1-14-g5f60d6f)",
+        " 0ea2d8f8fa1601abb9ce713b7414e7b86f90bc61 external/libjxl/third_party/googletest (release-1.8.0-1709-g0ea2d8f8)",
+        " a2104044ca0717cc571e4a7570b6e8900d4f8c13 external/libjxl/third_party/highway (0.15.0-1-ga2104044)",
+        " 65c63bf549d78253c14b30b3d62cb668bbbe612c external/libjxl/third_party/lcms (lcms2.9rc1-45-g65c63bf)",
+        " 48e5364ef48ec2408f44c727657ac1b6703185f8 external/libjxl/third_party/lodepng (48e5364)",
+        " 868ab558fad70fcbe8863ba4e85179eeb81cc840 external/libjxl/third_party/sjpeg (868ab55)",
+        " 64374756e03700d649f897dbd98c95e78c30c7da external/libjxl/third_party/skcms (6437475)",
+        " 999173059e2651fab2a0102eeba18748c4bd9827 external/libpng (libpng-1.6.31-master-signed-1076-g999173059)",
+        " dad25b3f71cfd7f4fcb089a5881a31e65ae92c0a external/libtiff (v4.2.0-10-gdad25b3f)",
+        " 12cf7b315fb7a9df56fa6b8ee30e36312659d63c external/libwebp (v1.0.3-11-g12cf7b31)",
+        " aeb146673f65fe6755d9aae05579c944d6572d20 external/zlib (v1.2.12-2-gaeb1466)"
+      ]
+    },
+    {
+      "name": "SDL2_sound",
+      "url": "https://github.com/icculus/SDL_sound",
+      "revision": "506b9f0cb48ea3b4fce12fc7cb5fc06f6dee6f66"
+    },
+    {
+      "name": "SDL2_ttf",
+      "url": "https://github.com/libsdl-org/SDL_ttf",
+      "revision": "89d1692fd8fe91a679bb943d377bfbd709b52c23",
+      "submodules": [
+        "6fc77cee03e078e97afcee0c0e06a2d3274b9a29 external/freetype (VER-2-12-1-9-g6fc77cee0)",
+        " d142e646e263c89f93663e027c2f0d03739ab42d external/freetype/subprojects/dlg (v0.2.2-38-gd142e64)",
+        " 43931e3e596c04044861770b831c8f9452e2d3b0 external/harfbuzz (2.9.1-9-g43931e3e5)"
+      ]
+    },
+    {
+      "name": "libogg",
+      "url": "https://github.com/xiph/ogg",
+      "revision": "e1774cd77f471443541596e09078e78fdc342e4f"
+    },
+    {
+      "name": "libvorbis",
+      "url": "https://github.com/xiph/vorbis",
+      "revision": "0657aee69dec8508a0011f47f3b69d7538e9d262"
+    },
+    {
+      "name": "openal",
+      "url": "https://github.com/kcat/openal-soft",
+      "revision": "70c14cd560db819f180073052f4c2bfae5cf3c31"
+    },
+    {
+      "name": "openssl",
+      "url": "https://github.com/openssl/openssl",
+      "revision": "830bf8e1e4749ad65c51b6a1d0d769ae689404ba",
+      "submodules": [
+        "-2070f8ad9151dc8f3a73bffaa146b5e6937a583f boringssl",
+        "-890ca2f401924cdcb88f493950b04700bbe52db3 krb5",
+        "-fa84d185c0fefa7d612759e02a26def2f948fe34 pyca-cryptography",
+        "-2196000605e45d91097147c9c71f26b72af58003 wycheproof"
+      ]
+    },
+    {
+      "name": "physfs",
+      "url": "https://github.com/icculus/physfs",
+      "revision": "eb3383b532c5f74bfeb42ec306ba2cf80eed988c"
+    },
+    {
+      "name": "pixman",
+      "url": "https://gitlab.freedesktop.org/pixman/pixman.git/",
+      "revision": "37216a32839f59e8dcaa4c3951b3fcfc3f07852c"
+    },
+    {
+      "name": "ruby",
+      "url": "https://github.com/mkxp-z/ruby",
+      "revision": "a2d396ea42e1ec778bc516489afe7fde6f0cef5d"
+    },
+    {
+      "name": "uchardet",
+      "url": "https://gitlab.freedesktop.org/uchardet/uchardet.git/",
+      "revision": "ae6302a016088ad07177f86d417b20010053632b"
+    }
+  ],
+  "ndk": "r29 (29.0.14206865)",
+  "ndk_linux_sha1": "87e2bb7e9be5d6a1c6cdf5ec40dd4e0c6d07c30b",
+  "elf_max_page_size": 16384,
+  "elf_common_page_size": 16384,
+  "tarballs": {
+    "libtheora": "https://ftp.osuosl.org/pub/xiph/releases/theora/libtheora-1.1.1.tar.gz",
+    "libiconv": "https://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.17.tar.gz"
+  },
+  "embedded_font_sha256": "e5b0af421ea2bfbc1ac8d251d647268087ae82786234c57f757d1f0b90fa8b49"
+}

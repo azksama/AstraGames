@@ -1,8 +1,17 @@
 # Astra
 
-Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay ou, pour Wolf RPG, avec Winlator, Wine et Box64 intégrés. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
+Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay, avec MKXP-Z intégré pour RPG Maker XP/VX/VX Ace, ou avec Winlator, Wine et Box64 intégrés pour Wolf RPG. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
 
-Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été retirés du produit. Les anciens choix Automatique/Natif utilisent désormais Winlator. Les sauvegardes natives déjà créées restent conservées et exportables depuis les outils du jeu ; elles ne sont pas converties en sauvegardes Windows. Les documents de [recherche REA historique](docs/wolf-native/README.md) sont conservés comme archives.
+La préversion **1.12.0-beta.24 (code 52)** réunit MKXP-Z intégré, les corrections
+UI/UX et de stockage, ainsi que les protections de restauration Wolf et d’intégrité
+des archives de mods. Les [notes de version](docs/RELEASE_1.12.0-beta.24.md)
+présentent les changements ; le [bilan de validation](docs/VALIDATION_1.12.0-beta.24.md)
+identifie l’APK concerné, les contrôles effectués et leurs limites.
+
+Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été retirés.
+Les anciens choix Automatique/Natif utilisent Winlator. Les sauvegardes natives déjà
+créées restent conservées et exportables depuis les outils du jeu ; elles ne sont pas
+converties en sauvegardes Windows.
 
 ## Fonctions incluses
 
@@ -13,7 +22,8 @@ Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été 
 - sources multiples, activation, suppression, scan individuel ou global ;
 - scan ciblé depuis **Paramètres → Sources et scan → Sous-dossier…** : navigation dans une source déjà autorisée, puis analyse du dossier choisi avec les options de récursivité de la source. Ce scan ajoute ou retrouve les jeux sans marquer les autres absents ; le scan complet reste nécessaire pour vérifier les suppressions ;
 - scan récursif hors thread principal (garde-fous de 128 niveaux et 100 000 dossiers), avec arrêt et remontée dès qu'un dossier contient un exécutable, et écran de progression indiquant source, chemin, profondeur, dossiers et jeux ;
-- détection RPG Maker MV/MZ, Ren'Py, HTML5, Tyrano, Construct, Twine, Electron, Wolf RPG et Godot 3/4 (packs PCK, projets et packs intégrés aux exécutables) ;
+- détection RPG Maker XP/VX/VX Ace/MV/MZ, Ren'Py, HTML5, Tyrano, Construct, Twine, Electron, Wolf RPG et Godot 3/4 (packs PCK, projets et packs intégrés aux exécutables) ;
+- exécution RGSS 1/2/3 avec MKXP-Z intégré, commandes tactiles et accessibles, copie de travail privée et provenance source/privée dans les outils de sauvegarde ; qualification par fixtures, sans garantie pour tous les jeux ;
 - moteur Wolf intégré : Wine, Box64 sur ARM64, affichage et commandes dans Astra, accès SAF à la demande ou copie de secours et synchronisation prudente des sauvegardes ;
 - Wolf RPG exécuté uniquement avec Winlator ; anciennes sauvegardes natives conservées en lecture seule et exportables ;
 - fingerprint, reconnaissance de déplacement, doublons et jeux manquants ;
@@ -33,7 +43,7 @@ Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été 
 - moteurs Godot 3 et Godot 4 disponibles dans les profils, filtres et collections ; lancement via le plugin JoiPlay de la même génération, avec association des plugins installés aux entrées du catalogue sans doublons ;
 - lancement Godot depuis un dossier contenant un seul pack `.pck` séparé ; les projets sources et les packs intégrés aux exécutables sont identifiés, avec un diagnostic demandant l’export ou l’extraction du pack. La compatibilité des jeux reste celle des plugins JoiPlay installés ;
 - suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
-- sauvegarde et restauration chiffrée du catalogue, des profils, des jaquettes et des journaux de sauvegardes/mods, avec raccourci vers le dossier choisi ;
+- sauvegarde et restauration chiffrée du catalogue, des profils, des jaquettes, des journaux de sauvegardes/mods et des sauvegardes privées prises en charge pour MKXP-Z/Wolf, avec contrôles de propriété ; la clé reste liée à l’installation Android ;
 - choix automatique et manuel de jaquettes dans le moteur sélectionné (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), sans filtre de contenu ajouté par Astra, sélection de l’image affichée, ouverture navigateur, choix local et recadrage libre ;
 - enrichissement silencieux des nouveaux jeux via VNDB (sans importer ses tags), puis recherche de la page de métadonnées avec le moteur sélectionné et URL canonique conservée dans la fiche ;
 - choix entre plusieurs sources de métadonnées, avec leurs liens conservés séparément ;
@@ -41,7 +51,7 @@ Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été 
 - assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
 - ajout textuel de tags par virgules ou crochets pendant la configuration et l’édition, avec réutilisation automatique des tags existants ;
-- refonte UI/UX inspirée de `design_astra.pen` : polices Geist/Inter embarquées, affiches panoramiques, listes compactes et réglages en lignes ;
+- interface Astra : polices Geist/Inter embarquées, affiches panoramiques, listes compactes et réglages en lignes ;
 - palette Astra par défaut, personnalisable avec le curseur de teinte dans Apparence : fond `#09090f`, cartes et menu `#191e29`, bordures `#2b3242`, actions `#302147`, textes secondaires `#c9b7ff` et titres blancs ;
 - flou des jaquettes désactivable, automatique au démarrage ou manuel, avec bascule rapide depuis Jeux ;
 - navigation flottante élargie à quatre entrées (Accueil, Jeux, Collections, Paramètres), sans bande opaque derrière la pilule et maintenue en place sous le clavier Android ;
@@ -64,6 +74,63 @@ Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été 
 - scan au lancement et worker périodique prêt à être planifié ;
 - abstraction `CoverProvider` et `MToolLauncher` pour les évolutions.
 
+## Jouer à RPG Maker XP, VX et VX Ace avec MKXP-Z
+
+Dans la fiche du jeu, ouvrir **Compatibilité → Profil de lancement**, choisir
+**Astra · MKXP-Z (prototype)**, enregistrer puis toucher **Jouer**. JoiPlay reste
+disponible comme autre choix de lancement.
+
+Le premier lancement crée une copie privée du jeu : prévoir l’espace nécessaire.
+MKXP-Z utilise ensuite cette copie pour jouer et sauvegarder. Les outils distinguent
+la **Copie Astra active (MKXP-Z)** du **Dossier source** ; éditer une sauvegarde
+source ne modifie pas celle utilisée par MKXP-Z. Il n’y a pas de synchronisation
+automatique ni de mise à jour automatique de cette copie depuis le dossier source.
+Enregistrer la partie dans le jeu avant de quitter.
+
+Ce prototype a été exercé avec des jeux de test RGSS 1/2/3. Aucun RTP n’est fourni ;
+les scripts ou extensions Windows, Win32API, MIDI, vidéos et archives chiffrées
+ne sont pas qualifiés. La compatibilité avec tous les jeux commerciaux n’est pas
+établie. Les sources natives sont référencées dans
+[sources-lock.json](scripts/mkxpz/sources-lock.json), avec les
+[notices MKXP-Z](mkxpz-runtime/src/main/assets/licenses/mkxpz/).
+
+## Jouer à Wolf RPG dans Astra
+
+Ajouter le dossier du jeu Windows décompressé puis lancer son scan. Astra détecte
+`Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Dans la fiche, **Jouer**
+utilise le profil **Astra · Wolf intégré** ; un profil externe explicitement choisi
+reste externe. Le premier lancement télécharge et vérifie les composants Wine et
+prépare un préfixe Windows propre au jeu.
+
+**Outils → Réglages Wolf RPG → Fichiers du jeu** choisit le dossier d’origine
+lorsqu’il est accessible, sinon un montage SAF à la demande pour les fournisseurs
+compatibles, puis une copie privée de secours. L’accès à tous les fichiers est
+facultatif sur Android 11+. Une copie privée nécessite de l’espace supplémentaire.
+Les écritures SAF passent par un journal avant publication vérifiée.
+
+Les commandes à l’écran, le clavier et les manettes permettent de jouer.
+**Menu → Modifier les touches** règle touches, combinaisons, séquences, positions,
+taille et opacité ; les presets sont importables et exportables en JSON.
+**Menu → Réglages du jeu** propose les profils, la définition, le cadrage et les
+options tactiles. **Menu → Cheats et variables** ouvre le [guide des valeurs](docs/wolf-cheats.md).
+
+Enregistrer dans le jeu avant **Quitter**. Une fermeture normale synchronise les
+fichiers modifiés lorsque la source correspond encore à sa version de référence.
+Un conflit conserve la copie privée et propose son export ZIP. **Outils → Dossier
+des sauvegardes** permet également d’exporter les données utilisateur du préfixe
+Windows. Les archives du catalogue ne contiennent pas les copies complètes des
+jeux ni leurs préfixes : conserver séparément ces dossiers.
+
+Pour une mise à jour externe du jeu ou un mod installé par un autre outil, utiliser
+**Outils → Actualiser les fichiers du jeu**, puis relancer. Les mods gérés dans
+Astra déclenchent cette actualisation. **Diagnostic du lancement**, puis
+**Paramètres → Diagnostic Wolf RPG**, donnent accès aux étapes et erreurs du moteur.
+Le partage d’un diagnostic est volontaire et peut inclure des noms et chemins.
+
+Le [guide Wolf](docs/wolf-windows-runtime.md) détaille les commandes, les sauvegardes,
+les diagnostics et les sources ; le [guide SAF](docs/wolf-saf-on-demand.md) décrit
+les garanties et limites des fournisseurs de documents.
+
 ## Jaquettes et métadonnées
 
 Les recherches d’images et de métadonnées utilisent le moteur choisi dans les paramètres (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia). Aucun paramètre de filtrage de contenu n’est ajouté par Astra. Les résultats d’images sont recherchés automatiquement à l’ouverture, et un bouton ouvre la même recherche dans le navigateur système. L’utilisateur peut aussi afficher les résultats dans le WebView intégré. Les liens de métadonnées sont validés et normalisés en HTTPS avant leur utilisation. VNDB complète silencieusement jaquette, description et développeur lors de l’ajout, sans importer ses tags ; le bouton des paramètres relance cet enrichissement sur les fiches incomplètes.
@@ -78,7 +145,8 @@ data/repository orchestration des données
 data/saves   codecs, découverte SAF, écriture vérifiée et backups
 data/mods    import ZIP, installation et restauration journalisées
 data/backup  archives chiffrées du catalogue
-launcher/    JoiPlay et futur MTool
+launcher/    JoiPlay, profils et sélection du moteur effectif
+mkxpz/       exécution RGSS, copie privée, verrou et pont SDL
 windows/     moteur intégré Winlator / Wine / Box64 et sauvegardes Windows
 translation/ ML Kit, lecteurs de textes par moteur, cache et restauration journalisée
 updates/     releases GitHub, téléchargement vérifié et installation Android
@@ -89,9 +157,16 @@ ui/          navigation, écrans par domaine, état et contrôleur des outils
 
 L'injection est volontairement explicite via `AppContainer` : elle garde le démarrage lisible et permet de remplacer les dépendances dans les tests sans framework supplémentaire.
 
+Les modules `windows-runtime` et `mkxpz-runtime` fournissent les ponts natifs,
+bibliothèques et notices ; `baselineprofile` contient le générateur de profil.
+
 ## Compiler
 
-Prérequis : JDK 17, Android SDK 36 et Build Tools 36.
+Prérequis : JDK 17 ou supérieur compatible avec Gradle et Android SDK 36.
+Le NDK 29.0.14206865 et CMake 3.22.1 sont fixés dans les fichiers Gradle ;
+AGP sélectionne ses Build Tools. Les contrôles de signature et d'alignement de
+cette préversion utilisent les outils SDK 36.1.0. Voir les
+[instructions de construction](docs/BUILD_1.12.0-beta.24.md).
 
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
@@ -107,7 +182,25 @@ Les tests locaux couvrent la normalisation, les signatures moteur imbriquées, l
 .\gradlew.bat :app:testDebugUnitTest
 ```
 
-Les tests instrumentés vérifient Room/FTS, les archives du catalogue, les sauvegardes et les mods, sur fichiers locaux et URI SAF imbriquées :
+Les tests Wolf utilisant le corpus officiel externe sont optionnels dans un clone simple.
+Pour les exécuter depuis un worktree, définir `ASTRA_WOLF_CORPUS` sur le dossier
+`build/wolf-research` du corpus existant, utilisé uniquement en lecture.
+L’exemple suppose que ce corpus existe dans le clone courant ; depuis un autre
+worktree, adapter le chemin vers le même corpus :
+
+```powershell
+$env:ASTRA_WOLF_CORPUS = (Resolve-Path '.\build\wolf-research').Path
+.\gradlew.bat :app:testDebugUnitTest
+```
+
+Ce dossier doit contenir `sample22961`, `sample3729` et `wolf-data-proof`.
+La référence indépendante `wolf-save-reference-real-w2-corrected.json` doit rester
+dans le dossier frère `mtool-implementation`. Les fixtures ne sont ni copiées dans
+le dépôt ni embarquées dans l’APK. Sans corpus configuré/disponible, les tests
+concernés sont ignorés ; avec `ASTRA_WOLF_CORPUS` défini, une fixture manquante fait
+échouer le test pour éviter une qualification incomplète silencieuse.
+
+Les tests instrumentés vérifient Room/FTS, les archives du catalogue, les sauvegardes et les mods, sur fichiers locaux et URI SAF imbriquées. Les exécuter sur un émulateur Android SDK dédié aux fixtures :
 
 ```powershell
 .\gradlew.bat :app:connectedDebugAndroidTest
@@ -123,7 +216,7 @@ La génération réelle reste volontairement explicite avec `:app:generateBaseli
 
 ## Sauvegardes de jeux et mods
 
-L’éditeur reconnaît les sauvegardes Ren’Py ZIP contenant `log` (pickle), les anciens conteneurs bruts/zlib, RPG Maker MV (LZ-String), MZ (base64/zlib), RGSS XP/VX/VX Ace (Marshal, y compris plusieurs flux) et certaines sauvegardes Wolf. Pour Wolf, les cellules numériques des structures reconnues sont modifiables ; les textes et banques inconnues restent en lecture seule. Le format récent de sauvegarde Wolf 3.729 est actuellement refusé. Il conserve le conteneur d’origine, crée une copie de sécurité avant écriture et relit le résultat. Une sauvegarde modifiée depuis l’ouverture de l’éditeur doit être rechargée. Les structures non prises en charge sont refusées avant écriture ; la compatibilité n’est pas universelle pour les jeux utilisant un format personnalisé. Voir les [formats et preuves Wolf](docs/research/WOLF-CONTROLS-AND-SAVES.md).
+L’éditeur reconnaît les sauvegardes Ren’Py ZIP contenant `log` (pickle), les anciens conteneurs bruts/zlib, RPG Maker MV (LZ-String), MZ (base64/zlib), RGSS XP/VX/VX Ace (Marshal, y compris plusieurs flux) et certaines sauvegardes Wolf. Pour Wolf, les cellules numériques des structures reconnues sont modifiables ; les textes et banques inconnues restent en lecture seule. Le format récent de sauvegarde Wolf 3.729 est actuellement refusé. Il conserve le conteneur d’origine, crée une copie de sécurité avant écriture et relit le résultat. Une sauvegarde modifiée depuis l’ouverture de l’éditeur doit être rechargée. Les structures non prises en charge sont refusées avant écriture ; la compatibilité n’est pas universelle pour les jeux utilisant un format personnalisé. La [validation de cette préversion](docs/VALIDATION_1.12.0-beta.24.md) précise les formats et scénarios effectivement exercés.
 
 Après modification, Ren’Py peut demander d’autoriser le chargement de la sauvegarde. Les métadonnées et la capture restent dans l’archive ; la signature du contenu original n’est pas réutilisée. Les tests utilisent des fixtures synthétiques générées par CPython, avec des références partagées, des cycles et des caractères Unicode. Vérification indépendante après les tests Gradle :
 
@@ -149,9 +242,20 @@ Depuis **Outils → Mods**, sélectionner un dépôt, importer le ZIP puis insta
 
 L’import ZIP est limité à 4 000 entrées et 200 Mio décompressés. La désinstallation vérifie les fichiers avant de restaurer les originaux. Un conflit avec une modification ultérieure est signalé ; une installation interrompue conserve son journal et propose **Restaurer**. Les mods RPG Maker doivent inclure leur configuration d’activation lorsque nécessaire : copier un plugin JavaScript isolé ne le déclare pas automatiquement dans `js/plugins.js`.
 
-Les archives du catalogue `.astra` utilisent la clé Android Keystore de l’installation actuelle. Elles ne constituent pas une migration vers un autre téléphone ou après désinstallation de l’app. Les anciens ZIP non chiffrés restent importables (schémas 5 à 9). Les jeux et leurs permissions SAF ne sont pas embarqués dans ces archives.
+Les archives du catalogue `.astra` utilisent la clé Android Keystore de l’installation actuelle. Elles ne constituent pas une migration vers un autre téléphone ou après désinstallation de l’app. Les anciens ZIP non chiffrés restent importables (schémas 5 à 9). Elles peuvent contenir le catalogue, les profils, les jaquettes, les sauvegardes privées MKXP-Z/Wolf prises en charge et les originaux nécessaires à la désinstallation des mods. Elles ne sauvegardent pas les copies complètes des jeux, leurs préfixes Windows ou les permissions SAF : conserver séparément les dossiers des jeux.
 
-Les bilans et limites des vérifications figurent dans l’[audit du 5 octobre](docs/AUDIT_2026-10-05.md), la [revue sauvegardes/mods du 16 septembre](docs/AUDIT_2026-09-16.md) et la [revue technique/UI du 19 septembre](docs/AUDIT_2026-09-19.md).
+La beta.24 vérifie le propriétaire de chaque sauvegarde et l’intégrité des originaux
+de mods référencés. Une archive dont un original de mod manque ou a changé est
+refusée avant de remplacer les données existantes ; l’export refuse aussi les
+originaux absents ou endommagés. Les restes locaux non référencés ne sont pas exportés.
+Une sauvegarde Wolf restaurée reste protégée au prochain lancement ou à
+l’actualisation des ressources, même si elle était inchangée lors de l’export.
+Si la source a évolué, le conflit conserve la copie restaurée au lieu de l’écraser.
+
+Le [format des archives](docs/BACKUP_FORMAT.md) décrit le chiffrement, les limites
+et la récupération après erreur. Les [notes de version](docs/RELEASE_1.12.0-beta.24.md)
+et le [bilan public de validation](docs/VALIDATION_1.12.0-beta.24.md) précisent
+les corrections et les contrôles associés à cette préversion.
 
 ## Traduction des jeux
 
@@ -189,157 +293,31 @@ Une notification ouvre l’écran lorsqu’un APK est prêt. **Télécharger et 
 
 Le fichier doit correspondre à la taille et au SHA-256 annoncés par GitHub, au package Astra, à une version supérieure et à la signature de l’installation actuelle. Ces contrôles sont répétés avant de donner accès au fichier à l’installateur. Les APK non signés sont exclus. Les versions distribuées avec la clé de développement locale peuvent se mettre à jour entre elles ; une installation signée avec une autre clé doit disposer d’un APK compatible.
 
-## Limites de preuve
+Le certificat historique de distribution est conservé pour la préversion beta.24.
+La portée du contrôle de mise à jour depuis beta.23 et les empreintes de l’APK sont
+précisées dans le [bilan public](docs/VALIDATION_1.12.0-beta.24.md). Conserver
+l’installation et ses données pour garder l’accès aux archives chiffrées.
 
-Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique accessible. Wolf RPG utilise son moteur intégré : les échantillons officiels 2.2961 et 3.729 ont été lancés et manipulés sur Android Emulator API 36.1 x86_64. Le parcours ARM64/Box64 est compilé, mais pas validé sur un téléphone ARM64 ; aucune garantie de compatibilité universelle. Voir le [guide et les preuves Wolf](docs/wolf-windows-runtime.md).
+## Portée de validation
 
+Les jeux délégués à JoiPlay nécessitent son runtime et un chemin physique accessible.
+Wolf utilise Wine dans Astra. Le [guide Wolf](docs/wolf-windows-runtime.md) décrit
+les modes d’accès, les sauvegardes et les limites du moteur.
 
-## Jouer à Wolf RPG dans Astra
+Les validations décrites dans le [bilan beta.24](docs/VALIDATION_1.12.0-beta.24.md)
+s’appuient sur des fixtures et Android Emulator x86_64. Le bilan distingue les
+résultats du nouvel APK des preuves antérieures réutilisées. **L’exécution ARM64
+reste non démontrée.** L’image SDK 16 Kio expose des pages applicatives de 16 Kio
+sur un noyau/MMU de 4 Kio ; elle ne qualifie pas un appareil ARM64 à noyau 16 Kio.
+Aucune compatibilité universelle avec les jeux commerciaux, extensions Windows,
+RTP, MIDI, vidéos ou archives chiffrées n’est établie.
 
-Disponible dans la [préversion 1.12.0-beta.23](https://github.com/azksama/AstraGames/releases/tag/v1.12.0-beta.23). Depuis beta.2, activer **Paramètres → Mises à jour d’Astra → Recevoir les versions bêta**, puis rechercher la mise à jour. Les versions antérieures nécessitent une première installation manuelle de cet APK depuis GitHub.
+## Sources et licences
 
-Wolf RPG utilise désormais **Winlator · Wine et Box64**. Le moteur natif et le choix entre moteurs sont retirés. **Fiche du jeu → Compatibilité → Profil de lancement** permet toujours de corriger le moteur détecté ou de configurer explicitement une application externe. La bibliothèque, les filtres et la fiche affichent le moteur choisi ; rétablir la détection automatique conserve le résultat original du scan.
-
-L’analyseur de compatibilité natif a également été retiré : ses verdicts ne décrivaient pas la compatibilité Wine. Les changements, preuves et limites sont suivis dans [Wolf Winlator beta21](docs/wolf-winlator-beta21.md).
-
-La beta.21 réduit les transferts GPU des sprites éloignés sans réduire la résolution ni sauter d’images. Elle supervise les jeux qui relancent leur propre exécutable, propose **Menu → Déplacement → Joystick à huit directions** et une taille/opacité individuelles dans **Modifier les touches**. Les presets conservent ces réglages. Les [mesures de rendu](docs/wolf-wine-performance-beta21.md) ne garantissent pas une cadence minimale sur chaque téléphone.
-
-**Menu → Cheats et variables** permet de rechercher, affiner, modifier, annuler une modification et figer des valeurs numériques dans la session Wine. Les valeurs suivies peuvent être nommées et recherchées. Les adresses ne sont pas réutilisées à la session suivante ; les noms internes et données chiffrées ne sont pas automatiquement décodés. Voir le [guide du cheat](docs/wolf-cheats.md).
-
-La bêta 23 ajoute l’onglet **Variables Wolf** aux moteurs officiels 2.2961 et 3.729 identifiés exactement : recherche par ID ou valeur, numériques et textes communs, écriture vérifiée et annulation. Une chaîne peut être remplacée dans sa capacité existante ; son agrandissement est refusé. Les autres exécutables conservent le scanner générique. **Modifier les touches** propose aussi des combinaisons, des bascules et des séquences, avec import/export JSON des presets. **Menu → Mesurer la fluidité** enregistre 60 secondes de mesures de rendu et l’état thermique Android dans le diagnostic. Les polices Wine utilisent un cache partagé entre jeux ; le réglage **Polices embarquées** permet d’éviter le catalogue Android pour les jeux dont les caractères sont couverts. Voir les [preuves et limites de beta.23](docs/VALIDATION_1.12.0-beta.23.md).
-
-**Paramètres → Optimisation de la batterie** ouvre la demande Android pour autoriser Astra à fonctionner en arrière-plan. Le déverrouillage retrouve désormais la page et son état enregistrable. La détection JoiPlay reconnaît aussi les plugins Ren’Py officiels versionnés, sous contrôle de leur signature.
-
-La bêta 20 évite les transferts et le dessin des fenêtres entièrement cachées derrière le jeu Wine, conserve les pixels en attente et renforce le profil **Rapide** de Box64/Wine. Les réglages de définition existants sont conservés. Le lecteur Windows **G:** pointe sur le dossier réel du jeu afin que les contrôles d’espace des sauvegardes utilisent le bon volume. Les preuves Android et les limites des mesures sont dans la [validation beta.20](docs/VALIDATION_1.12.0-beta.20.md).
-
-Les captures d’écran Android restent autorisées et le chargement affiche ses huit étapes, le temps écoulé et une animation respectant les animations désactivées du système. Pendant le jeu, **Menu → Modifier les touches → Ajouter** permet de créer des boutons nommés avec une touche du clavier proposé, dont F1–F12, les modificateurs et le pavé numérique. **Presets** enregistre ou charge touches, positions portrait/paysage, taille et opacité pour les autres jeux Wolf, sans changer leurs sauvegardes. En cas d’absence de première image Winlator, une relance avec le profil Stable est proposée ; elle n’établit pas à elle seule la compatibilité du jeu.
-
-Ajouter le dossier contenant le jeu Windows décompressé, puis lancer son scan. Astra détecte
-`Game.exe` avec `Data.wolf` ou `Data/BasicData/Game.dat`. Ouvrir la fiche et toucher **Jouer** ;
-le profil **Astra · Wolf intégré** utilise le jeu original sans conversion ni application externe.
-Au premier lancement, Astra télécharge et vérifie les composants et prépare Windows.
-Depuis la bêta 10, **Outils → Réglages Wolf RPG → Fichiers du jeu** utilise le dossier d’origine
-si son accès direct est possible. Pour un dossier local sur Android 11+, le bouton **Accès à tous
-les fichiers · réglages Android** permet d’accorder l’autorisation facultative nécessaire.
-Les ressources ne sont alors pas importées et le jeu écrit directement dans son dossier.
-Depuis beta.23, sans accès physique, un fournisseur SAF fournissant des descripteurs seekables et une écriture vérifiable est monté à la demande : les ressources sont ouvertes depuis leur dossier, sans import complet. Les écritures du jeu passent par un journal privé avant publication vérifiée. La copie privée reste disponible pour les fournisseurs cloud, les accès refusés ou les conflits
-de sauvegarde. Chaque jeu conserve son propre préfixe Windows ; son premier démarrage peut
-encore demander une initialisation, même sans import. Les composants sont partagés entre jeux.
-
-Les flèches, Valider, Retour et Shift sont disponibles à l'écran ; clavier et boutons de manette
-sont également routés au jeu. **Quitter** ferme le moteur et synchronise les fichiers modifiés.
-En cas de conflit ou de dossier non accessible, Astra conserve la sauvegarde privée et propose
-son export ZIP. **Outils → Dossier des sauvegardes** affiche les chemins réels et permet l’export
-des sauvegardes du jeu ainsi que des données utilisateur de son préfixe Windows, sous `Windows/`.
-Le dossier peut s’appeler `SaveData` ou `Saves`, sans être nécessairement `Save`.
-Les réglages logiciels de `Game.ini` sont privés en mode copie et temporaires en mode direct :
-la configuration d’origine est conservée et restaurée sans effacer les préférences écrites par le jeu.
-Les archives du catalogue Astra n'incluent pas cette copie des jeux ni leurs préfixes Windows.
-Les notices sont accessibles dans **Paramètres → Moteur Wolf · licences**.
-Les essais du lancement direct et de la récupération des sauvegardes sont détaillés dans la
-[validation de la bêta 10](docs/VALIDATION_1.12.0-beta.10.md).
-
-La bêta 11 récupère les anciens processus Windows et audio appartenant à Astra après un arrêt
-forcé, puis reprend le lancement sans réinitialiser les sauvegardes. Une nouvelle session attend
-la fermeture de la précédente. L’écran de chargement indique huit étapes, les sous-étapes,
-le temps écoulé, ainsi que les octets téléchargés ou les fichiers extraits lorsqu’ils sont disponibles.
-Les commandes et le compteur restent masqués pendant la préparation, les consoles Windows
-et les images noires ; ils apparaissent avec la première image du jeu. Une attente trop longue
-ou un arrêt du jeu avant cette image fournit une erreur avec le diagnostic.
-
-Un toucher bref de l’image avec deux doigts envoie **Retour**, en respectant sa touche configurée.
-**Outils → Réglages Wolf RPG → Zoom à deux doigts** permet le pincement de 1× à 4× et le
-déplacement de l’image agrandie avec deux doigts. Ce réglage est désactivé par défaut, mémorisé
-par jeu et immédiat ; le désactiver restaure le cadrage. Le pincement ne déclenche pas Retour.
-Voir les [tests de reprise, de chargement et de gestes](docs/VALIDATION_1.12.0-beta.11.md).
-
-La bêta 12 reprend un jeu déjà lancé depuis son dossier d’origine sans relire les anciens index
-d’import ni interroger son fournisseur SAF. La récupération de la configuration, la vérification
-du dossier et une éventuelle migration des sauvegardes affichent chacune leur détail. La préparation
-et les écritures du diagnostic s’effectuent hors du fil d’affichage. **Diagnostic du lancement**
-reste accessible sur l’écran de chargement ; une attente de plus de 20 secondes sans changement
-de sous-étape ajoute un état des threads Astra au rapport, sans conclure automatiquement à un crash.
-Voir les [preuves et limites de la bêta 12](docs/VALIDATION_1.12.0-beta.12.md).
-
-La bêta 13 accélère aussi le premier passage d’une ancienne copie privée au dossier d’origine.
-La récupération utilise le dossier physique accessible, sans recherches SAF fichier par fichier,
-et affiche les nombres de fichiers vérifiés, récupérés et en conflit. Les ressources inchangées
-restent en cache ; l’index est enregistré en fin de récupération, également en cas d’annulation.
-La version précédente d’une sauvegarde remplacée reste sauvegardée ; une divergence conserve
-la copie privée utilisable et exportable. Les dossiers accessibles uniquement par SAF utilisent
-des lectures groupées des noms et une nouvelle vérification avant chaque remplacement.
-Voir les [preuves et limites de la bêta 13](docs/VALIDATION_1.12.0-beta.13.md).
-
-Si le lancement s’arrête, ouvrir **Paramètres → Diagnostic Wolf RPG**, activer **Mode debug Wolf RPG**,
-puis relancer le jeu. Le rapport indique la dernière étape, le code de sortie, les exceptions et les
-journaux de Box64/Wine et de l’audio. Le mode debug ajoute les détails du chargeur Wine, de Box64,
-un test de démarrage de Box64 avant Wine sur ARM64, et Logcat limité au processus Astra.
-Les erreurs détectées proposent aussi **Voir le rapport de diagnostic**. Après une session interrompue,
-Astra présente automatiquement le rapport à sa réouverture, après déverrouillage si nécessaire.
-Fermer cet aperçu conserve le rapport dans les paramètres ; **Partager le rapport** permet son export.
-La bêta 4 corrige le crash natif Zstd pendant l’installation de Box64 dans l’APK optimisé et la reprise
-d’une extraction contenant des liens symboliques existants. Voir les [preuves de validation](docs/VALIDATION_1.12.0-beta.4.md).
-
-La bêta 5 supervise le serveur Wine, attend sa fermeture et conserve son journal séparément.
-La préparation regroupe les requêtes SAF par dossier et actualise sa progression une fois par seconde.
-Les commandes utilisent une croix à gauche et les actions à droite ; **Menu** permet de les masquer
-ou de quitter. Le rendu a été contrôlé en portrait et paysage sur émulateur.
-Voir les [preuves et limites de la bêta 5](docs/VALIDATION_1.12.0-beta.5.md).
-
-La bêta 6 réutilise la copie du jeu sans relire tous ses fichiers. Les copies déjà initialisées
-sur la bêta 5 sont reprises. Les dossiers Save/Saves et fichiers .sav/.save connus restent
-vérifiés à chaque lancement ; les conflits restent locaux. Pour une mise à jour externe,
-un mod externe ou une sauvegarde dans un emplacement personnalisé, utiliser **Fiche du jeu →
-Outils → Actualiser les fichiers du jeu**, puis relancer. Les mods installés/désinstallés dans
-Astra déclenchent cette actualisation automatiquement. Aucun effacement des données n’est nécessaire.
-La synchronisation vérifie le contenu des sauvegardes et des fichiers nouveaux/modifiés ;
-les ressources inchangées sont identifiées par taille/date. Au premier arrêt après migration,
-les anciens fichiers sans index de dates sont encore vérifiés par hash.
-Le diagnostic joint `Game_ErrorLog.txt`, en distinguant un fichier historique d’un fichier modifié
-pendant la partie, et préserve le début des logs. Voir les [mesures et limites de la bêta 6](docs/VALIDATION_1.12.0-beta.6.md).
-
-La bêta 7 ajoute **Outils → Réglages Wolf RPG**, également accessibles dans **Menu → Réglages du jeu** :
-profils Équilibré/Rapide/Stable, affichage de 800×600 à 1920×1080, lissage, limite de 30/60 images/s
-et compteur des images reçues. Dans cette version, le bureau était à 1280×960 par défaut ; l’image du jeu est agrandie
-en conservant ses proportions. La définition interne reste celle du jeu. Les profils Box64 et
-la résolution prennent effet au prochain lancement ; les autres réglages sont immédiats.
-Les notifications de dessin sont regroupées et le debug n’active plus la trace de chaque exception.
-Le profil Stable conserve les paramètres CPU de la bêta 6.
-
-**Menu → Modifier les touches** permet de glisser chaque bouton et de toucher un bouton pour changer
-son action. Taille, opacité, remappage et positions portrait/paysage sont mémorisés par jeu.
-Le tactile propose le clic à l’endroit touché (déplacement si le jeu le gère) ou le maintien d’une
-direction depuis le centre de l’image. Ce second mode ne calcule pas un chemin vers une destination.
-Voir les [preuves et limites de la bêta 7](docs/VALIDATION_1.12.0-beta.7.md), notamment la distinction
-entre les FPS mesurés sur l’émulateur x86_64 et les performances ARM64 encore à confirmer sur appareil.
-
-La bêta 8 transfère uniquement les zones modifiées de l’image et réutilise les images identiques,
-y compris lorsque Wine transmet une fenêtre entière pour une petite modification de texte.
-Les dessins sont regroupés sur le rafraîchissement Android, dans la limite 30/60 choisie.
-Le compteur devient **Images modifiées** : une valeur faible sur un écran immobile est normale,
-et ce compteur ne mesure pas la cadence interne de Wolf. Le diagnostic ajoute le coût de
-soumission du rendu, le volume des transferts et leurs tailles. Les mesures sur émulateur
-réduisent environ de moitié le coût d’un transfert de texte ; un minimum permanent de 30–60 FPS
-sur téléphone n’est pas établi. Voir les [mesures de la bêta 8](docs/VALIDATION_1.12.0-beta.8.md).
-
-La bêta 9 utilise toute la surface de l’écran et cadre directement l’image du jeu, indépendamment
-du format du bureau Windows. **Menu → Réglages du jeu → Cadrage** propose trois choix immédiats,
-mémorisés par jeu : **Image entière** (défaut, agrandissement maximal sans déformation),
-**Remplir** (recadrage sans déformation) et **Étirer** (plein écran avec déformation).
-Les marges nécessaires au format du jeu restent en mode Image entière ; les deux autres modes
-remplissent l’écran. Les commandes restent accessibles autour des encoches et des barres système.
-L’affichage Windows automatique utilise 1280×960 lors d’un lancement en portrait et 1280×720
-en paysage. Une définition choisie manuellement reste conservée. Ce bureau ne modifie pas
-la définition interne du jeu : seuls les jeux qui dessinent en 16:9 fournissent une image 16:9 complète.
-
-Les transferts des fenêtres logicielles utilisent un instantané réutilisé de la zone modifiée :
-Wine peut préparer les images suivantes pendant les transferts du pilote graphique.
-Les buffers partagés et les images GPU gardent leur synchronisation complète.
-Le diagnostic mesure aussi le temps du verrou des images. Voir les
-[mesures et limites de la bêta 9](docs/VALIDATION_1.12.0-beta.9.md).
-
-Les cinq dernières sessions sont conservées localement, avec rotation des logs (512 Kio × deux
-fichiers et 64 Kio de début par flux). Aucun envoi automatique ; l’export texte peut contenir le nom du jeu et des
-chemins. Les rapports sont exclus de la sauvegarde système. Android 11 ou supérieur peut fournir
-la raison d’un arrêt du processus Astra ; si elle manque, le rapport le précise sans inventer
-de cause. Le mode debug aide à diagnostiquer le crash ; il ne garantit pas sa résolution.
+Les modules `windows-runtime` et `mkxpz-runtime`, leurs adaptations et les scripts
+de compilation font partie des sources. Voir les [notices Winlator](windows-runtime/NOTICE.md),
+les [notices MKXP-Z](mkxpz-runtime/src/main/assets/licenses/mkxpz/) et les
+[licences des polices de l’interface](docs/licenses/).
+Les sources natives correspondantes et les notices sont distribuées avec la
+préversion ; le [guide de compilation MKXP-Z](scripts/mkxpz/README.md) décrit
+les versions et les adaptations. Aucun jeu ni RTP commercial n’est fourni.

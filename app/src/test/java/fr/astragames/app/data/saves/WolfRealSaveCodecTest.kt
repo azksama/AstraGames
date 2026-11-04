@@ -12,6 +12,19 @@ class WolfRealSaveCodecTest {
     private val legacyPath = "build/wolf-research/wolf-data-proof/official-1-1791837212213816600/Save/SaveData01.sav"
     private val recentPath = "build/wolf-research/wolf-data-proof/official-2-1791837220246889100/Save/SaveData01.sav"
     private fun optionalFile(relative: String): File {
+        // Use the same external corpus root as WolfOfficialCorpusTest. Keep these large,
+        // copyrighted fixtures outside worktrees and APKs; a configured but incomplete
+        // corpus must fail visibly instead of silently turning qualification into skips.
+        val corpus = System.getenv("ASTRA_WOLF_CORPUS")?.takeIf { it.isNotBlank() }?.let(::File)
+        if (corpus != null) {
+            val fixture = if (relative.startsWith("build/wolf-research/")) {
+                File(corpus, relative.removePrefix("build/wolf-research/"))
+            } else {
+                File(corpus.absoluteFile.parentFile, relative.removePrefix("build/"))
+            }
+            assertTrue("Configured Wolf fixture is missing: ${fixture.absolutePath}", fixture.isFile)
+            return fixture
+        }
         val found = listOf(File(relative), File("../$relative")).firstOrNull { it.isFile }
         assumeNotNull(found)
         return found!!

@@ -17,7 +17,6 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -31,7 +30,7 @@ import fr.astragames.app.core.model.*
 internal fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel, onBack: (() -> Unit)? = null, onGame: (String) -> Unit) {
     val updates by vm.gameUpdates.collectAsStateWithLifecycle()
     val checking by vm.updatesChecking.collectAsStateWithLifecycle()
-    val uriHandler = LocalUriHandler.current
+    val uriHandler = rememberExternalUriHandler()
     ScrollingScaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = { CompactHeader("Mises à jour", onBack = onBack) {
@@ -83,6 +82,7 @@ internal fun ScanProgressOverlay(progress: ScanProgressState, onCancel: () -> Un
         onDismissRequest = {},
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing), contentAlignment = Alignment.Center) {
             Column(

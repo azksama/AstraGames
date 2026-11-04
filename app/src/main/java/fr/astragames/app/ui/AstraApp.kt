@@ -130,7 +130,13 @@ fun AstraApp(
                         val wide = maxWidth >= 840.dp || (maxWidth >= 600.dp && maxHeight < 480.dp)
                         Scaffold(
                             contentWindowInsets = WindowInsets(0, 0, 0, 0),
-                            snackbarHost = { SnackbarHost(snackbar) }
+                            snackbarHost = {
+                                // The floating navigation is outside Scaffold's bottomBar slot.
+                                // Reserve its full height so messages never cover its touch targets.
+                                SnackbarHost(snackbar, Modifier.navigationBarsPadding().padding(
+                                    bottom = if (topLevel && !wide) NavigationContentHeight + 16.dp else 0.dp
+                                ))
+                            }
                         ) { padding ->
                             if (topLevel && wide) {
                                 Row(Modifier.padding(padding).fillMaxSize()) {

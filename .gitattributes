@@ -1,3 +1,11 @@
 # Native reference vectors have published byte-level hashes; preserve generator line endings.
 wolf-native/src/test/resources/*.tsv -text
 wolf-native/src/test/resources/**/*.tsv -text
+# Pickle protocol 0 contains newlines that are part of the serialized format.
+app/src/test/resources/saves/*.pickle -text
+# Keep source-build scripts executable by the Linux build container after Windows checkouts.
+scripts/mkxpz/*.sh text eol=lf
+scripts/mkxpz/Dockerfile text eol=lf
+# Preserve upstream notices and SDL formatting verbatim (including their whitespace).
+mkxpz-runtime/src/main/assets/licenses/** -text -whitespace
+mkxpz-runtime/src/main/java/org/libsdl/app/*.java -whitespace

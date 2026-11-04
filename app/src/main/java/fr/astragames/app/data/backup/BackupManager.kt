@@ -7,6 +7,7 @@ import androidx.room.withTransaction
 import fr.astragames.app.data.saves.documentDir
 import fr.astragames.app.core.security.KeystoreCrypto
 import fr.astragames.app.data.local.AstraDatabase
+import fr.astragames.app.mkxpz.MkxpzSavePaths
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -51,17 +52,29 @@ class BackupManager(
                         val wal = File(context.getDatabasePath(database.openHelper.databaseName ?: error("Base en memoire non exportable.")).path + "-wal")
                         if (wal.isFile) wal.copyTo(File(snapshot.path + "-wal"), overwrite = true)
                     }
-                    android.database.sqlite.SQLiteDatabase.openDatabase(snapshot.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE).use { copy ->
+                    val snapshotFiles = android.database.sqlite.SQLiteDatabase.openDatabase(snapshot.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READWRITE).use { copy ->
                         copy.rawQuery("PRAGMA wal_checkpoint(TRUNCATE)", null).use { it.moveToFirst() }
+                        copy.rawQuery("PRAGMA journal_mode=DELETE", null).use { it.moveToFirst() }
+                        val files = MkxpzBackupReferences.prepareExport(context, copy) + WolfBackupReferences.prepareExport(context, copy, workDirectory) +
+                            prepareSaveBackupExport(copy) + ModBackupReferences.prepareExport(context.filesDir, copy, workDirectory)
+                        validateFileReferences(copy)
+                        saveBackupReferences(copy)
+                        val exportedEntries = files.map { it.first }.toSet()
+                        MkxpzBackupReferences.planImport(context, copy, workDirectory, exportedEntries)
+                        WolfBackupReferences.planImport(context, copy, workDirectory, exportedEntries)
+                        files
                     }
                     val files = sequence {
                         yield(DATABASE_ENTRY to snapshot)
-                        INTERNAL_DIRECTORIES.forEach { name ->
+                        INTERNAL_DIRECTORIES.filter { it !in setOf("save-backups", ModBackupReferences.DIRECTORY) }.forEach { name ->
                             val directory = File(context.filesDir, name)
-                            directory.walkTopDown().filter(File::isFile).forEach { file ->
+                            MkxpzSavePaths.requireNoSymlinks(context.filesDir, directory)
+                            directory.walkTopDown().onEnter { MkxpzSavePaths.requireNoSymlinks(context.filesDir, it); true }.filter(File::isFile).forEach { file ->
+                                MkxpzSavePaths.requireNoSymlinks(context.filesDir, file)
                                 yield("$name/${file.relativeTo(directory).invariantSeparatorsPath}" to file)
                             }
                         }
+                        snapshotFiles.forEach { yield(it) }
                     }
                     work.outputStream().use { BackupArchive.write(it, files) }
                 } finally {
@@ -106,30 +119,53 @@ class BackupManager(
                 archiveFile.inputStream().use { BackupArchive.extract(it, work) }
                 val importedDatabase = File(work, DATABASE_ENTRY)
                 require(importedDatabase.isFile) { "Cette archive ne contient pas de catalogue Astra." }
-                android.database.sqlite.SQLiteDatabase.openDatabase(importedDatabase.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { checkDb ->
+                val nativePlan = android.database.sqlite.SQLiteDatabase.openDatabase(importedDatabase.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { checkDb ->
                     require(checkDb.version in SUPPORTED_DATABASE_VERSIONS) { "Version de catalogue incompatible : ${checkDb.version}" }
                     validateFileReferences(checkDb)
+                    val mods = ModBackupReferences.planImport(context.filesDir, checkDb, work)
                     checkDb.rawQuery("PRAGMA integrity_check", null).use { cursor ->
                         require(cursor.moveToFirst() && cursor.getString(0) == "ok") { "Catalogue endommage." }
                     }
+                    val mkxpz = MkxpzBackupReferences.planImport(context, checkDb, work)
+                    val wolf = WolfBackupReferences.planImport(context, checkDb, work)
+                    val backups = saveBackupReferences(checkDb)
+                    val expectedBackups = backups.map { it.second }.toSet()
+                    require(expectedBackups.size == backups.size) { "Un backup est attribué à plusieurs entrées du catalogue." }
+                    val archiveBackups = File(work, "save-backups").walkTopDown().filter(File::isFile)
+                        .map { it.relativeTo(work).invariantSeparatorsPath }.toSet()
+                    require(expectedBackups == archiveBackups) { "Backups de sauvegarde absents ou sans propriétaire dans l’archive." }
+                    val backupFiles = backups.map { (reference, relative) -> File(work, relative) to File(requireNotNull(Uri.parse(reference.uri).path)) }
+                    MkxpzBackupReferences.ImportPlan(mkxpz.files + wolf.files + backupFiles + mods.files,
+                        mkxpz.references + wolf.references + backups.map { it.first } + mods.references)
+                }
+                val filesToRestore = buildList {
+                    INTERNAL_DIRECTORIES.filter { it !in setOf("save-backups", ModBackupReferences.DIRECTORY) }.forEach { name ->
+                        val source = File(work, name)
+                        source.walkTopDown().filter(File::isFile).forEach { file ->
+                            add(file to File(context.filesDir, "$name/${file.relativeTo(source).invariantSeparatorsPath}"))
+                        }
+                    }
+                    addAll(nativePlan.files)
+                }
+                // Validate all destinations (including links inside an allowed root)
+                // before copying the first asset or changing the live catalogue.
+                filesToRestore.forEach { (_, destination) ->
+                    MkxpzSavePaths.requireNoSymlinks(context.filesDir, destination)
+                    require(!destination.exists() || destination.isFile) { "Destination de restauration invalide." }
                 }
                 val rollback = File(work, "rollback").apply { mkdirs() }
                 val changedFiles = mutableListOf<Pair<File, File?>>()
                 try {
                     // Also preserve originals if a fatal Throwable bypasses the Exception handler.
                     preserveRecovery = true
-                    INTERNAL_DIRECTORIES.forEach { name ->
-                        val source = File(work, name)
-                        source.walkTopDown().filter(File::isFile).forEach { file ->
-                            val relative = "$name/${file.relativeTo(source).invariantSeparatorsPath}"
-                            val destination = File(context.filesDir, relative)
+                    filesToRestore.forEach { (file, destination) ->
+                            val relative = destination.relativeTo(context.filesDir).invariantSeparatorsPath
                             val old = destination.takeIf { it.isFile }?.let { original ->
                                 File(rollback, relative).also { it.parentFile?.mkdirs(); original.copyTo(it) }
                             }
                             changedFiles += destination to old
                             destination.parentFile?.mkdirs()
                             file.copyTo(destination, overwrite = true)
-                        }
                     }
                     android.database.sqlite.SQLiteDatabase.openDatabase(importedDatabase.path, null, android.database.sqlite.SQLiteDatabase.OPEN_READONLY).use { imported ->
                         require(imported.version in SUPPORTED_DATABASE_VERSIONS) { "Version de catalogue incompatible : ${imported.version}" }
@@ -137,17 +173,16 @@ class BackupManager(
                             val db = database.openHelper.writableDatabase
                             RESTORED_TABLES.forEach { table -> db.execSQL("DELETE FROM `$table`") }
                             RESTORED_TABLES.reversed().forEach { table -> copyTableByColumnName(db, imported, table) }
+                            nativePlan.references.forEach { reference ->
+                                db.execSQL("UPDATE `${reference.table}` SET `${reference.column}` = ? WHERE id = ?", arrayOf(reference.uri, reference.id))
+                            }
                             // Absolute private paths change after restoring under another Android user.
-                            listOf("save_backups" to "backupUri", "mod_installed_files" to "backupUri", "games" to "coverUri", "games" to "bannerUri", "games" to "iconUri").forEach { (table, column) ->
+                            listOf("games" to "coverUri", "games" to "bannerUri", "games" to "iconUri").forEach { (table, column) ->
                                 db.query("SELECT id, `$column` FROM `$table` WHERE `$column` IS NOT NULL").use { cursor ->
                                     while (cursor.moveToNext()) {
                                         val old = cursor.getString(1)
                                         val oldPath = if (old.startsWith("file:")) Uri.parse(old).path.orEmpty() else old
-                                        val expectedDirectory = when (table) {
-                                            "save_backups" -> "save-backups"
-                                            "mod_installed_files" -> "mod-backups"
-                                            else -> "covers"
-                                        }
+                                        val expectedDirectory = "covers"
                                         if (table == "games" && !old.startsWith("file:")) continue
                                         if (table == "games" && !oldPath.contains("/$expectedDirectory/")) continue
                                         require(oldPath.contains("/$expectedDirectory/")) { "Chemin de backup invalide." }
@@ -210,7 +245,13 @@ class BackupManager(
                 imported.rawQuery("SELECT `$column` FROM `$table` WHERE `$column` IS NOT NULL", null).use { cursor ->
                     while (cursor.moveToNext()) {
                         val value = cursor.getString(0)
-                        val path = if (value.startsWith("file:")) Uri.parse(value).path else value.takeIf { it.startsWith('/') }
+                        // Typed references are fully owner/engine/path checked by planImport.
+                        if (MkxpzBackupReferences.isToken(value) || WolfBackupReferences.isToken(value)) {
+                            require((table == "game_save_locations" && column == "uri") ||
+                                (table == "save_backups" && column == "sourceUri")) { "Référence de sauvegarde privée interdite dans ce champ." }
+                            continue
+                        }
+                        val path = if (Uri.parse(value).scheme.equals("file", true)) Uri.parse(value).path else value.takeIf { it.startsWith('/') }
                         if (path != null) {
                             val resolved = File(path).canonicalFile.toPath()
                             require(privateRoots.none { resolved.startsWith(it) || it.startsWith(resolved) }) { "La sauvegarde référence des fichiers privés d’Astra." }
@@ -220,6 +261,38 @@ class BackupManager(
             }
         }
     }
+
+    private fun saveBackupReferences(imported: android.database.sqlite.SQLiteDatabase): List<Pair<MkxpzBackupReferences.Rebind, String>> {
+        val present = imported.rawQuery("PRAGMA table_info('save_backups')", null).use { it.count > 0 }
+        if (!present) return emptyList()
+        return imported.rawQuery("SELECT b.id, b.gameId, b.backupUri, g.id FROM save_backups b LEFT JOIN games g ON g.id = b.gameId", null).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val gameId = cursor.getString(1)
+                    require(!cursor.isNull(3)) { "Jeu propriétaire du backup absent." }
+                    val file = SaveBackupPaths.rebind(context, gameId, cursor.getString(2), cursor.getString(0))
+                    val archiveRelative = "save-backups/" + requireNotNull(Uri.parse(cursor.getString(2)).path).substringAfter("/save-backups/")
+                    add(MkxpzBackupReferences.Rebind("save_backups", "backupUri", cursor.getString(0), Uri.fromFile(file).toString()) to archiveRelative)
+                }
+            }
+        }
+    }
+
+    private fun prepareSaveBackupExport(snapshot: android.database.sqlite.SQLiteDatabase): List<Pair<String, File>> =
+        snapshot.rawQuery("SELECT id, gameId, backupUri FROM save_backups", null).use { cursor ->
+            buildList {
+                while (cursor.moveToNext()) {
+                    val id = cursor.getString(0)
+                    val gameId = cursor.getString(1)
+                    val source = SaveBackupPaths.resolveStored(context, gameId, id, cursor.getString(2))
+                    require(source.isFile) { "Backup de sauvegarde introuvable ; export annulé." }
+                    val target = File(SaveBackupPaths.directory(context, gameId), source.name)
+                    SaveBackupPaths.resolve(context, gameId, Uri.fromFile(target).toString())
+                    snapshot.execSQL("UPDATE save_backups SET backupUri = ? WHERE id = ?", arrayOf(Uri.fromFile(target).toString(), id))
+                    add("save-backups/${MkxpzSavePaths.ownerKey(gameId)}/${source.name}" to source)
+                }
+            }
+        }
 
     private fun copyTableByColumnName(db: androidx.sqlite.db.SupportSQLiteDatabase, imported: android.database.sqlite.SQLiteDatabase, table: String) {
         fun columns(cursor: android.database.Cursor): List<String> = cursor.use { buildList { while (it.moveToNext()) add(it.getString(1)) } }

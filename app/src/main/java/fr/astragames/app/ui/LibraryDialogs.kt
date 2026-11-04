@@ -97,11 +97,11 @@ internal fun GameFolderDialog(
     text = {
         LazyColumn(Modifier.heightIn(max = 420.dp)) {
             item { ListItem(
-                modifier = Modifier.clickable { onChoice(null) }, headlineContent = { Text("Sans dossier") },
+                modifier = Modifier.selectable(selected = selectedId == null, role = Role.RadioButton, onClick = { onChoice(null) }), headlineContent = { Text("Sans dossier") },
                 leadingContent = { RadioButton(selectedId == null, null) }
             ) }
             items(folders, key = { it.id }) { folder -> ListItem(
-                modifier = Modifier.clickable { onChoice(folder.id) }, headlineContent = { MaterialText(folder.name) },
+                modifier = Modifier.selectable(selected = selectedId == folder.id, role = Role.RadioButton, onClick = { onChoice(folder.id) }), headlineContent = { MaterialText(folder.name) },
                 leadingContent = { RadioButton(selectedId == folder.id, null) }
             ) }
         }
@@ -146,16 +146,20 @@ internal fun QuickGameActionsSheet(
     onDismiss: () -> Unit
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
-        MaterialText(game.title, Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.titleLarge)
-        ListItem(modifier = Modifier.clickable(onClick = onPlay), headlineContent = { Text("Jouer") }, leadingContent = { Icon(Icons.Default.PlayArrow, null) })
-        ListItem(modifier = Modifier.clickable(onClick = onOpen), headlineContent = { Text("Ouvrir la fiche") }, leadingContent = { Icon(Icons.Default.Info, null) })
-        ListItem(
+        LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 24.dp)) {
+        item { MaterialText(game.title, Modifier.padding(horizontal = 20.dp, vertical = 8.dp), style = MaterialTheme.typography.titleLarge) }
+        item { ListItem(modifier = Modifier.clickable(enabled = !game.missing, role = Role.Button, onClick = onPlay),
+            headlineContent = { Text("Jouer", color = if (game.missing) MaterialTheme.colorScheme.onSurface.copy(alpha = .38f) else MaterialTheme.colorScheme.onSurface) },
+            supportingContent = if (game.missing) ({ Text("Ce jeu est introuvable. Rescannez sa source.") }) else null,
+            leadingContent = { Icon(Icons.Default.PlayArrow, null) }) }
+        item { ListItem(modifier = Modifier.clickable(role = Role.Button, onClick = onOpen), headlineContent = { Text("Ouvrir la fiche") }, leadingContent = { Icon(Icons.Default.Info, null) }) }
+        item { ListItem(
             modifier = Modifier.clickable(onClick = onFavorite),
             headlineContent = { Text(if (game.favorite) "Retirer des favoris" else "Ajouter aux favoris") },
             leadingContent = { Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null, tint = if (game.favorite) Color.Red else LocalContentColor.current) }
-        )
-        ListItem(modifier = Modifier.clickable(onClick = onSelect), headlineContent = { Text("Démarrer une sélection multiple") }, leadingContent = { Icon(Icons.Default.Checklist, null) })
-        Spacer(Modifier.navigationBarsPadding().height(16.dp))
+        ) }
+        item { ListItem(modifier = Modifier.clickable(role = Role.Button, onClick = onSelect), headlineContent = { Text("Démarrer une sélection multiple") }, leadingContent = { Icon(Icons.Default.Checklist, null) }) }
+        }
     }
 }
 

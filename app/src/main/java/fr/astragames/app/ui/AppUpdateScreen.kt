@@ -13,7 +13,6 @@ import androidx.compose.material3.Text as MaterialText
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
@@ -27,7 +26,7 @@ import kotlinx.coroutines.launch
 internal fun AppUpdateScreen(manager: AppUpdateManager, beforeExternal: () -> Unit, onDismiss: () -> Unit) {
     val state by manager.state.collectAsStateWithLifecycle()
     val context = LocalContext.current
-    val uriHandler = LocalUriHandler.current
+    val uriHandler = rememberExternalUriHandler()
     val scope = rememberCoroutineScope()
     var localError by remember { mutableStateOf<String?>(null) }
     val installer = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) { }
@@ -49,6 +48,7 @@ internal fun AppUpdateScreen(manager: AppUpdateManager, beforeExternal: () -> Un
         }
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
             Column(Modifier.fillMaxSize()) {
                 CompactHeader("Mises à jour d’Astra", onBack = onDismiss)

@@ -183,7 +183,7 @@ class WolfDirectStorageTest {
         } finally { source.deleteRecursively(); storage.directory.deleteRecursively() }
     }
 
-    @Test fun cloudDocumentProviderFallsBackToPrivateCopy() = runBlocking {
+    @Test fun providerWithoutAtomicRenameFallsBackToCompletePrivateCopy() = runBlocking {
         val id = UUID.randomUUID().toString()
         val provider = android.net.Uri.parse("content://${fr.astragames.app.data.local.FixtureDocumentsProvider.AUTHORITY}")
         val fixture = requireNotNull(context.contentResolver.call(provider, "fixture", id, null))
@@ -193,10 +193,23 @@ class WolfDirectStorageTest {
         context.contentResolver.openOutputStream(exe.uri)!!.use { it.write("fixture".toByteArray()) }
         val storage = WolfGameStorage(context, id, uri)
         try {
-            storage.prepare("Game.exe") { }
+            // The ordinary fixture supports seekable descriptors and atomic publication, so
+            // it correctly uses SAF (whose local executable is only a placeholder). Exercise
+            // an actual capability failure before requiring a byte-complete COPY fallback.
+            context.contentResolver.call(provider, "denyRenames", id, null)
+            val stages = mutableListOf<String>()
+            storage.prepare("Game.exe", stages::add)
             assertFalse(storage.isDirect)
+            assertFalse(stages.joinToString(" | "), storage.isSaf)
+            assertTrue(stages.any { it.contains("SAF à la demande indisponible") })
             assertEquals("fixture", File(storage.game, "Game.exe").readText())
-        } finally { context.contentResolver.call(provider, "removeFixture", id, null); storage.directory.deleteRecursively() }
+            assertEquals("fixture", context.contentResolver.openInputStream(exe.uri)!!.bufferedReader().use { it.readText() })
+        } finally {
+            storage.closeMount()
+            context.contentResolver.call(provider, "denyRenames", null, null)
+            context.contentResolver.call(provider, "removeFixture", id, null)
+            storage.directory.deleteRecursively()
+        }
     }
 
     @Test fun windowsSavesFromOlderVersionsAreFoundWithoutANewInGameSave() = runBlocking {

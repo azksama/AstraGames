@@ -43,7 +43,7 @@ internal object BackupArchive {
                 val entry = zip.nextEntry ?: break
                 val path = ZipPathGuard.sanitize(entry.name) ?: error("Chemin de sauvegarde invalide.")
                 require(seen.size < maxEntries && seen.add(path.lowercase(Locale.ROOT))) { "Archive dupliquée ou trop volumineuse." }
-                val allowedDirectory = path == "database" || DIRECTORIES.any { path == it || path.startsWith("$it/") }
+                val allowedDirectory = path == "database" || (DIRECTORIES + MkxpzBackupReferences.DIRECTORY + WolfBackupReferences.DIRECTORY).any { path == it || path.startsWith("$it/") }
                 require(if (entry.isDirectory) allowedDirectory else allowedFile(path)) { "Contenu de sauvegarde non reconnu : $path" }
                 if (entry.isDirectory) {
                     total += zip.copyBoundedTo(DISCARD, maxBytes - total)
@@ -58,7 +58,8 @@ internal object BackupArchive {
         }
     }
 
-    private fun allowedFile(path: String) = path == DATABASE_ENTRY || DIRECTORIES.any { path.startsWith("$it/") }
+    private fun allowedFile(path: String) = path == DATABASE_ENTRY || DIRECTORIES.any { path.startsWith("$it/") } ||
+        MkxpzBackupReferences.allowedArchiveFile(path) || WolfBackupReferences.allowedArchiveFile(path)
 
     private val DISCARD = object : OutputStream() {
         override fun write(value: Int) = Unit

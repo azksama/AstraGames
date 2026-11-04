@@ -1,11 +1,13 @@
 package fr.astragames.app.ui
 
 import android.content.Context
+import android.os.SystemClock
+import android.view.KeyEvent
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
-import androidx.test.espresso.Espresso
+import androidx.test.platform.app.InstrumentationRegistry
 import fr.astragames.app.MainActivity
 import fr.astragames.app.windows.WolfDiagnosticSession
 import fr.astragames.app.windows.WolfDiagnostics
@@ -27,7 +29,16 @@ class WolfRecoveryUiTest {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 compose.waitUntil(10_000) { compose.onAllNodesWithText("AUTORECOVERY_UI_FIXTURE", substring = true).fetchSemanticsNodes().isNotEmpty() }
                 compose.onNodeWithText("AUTORECOVERY_UI_FIXTURE", substring = true).assertIsDisplayed()
-                Espresso.pressBack()
+                // The modal sheet owns focus, not MainActivity's base window.
+                // Send the actual Android back key to the focused window instead
+                // of asking Espresso to pick an unfocused application root.
+                val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+                automation.waitForIdle(500, 5000)
+                val down = SystemClock.uptimeMillis()
+                for (action in listOf(KeyEvent.ACTION_DOWN, KeyEvent.ACTION_UP)) {
+                    assertTrue(automation.injectInputEvent(
+                        KeyEvent(down, SystemClock.uptimeMillis(), action, KeyEvent.KEYCODE_BACK, 0), true))
+                }
                 compose.waitUntil(5000) { store.pendingRecovery() == null }
                 scenario.recreate()
                 compose.waitForIdle()

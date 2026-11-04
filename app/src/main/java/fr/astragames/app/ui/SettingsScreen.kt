@@ -35,6 +35,7 @@ import fr.astragames.app.data.local.GameSourceEntity
 internal fun AuditDialog(vm: AstraViewModel, onDismiss: () -> Unit) {
     val events by remember(vm) { vm.auditEvents() }.collectAsStateWithLifecycle(initialValue = emptyList())
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             ScrollingColumn(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), topBar = { CompactHeader("Historique des modifications", onBack = onDismiss) }) {
                 if (events.isEmpty()) CenterMessage("Aucun événement enregistré", Modifier.fillMaxSize())

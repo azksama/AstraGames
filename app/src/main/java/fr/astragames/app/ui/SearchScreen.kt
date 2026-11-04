@@ -6,6 +6,7 @@ import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -15,6 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalWindowInfo
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.unit.dp
 import fr.astragames.app.core.model.GameEngine
@@ -27,6 +30,12 @@ internal fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
     var systemFolderMenu by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val density = LocalDensity.current
+    val imeHeight = WindowInsets.ime.getBottom(density)
+    val windowHeight = LocalWindowInfo.current.containerSize.height
+    // On a short window the keyboard can leave less room than the header and input need.
+    // Keep the full-size input and its back action together until the keyboard closes.
+    val compactIme = imeHeight > 0 && with(density) { (windowHeight - imeHeight).toDp() < 200.dp }
     var focusRequested by rememberSaveable { mutableStateOf(false) }
     val availableEngines = remember(state.games) {
         state.games.mapNotNull { runCatching { GameEngine.valueOf(it.engine) }.getOrNull() }.distinct().sortedBy { it.name }
@@ -37,16 +46,24 @@ internal fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
             focusRequested = true
         }
     }
-    ScrollingScaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = { CompactHeader("Recherche", onBack = onBack) }) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
+    ScrollingScaffold(contentWindowInsets = WindowInsets(0, 0, 0, 0), topBar = {
+        if (!compactIme) CompactHeader("Recherche", onBack = onBack)
+    }) { padding ->
+        Column(Modifier
+            .then(if (compactIme) Modifier.statusBarsPadding() else Modifier)
+            .padding(padding).consumeWindowInsets(padding).fillMaxSize().imePadding()) {
             OutlinedTextField(
                 value = state.filters.query,
                 onValueChange = vm::updateQuery,
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp).focusRequester(focusRequester),
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = if (compactIme) 2.dp else 6.dp).focusRequester(focusRequester),
                 singleLine = true,
                 shape = androidx.compose.foundation.shape.RoundedCornerShape(14.dp),
                 colors = OutlinedTextFieldDefaults.colors(unfocusedContainerColor = MaterialTheme.colorScheme.surfaceContainer, focusedContainerColor = MaterialTheme.colorScheme.surfaceContainer, unfocusedBorderColor = MaterialTheme.colorScheme.outlineVariant),
-                leadingIcon = { Icon(Icons.Default.Search, null) },
+                leadingIcon = {
+                    if (compactIme) IconButton(onClick = { keyboard?.hide(); onBack() }) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, AppLocalizer.text("Retour"))
+                    } else Icon(Icons.Default.Search, null)
+                },
                 trailingIcon = {
                     if (state.filters.query.isNotEmpty()) IconButton(onClick = { vm.updateQuery("") }) {
                         Icon(Icons.Default.Close, AppLocalizer.text("Effacer la recherche"))

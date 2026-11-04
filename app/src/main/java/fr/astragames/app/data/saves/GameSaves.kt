@@ -5,6 +5,9 @@ import android.net.Uri
 import androidx.documentfile.provider.DocumentFile
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.GameSaveLocationEntity
+import fr.astragames.app.mkxpz.MkxpzRuntime
+import fr.astragames.app.mkxpz.MkxpzSavePaths
+import java.io.File
 import java.util.Locale
 import java.util.UUID
 
@@ -18,7 +21,8 @@ data class GameSave(
     val lastModified: Long,
     val title: String? = null,
     val screenshotUri: String? = null,
-    val auto: Boolean = false
+    val auto: Boolean = false,
+    val provenance: SaveProvenance? = null
 )
 
 /** Données d'une sauvegarde, lisibles par l'éditeur. */
@@ -40,15 +44,23 @@ data class SaveEntry(
 
 enum class SaveEntryType { STRING, INT, FLOAT, BOOLEAN, SWITCH, VARIABLE, LIST, OBJECT, UNKNOWN }
 
-/** Détection et énumération des sauvegardes sur le disque via SAF. */
+/** Détection via SAF et stockage privé. SaveManager fournit le moteur effectif du profil courant. */
 class SaveFinder(private val context: Context) {
 
     fun locations(game: GameEntity, rootUri: Uri): List<GameSaveLocationEntity> {
-        val root = documentDir(context, rootUri) ?: return emptyList()
+        val roots = listOfNotNull(documentDir(context, rootUri))
+            .filter { permittedRgssPath(game, it.uri, directory = true) }.toMutableList()
+        if (MkxpzRuntime.rgssVersion(game.engine) != null) {
+            val privateGame = runCatching {
+                MkxpzSavePaths.resolve(context, game.id, game.engine, ".", directory = true)
+            }.getOrNull()
+            if (privateGame?.isDirectory == true) roots += DocumentFile.fromFile(privateGame)
+        }
         val found = mutableListOf<GameSaveLocationEntity>()
-        candidateFolders(root, game.engine).forEach { folder ->
+        roots.flatMap { candidateFolders(it, game.engine) }.distinctBy { it.uri }.forEach { folder ->
+            if (!permittedRgssPath(game, folder.uri, directory = true)) return@forEach
             val children = runCatching { folder.listFiles().toList() }.getOrDefault(emptyList())
-            if (children.any { it.isFile && isSaveFile(it.name.orEmpty(), game.engine) }) {
+            if (children.any { it.isFile && isSaveFile(it.name.orEmpty(), game.engine) && permittedRgssPath(game, it.uri, directory = false) }) {
                 found += GameSaveLocationEntity(
                     id = UUID.randomUUID().toString(),
                     gameId = game.id,
@@ -66,10 +78,11 @@ class SaveFinder(private val context: Context) {
 
     fun saves(game: GameEntity, locations: List<GameSaveLocationEntity>): List<GameSave> {
         val result = mutableListOf<GameSave>()
-        locations.filter { it.enabled }.forEach { location ->
+        locations.filter { it.enabled && it.gameId == game.id }.forEach { location ->
+            if (!permittedRgssPath(game, Uri.parse(location.uri), directory = true)) return@forEach
             val folder = documentDir(context, Uri.parse(location.uri)) ?: return@forEach
             runCatching { folder.listFiles().toList() }.getOrDefault(emptyList())
-                .filter { it.isFile && isSaveFile(it.name.orEmpty(), game.engine) }
+                .filter { it.isFile && isSaveFile(it.name.orEmpty(), game.engine) && permittedRgssPath(game, it.uri, directory = false) }
                 .forEach { file ->
                     val name = file.name.orEmpty()
                     result += GameSave(
@@ -84,6 +97,20 @@ class SaveFinder(private val context: Context) {
                 }
         }
         return result.distinctBy { it.uri }.sortedWith(compareBy({ it.slot ?: Int.MAX_VALUE }, { it.name }))
+    }
+
+    private fun permittedRgssPath(game: GameEntity, uri: Uri, directory: Boolean): Boolean {
+        if (MkxpzRuntime.rgssVersion(game.engine) == null || uri.scheme != "file") return true
+        val path = File(uri.path ?: return false)
+        val privateRoots = listOf(File(context.applicationInfo.dataDir), context.filesDir)
+        val private = privateRoots.any { root ->
+            path.absoluteFile.toPath().startsWith(root.absoluteFile.toPath()) ||
+                path.canonicalFile.toPath().startsWith(root.canonicalFile.toPath())
+        }
+        if (!private) return true
+        return runCatching {
+            MkxpzSavePaths.relative(context, game.id, game.engine, path, directory) != null
+        }.getOrDefault(false)
     }
 
     private fun candidateFolders(root: DocumentFile, engine: String): List<DocumentFile> {
@@ -124,9 +151,7 @@ class SaveFinder(private val context: Context) {
         val lower = name.lowercase(Locale.ROOT)
         return when (engine) {
             "RPG_MAKER_MV", "RPG_MAKER_MZ" -> (lower.endsWith(".rpgsave") || lower.endsWith(".rmmzsave")) && lower.substringBeforeLast('.') !in setOf("global", "config")
-            "RPG_MAKER_XP" -> lower.endsWith(".rxdata") && lower.startsWith("save", ignoreCase = true)
-            "RPG_MAKER_VX" -> lower.endsWith(".rvdata") && lower.startsWith("save", ignoreCase = true)
-            "RPG_MAKER_VX_ACE" -> lower.endsWith(".rvdata2") && lower.startsWith("save", ignoreCase = true)
+            "RPG_MAKER_XP", "RPG_MAKER_VX", "RPG_MAKER_VX_ACE" -> MkxpzSavePaths.isSaveFileName(name, engine)
             "RENPY" -> lower.endsWith(".save") && !lower.equals("persistent")
             "WOLF_RPG" -> lower.endsWith(".sav")
             else -> lower.endsWith(".save") || lower.endsWith(".sav") || lower.endsWith(".rpgsave")

@@ -31,14 +31,21 @@ Après une interruption, un payload non scellé ou dont le hash a changé reste 
 - L’espace libre renvoyé par Wine porte sur le stockage privé servant au journal. Il ne prétend pas mesurer un quota distant que le fournisseur n’expose pas. Les erreurs de publication restent détectées et les payloads restent conservés.
 - La compilation ARM64 et les sources [Box64 0.4.2](https://github.com/ptitSeb/box64/blob/v0.4.2/src/wrapped/wrappedlibc.c#L4508) confirment une voie de résolution globale de libc via `dlopen(NULL)`. Cela motive l’intégration du preload ; cela ne remplace pas une exécution sur un appareil ARM64 avec le binaire épinglé.
 
-## Validation
+## Tests et portée
 
-Les compilations isolées NDK 29 du pont, en ARM64 et x86_64, passent avec `-Wall -Wextra`. Le premier essai SDK a révélé un repli causé par les alias du dossier Android dans `WolfDirectConfiguration.apply`, corrigé par normalisation canonique.
+`WolfSafMountTest` exerce les descripteurs, `SCM_RIGHTS`, `mmap`, la lecture à la
+demande, la reprise d’une écriture interrompue, les conflits, le retrait d’accès et
+le repli explicite. Le retrait d’accès est simulé par une `SecurityException` dans
+le fournisseur de documents de debug : celui-ci partage l’UID d’Astra, donc la
+simple révocation de son auto-grant ne produit pas un refus Android.
 
-`WolfSafMountTest` couvre les FD, `SCM_RIGHTS`, `mmap`, une préparation ignorant 5 001 assets inutiles dont un illisible, la reprise d’une écriture interrompue, la publication rejetée, les conflits d’édition, le retrait d’accès du fournisseur et le repli explicite. Le retrait est simulé par une véritable `SecurityException` dans le fournisseur de debug : celui-ci partage l’UID d’Astra et une simple révocation de son auto-grant ne produirait pas un refus Android. `WolfWineSafRuntimeTest` exécute aussi un programme Win32 de sauvegarde écrit pour Astra avec le véritable Wine x86_64 sur l’émulateur SDK.
+`WolfWineSafRuntimeTest` utilise un programme Win32 synthétique de sauvegarde
+avec le runtime Wine. Les tests de l’éditeur vérifient séparément la publication
+et la restauration. Les sources de ces tests et des fixtures sont fournies ; les
+échantillons de jeux officiels sont obtenus séparément.
 
-Le test Wine réel après ajout du scellement a passé sur l’émulateur SDK x86_64 : `build/mtool-wine-saf-real.log`, un test, 71,986 secondes. L’exécutable source n’a importé aucun octet ; les appels Win32 ont publié une sauvegarde, contrôlé l’espace disponible et conservé l’ancienne sauvegarde inchangée. Deux tests de publication/restauration de l’éditeur de sauvegardes passent également.
-
-La passe finale, après les limites agrégées et la correction des chemins JNI pour utiliser exactement la racine canonique exportée à Wine, confirme les six tests SAF sans skip : `build/mtool-final-android.log`, lignes 1–85, tous terminés avec `INSTRUMENTATION_STATUS_CODE: 0`. Cette passe comprend aussi les deux tests de publication/restauration de l’éditeur. La compilation debug/release et le lint release réussissent dans `build/mtool-final-release-build.log`. Le lancement Wine SAF a été confirmé à nouveau sur ce dernier build (`build/mtool-final-wine.log`, test `sourceExecutableAndWin32SaveUseSeekableProviderDescriptors`, statut 0).
-
-Les résultats d’une passe antérieure, une copie privée de repli ou un test JNI seul ne prouvent pas un lancement Wine SAF. La validation sur un appareil physique ARM64 et sur les fournisseurs utilisés par l’utilisateur reste distincte. Voir aussi le [rapport de validation beta.23](VALIDATION_1.12.0-beta.23.md) pour la passe finale complète.
+Le [bilan public beta.24](VALIDATION_1.12.0-beta.24.md) distingue les suites exécutées
+sur le nouvel APK, les preuves antérieures et les limites. Un test JNI de montage
+ou une copie privée de repli ne prouve pas un lancement Wine depuis SAF. Une
+qualification sur un appareil ARM64 et avec chaque fournisseur distant reste
+nécessaire avant de généraliser les résultats.

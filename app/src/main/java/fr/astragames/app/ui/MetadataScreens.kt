@@ -31,7 +31,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
@@ -73,7 +72,7 @@ internal fun F95ImportSheet(
     var selectedImageUrl by rememberSaveable(metadata?.sourceUrl) { mutableStateOf<String?>(null) }
     var showSearch by remember(game.id) { mutableStateOf(false) }
     var showLogin by remember(game.id) { mutableStateOf(false) }
-    val uriHandler = LocalUriHandler.current
+    val uriHandler = rememberExternalUriHandler()
     val existingNames = remember(existingTags) { existingTags.map { it.normalizedName }.toSet() }
     LaunchedEffect(metadata?.sourceUrl) {
         if (metadata != null && step == 0) step = 1
@@ -83,6 +82,7 @@ internal fun F95ImportSheet(
         onDismissRequest = { if (step > 0) step-- else onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
                 Row(
@@ -258,6 +258,7 @@ internal fun SearchF95PickerDialog(
     val latestSelection by rememberUpdatedState(onThreadSelected)
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 CompactHeader(
@@ -331,6 +332,7 @@ internal fun F95LoginDialog(
     val latestCallback by rememberUpdatedState(onSessionReady)
 
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 CompactHeader(
@@ -392,7 +394,7 @@ internal fun CoverPickerSheet(
     onLocal: () -> Unit, onRemove: () -> Unit, onDismiss: () -> Unit
 ) {
     var showSearch by remember { mutableStateOf(false) }
-    val uriHandler = LocalUriHandler.current
+    val uriHandler = rememberExternalUriHandler()
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
             Text("Jaquette de ${game.title}", style = MaterialTheme.typography.titleLarge)
@@ -464,7 +466,7 @@ internal fun SearchImagePickerDialog(
     var contextImageUrl by remember { mutableStateOf<String?>(null) }
     var selectionError by remember { mutableStateOf<String?>(null) }
     val latestCandidate by rememberUpdatedState(onCandidate)
-    val uriHandler = LocalUriHandler.current
+    val uriHandler = rememberExternalUriHandler()
     fun useImage(url: String, title: String? = null) {
         if (!url.startsWith("https://")) {
             selectionError = "Cette image ne possède pas d’adresse HTTPS exploitable."
@@ -495,6 +497,7 @@ internal fun SearchImagePickerDialog(
         }
     }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 CompactHeader("${searchEngine.displayName} Images", "Touchez une image pour afficher son aperçu", onBack = onDismiss)
@@ -646,6 +649,7 @@ internal fun CoverCandidateCard(candidate: CoverCandidate, selected: Boolean = f
 internal fun CoverFullscreenDialog(uri: String, title: String, onDismiss: () -> Unit) {
     val coverBlur = LocalCoverBlurState.current
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+        AstraDialogSystemBars()
         BoxWithConstraints(
             Modifier.fillMaxSize().background(Color.Black.copy(alpha = .94f)).clickable(onClick = onDismiss),
             contentAlignment = Alignment.Center

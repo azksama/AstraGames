@@ -177,6 +177,7 @@ internal fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
 internal fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDismiss: () -> Unit) {
     var pickTags by remember { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
+        AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
             Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
                 Column(Modifier.fillMaxHeight().widthIn(max = 760.dp).align(Alignment.Center)) {

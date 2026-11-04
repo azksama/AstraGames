@@ -26,6 +26,9 @@ class AstraApplication : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        val process = (getSystemService(ACTIVITY_SERVICE) as android.app.ActivityManager)
+            .runningAppProcesses?.firstOrNull { it.pid == android.os.Process.myPid() }?.processName
+        if (process == "$packageName:mkxpz") return
         registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
             override fun onActivityStarted(activity: android.app.Activity) = visibility.started()
             override fun onActivityStopped(activity: android.app.Activity) = visibility.stopped(activity.isChangingConfigurations)

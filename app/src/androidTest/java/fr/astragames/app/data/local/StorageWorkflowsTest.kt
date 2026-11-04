@@ -342,7 +342,7 @@ class StorageWorkflowsTest {
             val dao = database.dao()
             dao.upsertGame(game)
             dao.upsertSaveLocation(GameSaveLocationEntity("loc", game.id, saveFolder.uri.toString(), "CUSTOM", "test", false, true, 1))
-            val backupFile = File(context.filesDir, "save-backups/test-game/test.save").apply {
+            val backupFile = File(context.filesDir, "save-backups/${fr.astragames.app.mkxpz.MkxpzSavePaths.ownerKey(game.id)}/test.save").apply {
                 requireNotNull(parentFile).mkdirs(); writeBytes(original)
             }
             dao.insertSaveBackup(SaveBackupEntity("b", game.id, sourceSave.uri.toString(), "file1.rpgsave", Uri.fromFile(backupFile).toString(), 1, original.size.toLong()))

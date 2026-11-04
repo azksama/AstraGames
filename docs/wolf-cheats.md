@@ -12,11 +12,11 @@ Le gel continue lorsque le panneau est fermé et s’arrête avec le jeu. Adress
 
 ## Variables du moteur Wolf
 
-Depuis beta.23, l’onglet **Variables Wolf** interroge directement les données reconnues du moteur. Il reconnaît les exécutables officiels Wolf **2.2961 et 3.729** par leur SHA-256 exact ; une autre identité affiche un refus et laisse disponible le scanner générique.
+L’onglet **Variables Wolf** interroge directement les données reconnues du moteur. Il reconnaît les exécutables officiels Wolf **2.2961 et 3.729** par leur SHA-256 exact ; une autre identité affiche un refus et laisse disponible le scanner générique.
 
-Choisir numérique ou texte commun, rechercher par ID/catégorie/groupe ou valeur, puis ouvrir une variable. La modification exige que la valeur et la session correspondent encore à la lecture. Le helper relit le résultat ; **Annuler** exige également que la valeur modifiée n’ait pas changé depuis. Les chaînes japonaises ont été testées en UTF-8, mais leur remplacement est limité à la capacité existante : aucun agrandissement d’allocation du jeu n’est tenté.
+Choisir numérique ou texte commun, rechercher par ID/catégorie/groupe ou valeur, puis ouvrir une variable. La modification exige que la valeur et la session correspondent encore à la lecture. Le helper relit le résultat ; **Annuler** exige également que la valeur modifiée n’ait pas changé depuis. Le remplacement des chaînes est limité à la capacité existante : aucun agrandissement d’allocation du jeu n’est tenté.
 
-Les variables DB, système et self, les exécutables personnalisés et toutes les versions du moteur ne sont pas couverts. Les IDs sont présentés avec leur groupe ; aucun nom de variable n’est inventé. Les [identités, structures et preuves](research/WOLF-DATA-ADAPTER.md) distinguent tests Windows, Wine sur émulateur Android et formats hors jeu.
+Les variables DB, système et self, les exécutables personnalisés et toutes les versions du moteur ne sont pas couverts. Les IDs sont présentés avec leur groupe ; aucun nom de variable n’est inventé. Les identités reconnues et les accès aux données sont décrits dans les sources du [helper Wolf](../scripts/wolf-runtime/wolf_data.h) et de son [adaptateur Android](../app/src/main/java/fr/astragames/app/windows/WolfEngineDataAdapter.kt).
 
 ## Couverture et limites
 
@@ -28,8 +28,15 @@ Avant une écriture, la valeur est relue et comparée à celle affichée. Cette 
 
 Les fichiers de communication sont privés et propres à chaque lancement. La fermeture de la session termine l’assistant et ne supprime que son répertoire temporaire. Elle ne supprime ni dossier source ni sauvegarde. Le helper reste actif tant que le jeu auquel il est attaché vit, y compris après 30 minutes sans nouvelle recherche.
 
-## Validation beta.21
+## Sources et tests
 
-Le helper est généré depuis `scripts/wolf-runtime/memory_agent.c` avec `build-memory-agent.py` ; `--check` vérifie que le binaire embarqué correspond au source. Deux programmes Windows de test originaux, 32 et 64 bits, ont été exécutés dans le vrai runtime Wine d’Astra sur l’émulateur Android SDK x86_64. Six types lus, recherche exacte, affinage après changement, écriture, refus d’une ancienne valeur, annulation, gel/libération, refus du mauvais exécutable et refus après fin du processus passent. Un parcours d’interface supplémentaire réalise recherche/modification/annulation avec des actions d’accessibilité SDK ; les captures ont été inspectées.
+Le helper est généré depuis [memory_agent.c](../scripts/wolf-runtime/memory_agent.c)
+avec [build-memory-agent.py](../scripts/wolf-runtime/build-memory-agent.py).
+L’option `--check` vérifie que le binaire embarqué correspond au résultat du build.
+Les programmes de test synthétiques permettent d’exercer les types numériques,
+l’affinage, l’écriture, l’annulation, le gel et les refus d’une valeur ou d’un
+processus obsolète sans redistribuer un jeu privé.
 
-REA/Ghidra a identifié les imports mémoire du premier helper compilé (SHA-256 `ac4faed81140d6524e75124d6e24c4d81690b49d77a7e6c81769431838b5ec16`, preuve `ev_6a663411c86d5ffe850eefc77bd54d5cf2f854af5dd2b95ad87b2ca911fed494`). Cet artefact intermédiaire a ensuite été modifié : cette observation ne qualifie pas le hash final. Le backend REA Windows a refusé l’ouverture de `kernelbase.dll` ; aucune décompilation réussie de cette DLL n’est revendiquée. Les preuves fonctionnelles proviennent de l’exécution des API Wine. Aucun jeu privé n’est redistribué, aucune validation ARM64 physique ou compatibilité universelle n’est affirmée.
+Le [bilan public beta.24](VALIDATION_1.12.0-beta.24.md) précise les contrôles exécutés
+et leur lien avec l’APK distribué. Les résultats d’une fixture ne garantissent
+pas tous les jeux, et l’exécution ARM64 reste non démontrée.

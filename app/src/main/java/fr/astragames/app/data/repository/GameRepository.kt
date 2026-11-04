@@ -404,7 +404,9 @@ class GameRepository(
             val original = replaced?.let(::readSaveDocument)
             if (replaced != null && original != null) {
                 val backupId = UUID.randomUUID().toString()
-                val backup = File(context.filesDir, "save-backups/duplicate-import/$backupId").apply { parentFile!!.mkdirs() }
+                val backup = File(fr.astragames.app.data.backup.SaveBackupPaths.directory(context, preview.primary.id), backupId)
+                fr.astragames.app.data.backup.SaveBackupPaths.resolve(context, preview.primary.id, Uri.fromFile(backup).toString())
+                check(backup.parentFile!!.isDirectory || backup.parentFile!!.mkdirs()) { "Création du dossier de backup impossible." }
                 backup.writeBytes(original)
                 check(backup.readBytes().contentEquals(original)) { "Sauvegarde de sécurité incomplète." }
                 dao.insertSaveBackup(fr.astragames.app.data.local.SaveBackupEntity(
