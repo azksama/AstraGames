@@ -76,6 +76,18 @@ interface AstraDao {
     @Query("UPDATE games SET coverUri = :coverUri WHERE id = :id")
     suspend fun setCover(id: String, coverUri: String?)
 
+    @Query("UPDATE games SET coverUri = :coverUri WHERE id = :id AND (coverUri IS NULL OR TRIM(coverUri) = '')")
+    suspend fun setCoverIfMissing(id: String, coverUri: String): Int
+
+    @Transaction
+    suspend fun mergeMetadata(id: String, values: fr.astragames.app.core.metadata.MetadataValues, replaceExisting: Boolean = false): Boolean {
+        val current = getGame(id) ?: return false
+        val updated = values.merge(current, replaceExisting)
+        if (updated == current) return false
+        upsertGame(updated)
+        return true
+    }
+
     @Query("UPDATE games SET version = :version WHERE id = :id")
     suspend fun setGameVersionRaw(id: String, version: String)
 
@@ -120,9 +132,11 @@ interface AstraDao {
         productCode: String?,
         language: String?,
         description: String?,
-        f95Url: String?
+        f95Url: String?,
+        ryuugamesUrl: String? = null
     ) {
         updateGameFieldsRaw(id, title, originalTitle, developer, version, productCode, language, description, f95Url)
+        setRyuugamesUrl(id, ryuugamesUrl)
         val updatedGame = getGame(id)
         if (updatedGame != null) upsertGame(updatedGame)
     }

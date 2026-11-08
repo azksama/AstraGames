@@ -11,7 +11,12 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.jsoup.Jsoup
 import java.io.File
-import java.net.HttpURLConnection
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
+import android.graphics.BitmapFactory
 import java.net.URI
 import java.net.URLDecoder
 import java.nio.charset.StandardCharsets
@@ -23,7 +28,8 @@ data class CoverCandidate(
     val source: String,
     val contextUrl: String? = null,
     val matchedTitle: String?,
-    val confidence: Float
+    val confidence: Float,
+    val fallbackUrls: List<String> = emptyList()
 )
 
 interface CoverProvider {
@@ -46,7 +52,9 @@ class CompositeCoverProvider(private val providers: List<CoverProvider>) : Cover
 }
 
 class SearchCoverProvider(
-    private val context: Context? = null
+    private val context: Context? = null,
+    private val f95Zone: F95ZoneProvider = F95ZoneProvider(),
+    private val httpClient: OkHttpClient? = null
 ) : CoverProvider {
     val configured: Boolean = true
 
@@ -161,51 +169,92 @@ class SearchCoverProvider(
             value.contains("format=image", true) || value.contains("/image/", true)
     }
 
+    internal val imageClient: OkHttpClient by lazy {
+        (httpClient?.newBuilder() ?: OkHttpClient.Builder())
+            .connectTimeout(12, TimeUnit.SECONDS)
+            .readTimeout(20, TimeUnit.SECONDS)
+            .callTimeout(45, TimeUnit.SECONDS)
+            .followSslRedirects(false)
+            .addNetworkInterceptor { chain ->
+                val original = chain.request()
+                check(original.url.isHttps && original.url.username.isEmpty() && original.url.password.isEmpty()) {
+                    "Utilisez une adresse d’image HTTPS."
+                }
+                val request = original.newBuilder().removeHeader("Cookie")
+                f95Zone.requestHeaders(original.url.toString(), original.header("Referer")).forEach { (name, value) ->
+                    request.header(name, value)
+                }
+                chain.proceed(request.build())
+            }.build()
+    }
+
     suspend fun download(candidate: CoverCandidate): Uri = withContext(Dispatchers.IO) {
         val appContext = checkNotNull(context) { "Contexte Android absent pour télécharger la jaquette." }
-        val connection = (URI(candidate.imageUrl).toURL().openConnection() as HttpURLConnection).apply {
-            connectTimeout = 12_000
-            readTimeout = 20_000
-            instanceFollowRedirects = true
-            setRequestProperty("User-Agent", BROWSER_USER_AGENT)
-            setRequestProperty("Accept", "image/avif,image/webp,image/apng,image/*,*/*;q=0.8")
-            candidate.contextUrl?.takeIf { it.startsWith("https://") }?.let { setRequestProperty("Referer", it) }
-        }
-        var partialFile: File? = null
-        try {
-        val status = connection.responseCode
-        check(status in 200..299) { "L'image sélectionnée est inaccessible ($status)." }
-        val type = connection.contentType.orEmpty().substringBefore(';')
-        check(type.startsWith("image/")) { "Le résultat sélectionné n'est pas une image." }
-        check(connection.contentLengthLong <= MAX_DOWNLOAD_BYTES || connection.contentLengthLong < 0) {
-            "Cette image dépasse 20 Mo."
-        }
-        val directory = File(appContext.cacheDir, "cover-imports").apply { mkdirs() }
-        val extension = when (type) {
-            "image/png" -> "png"
-            "image/webp" -> "webp"
-            else -> "jpg"
-        }
-        val output = File(directory, "${UUID.randomUUID()}.$extension")
-        partialFile = output
-        connection.inputStream.use { input ->
-            output.outputStream().use { stream ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                var total = 0L
-                while (true) {
-                    val read = input.read(buffer)
-                    if (read < 0) break
-                    total += read
-                    check(total <= MAX_DOWNLOAD_BYTES) { "Cette image dépasse 20 Mo." }
-                    stream.write(buffer, 0, read)
+        var lastError: Exception? = null
+        for (url in (listOf(candidate.imageUrl) + candidate.fallbackUrls).distinct().take(4)) {
+            coroutineContext.ensureActive()
+            var partialFile: File? = null
+            try {
+                require(isRemoteResult(url)) { "Utilisez une adresse d’image HTTPS." }
+                val request = Request.Builder().url(url)
+                    .header("Accept", "image/webp,image/png,image/jpeg,image/*;q=0.8")
+                candidate.contextUrl?.takeIf { it.startsWith("https://") }?.let { request.header("Referer", it) }
+                imageClient.newCall(request.build()).execute().use { response ->
+                    check(response.isSuccessful) {
+                        if (response.code in setOf(401, 403) && f95Zone.isF95Url(url))
+                            "Cette image F95Zone nécessite une session valide. Connectez-vous, puis réessayez."
+                        else "L’image sélectionnée est inaccessible (${response.code})."
+                    }
+                    val body = checkNotNull(response.body) { "L’image sélectionnée est vide." }
+                    val type = body.contentType()?.toString().orEmpty().substringBefore(';').lowercase(Locale.ROOT)
+                    check(type.startsWith("image/") || type == "application/octet-stream") { "Le résultat sélectionné n’est pas une image." }
+                    check(body.contentLength() <= MAX_DOWNLOAD_BYTES) { "Cette image dépasse 20 Mo." }
+                    val directory = File(appContext.cacheDir, "cover-imports").apply { mkdirs() }
+                    val extension = when (type) {
+                        "image/png" -> "png"
+                        "image/webp" -> "webp"
+                        "image/gif" -> "gif"
+                        "image/avif" -> "avif"
+                        else -> "jpg"
+                    }
+                    val output = File(directory, "${UUID.randomUUID()}.$extension")
+                    partialFile = output
+                    body.byteStream().use { input ->
+                        output.outputStream().use { stream ->
+                            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+                            var total = 0L
+                            while (true) {
+                                coroutineContext.ensureActive()
+                                val read = input.read(buffer)
+                                if (read < 0) break
+                                total += read
+                                check(total <= MAX_DOWNLOAD_BYTES) { "Cette image dépasse 20 Mo." }
+                                stream.write(buffer, 0, read)
+                            }
+                        }
+                    }
+                    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    BitmapFactory.decodeFile(output.path, bounds)
+                    check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Cette image est illisible. Essayez une autre jaquette." }
+                    return@withContext FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", output)
                 }
+            } catch (error: CancellationException) {
+                partialFile?.delete()
+                throw error
+            } catch (error: Exception) {
+                partialFile?.delete()
+                lastError = error
             }
         }
-        FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", output)
-        } catch (error: Exception) {
-            partialFile?.delete()
-            throw error
-        } finally { connection.disconnect() }
+        throw lastError ?: IllegalStateException("Impossible de télécharger cette image.")
+    }
+
+    fun discardDownload(uri: Uri) {
+        val appContext = context ?: return
+        if (uri.authority == "${appContext.packageName}.files") {
+            val name = uri.lastPathSegment ?: return
+            File(appContext.cacheDir, "cover-imports/$name").takeIf { it.parentFile == File(appContext.cacheDir, "cover-imports") }?.delete()
+        }
     }
 
     private fun hostOf(value: String): String = runCatching { URI(value).host?.removePrefix("www.") }.getOrNull().orEmpty()

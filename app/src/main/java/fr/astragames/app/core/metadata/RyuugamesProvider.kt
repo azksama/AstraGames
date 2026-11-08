@@ -18,6 +18,16 @@ enum class MetadataSource(val label: String, val domain: String) {
 }
 
 class RyuugamesProvider {
+    suspend fun findPage(title: String, searchEngine: SearchEngine): String? = withContext(Dispatchers.IO) {
+        val endpoint = MetadataSource.RYUUGAMES.searchUrl(title, searchEngine)
+        val response = Jsoup.connect(endpoint)
+            .userAgent("Mozilla/5.0 (Linux; Android 14) AppleWebKit/537.36 Chrome/127.0 Mobile Safari/537.36")
+            .timeout(20_000).maxBodySize(4 * 1024 * 1024).ignoreHttpErrors(true).execute()
+        check(response.statusCode() in 200..299) { "La recherche est indisponible. Utilisez un lien ou ouvrez le navigateur." }
+        Jsoup.parse(response.body(), endpoint).select("a[href]")
+            .firstNotNullOfOrNull { canonicalRyuugamesUrl(it.absUrl("href")) }
+    }
+
     suspend fun fetch(rawUrl: String): F95ZoneMetadata = withContext(Dispatchers.IO) {
         var url = canonicalRyuugamesUrl(rawUrl) ?: error("Lien Ryuugames invalide.")
         repeat(6) {
@@ -63,7 +73,7 @@ class RyuugamesProvider {
             images = images,
             version = field("Version") ?: Regex("[\\[(][vV](\\d[^\\])]{0,40})[\\])]").find(title)?.groupValues?.get(1),
             language = field("Language"), originalTitle = field("Original Title"),
-            developer = field("Developer"), description = description
+            developer = field("Developer"), description = description, title = title
         )
     }
 }

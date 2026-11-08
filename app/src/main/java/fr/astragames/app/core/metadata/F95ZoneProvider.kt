@@ -19,7 +19,10 @@ data class F95ZoneMetadata(
     val language: String? = null,
     val originalTitle: String? = null,
     val developer: String? = null,
-    val description: String? = null
+    val description: String? = null,
+    val title: String? = null,
+    val imagesRequireLogin: Boolean = false,
+    val sessionExpired: Boolean = false
 )
 
 /** Session membre F95Zone récupérée depuis le navigateur intégré. */
@@ -29,7 +32,7 @@ data class F95Session(
     val xfSession: String
 )
 
-class F95ZoneProvider {
+class F95ZoneProvider(private val browserCookies: (String) -> String? = { null }) {
     @Volatile
     private var session: F95Session? = null
 
@@ -37,8 +40,29 @@ class F95ZoneProvider {
         session = value
     }
 
-    private fun applySession(connection: org.jsoup.Connection): org.jsoup.Connection =
-        session?.let { connection.cookie("xf_user", it.xfUser).cookie("xf_session", it.xfSession) } ?: connection
+    /** Recomputed for each request, including image redirects. Never send member cookies off-site. */
+    internal fun requestHeaders(url: String, referer: String? = null): Map<String, String> = buildMap {
+        put("User-Agent", BROWSER_USER_AGENT)
+        referer?.takeIf { it.startsWith("https://") }?.let { put("Referer", it) }
+        if (isF95Url(url)) {
+            put("Referer", referer?.takeIf(::isF95Url) ?: "https://f95zone.to/")
+            val cookies = linkedMapOf<String, String>()
+            session?.let { if (it.xfUser.isNotBlank()) cookies["xf_user"] = it.xfUser; cookies["xf_session"] = it.xfSession }
+            browserCookies(url)?.split(';')?.forEach { part ->
+                val name = part.substringBefore('=').trim()
+                val value = part.substringAfter('=', "").trim()
+                if (name in setOf("xf_user", "xf_session", "cf_clearance") && value.isNotBlank()) cookies[name] = value
+            }
+            if (cookies.isNotEmpty()) put("Cookie", cookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
+        }
+    }
+
+    internal fun isF95Url(value: String): Boolean = runCatching {
+        val uri = URI(value)
+        val host = uri.host.orEmpty().lowercase(java.util.Locale.ROOT)
+        uri.scheme == "https" && uri.userInfo == null && uri.port in setOf(-1, 443) &&
+            (host == "f95zone.to" || host.endsWith(".f95zone.to"))
+    }.getOrDefault(false)
     fun searchUrl(gameTitle: String, searchEngine: SearchEngine = SearchEngine.YANDEX): String {
         require(gameTitle.isNotBlank()) { "Le nom du jeu est vide." }
         return searchEngine.webSearchUrl("${gameTitle.trim()} f95zone.to")
@@ -76,9 +100,8 @@ class F95ZoneProvider {
     private suspend fun fetchDocument(rawUrl: String, maxBodySize: Int = 12 * 1024 * 1024): Document {
         var url = validate(rawUrl).toString()
         repeat(6) {
-            val response = applySession(Jsoup.connect(url))
-                .userAgent("Mozilla/5.0 (Android) AstraGames/1.0")
-                .referrer("https://f95zone.to/")
+            val response = Jsoup.connect(url)
+                .headers(requestHeaders(url))
                 .timeout(20_000)
                 .maxBodySize(maxBodySize)
                 .followRedirects(false)
@@ -86,12 +109,20 @@ class F95ZoneProvider {
                 .execute()
             if (response.statusCode() in 300..399) {
                 val location = response.header("Location") ?: error("Redirection F95Zone invalide.")
-                url = validate(URI(url).resolve(location).toString()).toString()
+                val destination = URI(url).resolve(location).toString()
+                check(!destination.contains("/login", ignoreCase = true)) { "Connectez-vous à F95Zone pour accéder à cette fiche." }
+                url = validate(destination).toString()
             } else {
-                check(response.statusCode() in 200..299) { "F95Zone inaccessible (${response.statusCode()})." }
+                check(response.statusCode() in 200..299) {
+                    if (response.statusCode() in setOf(401, 403)) "F95Zone demande une connexion ou une vérification. Ouvrez le site dans Astra, puis réessayez."
+                    else "F95Zone inaccessible (${response.statusCode()})."
+                }
                 val document = response.parse()
-                if (session != null && document.title().contains("Log in", ignoreCase = true)) {
-                    error("Session F95Zone expiree ou invalide — reconnectez-vous.")
+                check(!document.title().contains("Log in", ignoreCase = true) && document.selectFirst("form[action*=login]") == null) {
+                    "Connectez-vous à F95Zone pour accéder à cette fiche."
+                }
+                check(document.selectFirst(".message-body, .message-inner, .bbWrapper") != null) {
+                    "F95Zone n’a pas renvoyé la fiche. Ouvrez le site dans Astra, puis réessayez."
                 }
                 return document
             }
@@ -109,17 +140,21 @@ class F95ZoneProvider {
             .map { it.text().trim() }
             .filter { it.isNotBlank() }
             .distinctBy { it.lowercase(java.util.Locale.ROOT) }
-        val images = document.select("img.bbImage")
+        val body = openingPost(document)
+        val images = body.select("img")
+            .filterNot { it.hasClass("smilie") || it.hasClass("emoji") || it.parents().any { parent -> parent.hasClass("bbCodeBlock--quote") || parent.hasClass("message-signature") || parent.hasClass("avatar") } }
             .mapNotNull { image ->
                 val absolute = originalImageUrl(image, url) ?: return@mapNotNull null
-                if (!absolute.startsWith("https://")) return@mapNotNull null
+                val preview = previewImageUrl(image, url) ?: absolute
                 CoverCandidate(
                     imageUrl = absolute,
-                    thumbnailUrl = absolute,
+                    thumbnailUrl = preview,
                     source = runCatching { URI(absolute).host?.removePrefix("www.") }.getOrNull().orEmpty(),
                     contextUrl = url.toString(),
                     matchedTitle = image.attr("alt").ifBlank { null },
-                    confidence = 1f
+                    confidence = 1f,
+                    fallbackUrls = listOf(preview, image.attr("data-src"), image.attr("src"))
+                        .mapNotNull { resolveImageUrl(it, url) }.distinct().filter { it != absolute }
                 )
             }
             .distinctBy { it.imageUrl }
@@ -130,8 +165,26 @@ class F95ZoneProvider {
             tags = tags,
             images = images,
             version = extractField(document, "Version"),
-            language = extractField(document, "Language")
+            language = extractField(document, "Language"),
+            originalTitle = extractField(document, "Original title"),
+            developer = extractField(document, "Developer"),
+            description = extractDescription(body),
+            title = document.selectFirst("h1.p-title-value")?.clone()?.apply { select(".label, .labelLink, .label-append").remove() }
+                ?.text()?.trim()?.takeIf(String::isNotBlank),
+            imagesRequireLogin = body.select(".messageHide--attach").isNotEmpty(),
+            sessionExpired = session != null && document.selectFirst("html[data-logged-in=false]") != null
         )
+    }
+
+    private fun openingPost(document: Document): Element {
+        val message = document.selectFirst(".message--post, .message-inner, .message-body, .bbWrapper") ?: document.body()
+        return message.selectFirst(".bbWrapper") ?: message
+    }
+
+    private fun extractDescription(body: Element): String? {
+        val text = body.clone().apply { select(".bbCodeBlock--quote, .bbCodeSpoiler, .messageHide, .message-signature, script, style").remove() }.wholeText()
+        return Regex("(?is)(?:^|\\n)\\s*(?:Overview|Description)\\s*:\\s*(.*?)(?=\\n\\s*(?:Developer|Version|Language|Thread Updated|Release Date|Installation|Downloads?|Screenshots?|Changelog|OS|Censored)\\s*:|$)")
+            .find(text)?.groupValues?.get(1)?.trim()?.take(20_000)?.takeIf(String::isNotBlank)
     }
 
     internal fun parseSearchHtml(html: String, baseUrl: String = "https://yandex.com/search/"): String? =
@@ -150,7 +203,14 @@ class F95ZoneProvider {
             .firstOrNull { it.tagName() == "a" && it.hasAttr("href") }
             ?.attr("href")
             ?.takeIf(::looksLikeImage)
-        val largestSrcSet = sequenceOf(image.attr("data-srcset"), image.attr("srcset"))
+        return sequenceOf(linkedOriginal, image.attr("data-url"), previewImageUrl(image, pageUrl))
+            .filterNotNull().mapNotNull { resolveImageUrl(it, pageUrl) }.firstOrNull()
+    }
+
+    private fun previewImageUrl(image: Element, pageUrl: URI): String? {
+        val pictureSources = image.parent()?.takeIf { it.tagName() == "picture" }?.select("source").orEmpty()
+            .asSequence().flatMap { sequenceOf(it.attr("data-srcset"), it.attr("srcset")) }
+        val largestSrcSet = sequenceOf(image.attr("data-srcset"), image.attr("srcset")).plus(pictureSources)
             .filter { it.isNotBlank() }
             .flatMap { srcSet -> srcSet.split(',').asSequence() }
             .mapNotNull { entry ->
@@ -163,21 +223,23 @@ class F95ZoneProvider {
             }
             .maxByOrNull { it.second }
             ?.first
-        val raw = sequenceOf(
-            linkedOriginal,
-            image.attr("data-url").ifBlank { null },
+        return sequenceOf(
             largestSrcSet,
             image.attr("data-src").ifBlank { null },
-            image.attr("src").ifBlank { null }
-        ).filterNotNull().firstOrNull { it.isNotBlank() && !it.startsWith("data:") } ?: return null
-        val absolute = runCatching { pageUrl.resolve(raw).toString() }.getOrNull() ?: return null
-        return unwrapProxyUrl(absolute)
+            image.attr("src").ifBlank { null },
+            image.attr("data-url").ifBlank { null }
+        ).filterNotNull().mapNotNull { resolveImageUrl(it, pageUrl) }.firstOrNull()
+    }
+
+    private fun resolveImageUrl(raw: String, pageUrl: URI): String? {
+        if (raw.isBlank()) return null
+        val uri = runCatching { pageUrl.resolve(raw.trim()) }.getOrNull() ?: return null
+        return uri.takeIf { it.scheme == "https" && !it.host.isNullOrBlank() && it.userInfo == null && it.port in setOf(-1, 443) }?.toString()
     }
 
     /** Extrait un champ « Version » / « Language » du premier message d’un thread XenForo. */
     private fun extractField(document: Document, label: String): String? {
-        val message = document.selectFirst(".message-inner") ?: document.body()
-        val body = message.selectFirst(".bbWrapper") ?: message
+        val body = openingPost(document)
         val elements = body.select("b, strong, dt")
         for (element in elements) {
             if (!element.text().trim().removeSuffix(":").trim().equals(label, ignoreCase = true)) continue
@@ -214,20 +276,6 @@ class F95ZoneProvider {
             path.endsWith(".png") || path.endsWith(".webp") || path.endsWith(".gif")
     }
 
-    private fun unwrapProxyUrl(value: String): String {
-        val uri = runCatching { URI(value) }.getOrNull() ?: return value
-        if (!uri.path.orEmpty().endsWith("proxy.php")) return value
-        val encoded = uri.rawQuery.orEmpty().split('&')
-            .firstOrNull { it.substringBefore('=') == "image" }
-            ?.substringAfter('=', "")
-            ?.takeIf { it.isNotBlank() }
-            ?: return value
-        return runCatching { URLDecoder.decode(encoded, StandardCharsets.UTF_8.name()) }
-            .getOrDefault(value)
-            .takeIf { it.startsWith("https://") }
-            ?: value
-    }
-
     private fun validate(value: String): URI {
         val canonical = canonicalF95ThreadUrl(value) ?: throw IllegalArgumentException("Lien F95Zone invalide.")
         return validate(URI(canonical))
@@ -256,7 +304,7 @@ internal fun canonicalF95ThreadUrl(rawValue: String): String? {
         if (
             uri.scheme.equals("https", ignoreCase = true) &&
             (host == "f95zone.to" || host.endsWith(".f95zone.to")) &&
-            uri.path.orEmpty().startsWith("/threads/")
+            uri.path.orEmpty().startsWith("/threads/") && uri.userInfo == null && uri.port in setOf(-1, 443)
         ) {
             val thread = THREAD_PATH.matchEntire(uri.path.orEmpty())?.groupValues?.get(1) ?: return null
             return "https://f95zone.to/threads/$thread/"

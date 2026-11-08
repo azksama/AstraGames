@@ -33,6 +33,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.style.TextOverflow
@@ -44,12 +45,21 @@ import coil3.compose.AsyncImage
 import fr.astragames.app.core.metadata.CoverCandidate
 import fr.astragames.app.core.metadata.extractF95ThreadUrl
 import fr.astragames.app.core.metadata.MetadataSource
+import fr.astragames.app.core.metadata.MetadataField
+import fr.astragames.app.core.metadata.MetadataImportSelection
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.ui.text.input.KeyboardType
+import androidx.compose.ui.semantics.Role
+import coil3.request.ImageRequest
+import coil3.network.NetworkHeaders
+import coil3.network.httpHeaders
 import fr.astragames.app.core.model.*
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.TagEntity
 import fr.astragames.app.settings.SearchEngine
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 internal fun F95ImportSheet(
     game: GameEntity,
@@ -59,189 +69,207 @@ internal fun F95ImportSheet(
     f95SessionUser: String?,
     onFetch: (String) -> Unit,
     onPrepareSearch: (MetadataSource) -> Unit,
-    onComplete: (Set<String>, CoverCandidate?) -> Unit,
+    onFind: (String) -> Unit,
+    onComplete: (MetadataImportSelection) -> Unit,
     onDismiss: () -> Unit,
     onConnectSession: (cookies: String, username: String?) -> Unit,
     onDisconnectSession: () -> Unit
 ) {
     val source = state.source
-    var url by rememberSaveable(game.id, source) { mutableStateOf(if (source == MetadataSource.F95ZONE) game.f95Url.orEmpty() else game.ryuugamesUrl.orEmpty()) }
     val metadata = state.metadata
-    var step by rememberSaveable(game.id) { mutableIntStateOf(0) }
-    var selectedTags by rememberSaveable(metadata?.sourceUrl) { mutableStateOf(metadata?.tags.orEmpty()) }
-    var selectedImageUrl by rememberSaveable(metadata?.sourceUrl) { mutableStateOf<String?>(null) }
-    var showSearch by remember(game.id) { mutableStateOf(false) }
-    var showLogin by remember(game.id) { mutableStateOf(false) }
+    val busy = state.loading || state.saving
+    var url by rememberSaveable(game.id, source) { mutableStateOf(if (source == MetadataSource.F95ZONE) game.f95Url.orEmpty() else game.ryuugamesUrl.orEmpty()) }
+    var query by rememberSaveable(game.id) { mutableStateOf(game.title) }
+    var review by rememberSaveable(game.id) { mutableStateOf(metadata != null) }
+    var selectedTags by rememberSaveable(metadata) { mutableStateOf(metadata?.tags.orEmpty()) }
+    var selectedFields by rememberSaveable(metadata) {
+        mutableStateOf(MetadataField.entries.filter { metadata != null && it.incoming(metadata) != null && it.current(game).isNullOrBlank() }.map { it.name })
+    }
+    var includeLink by rememberSaveable(metadata) { mutableStateOf(true) }
+    var selectedImageUrl by rememberSaveable(metadata) { mutableStateOf<String?>(null) }
+    var showSearch by remember { mutableStateOf(false) }
+    var showLogin by remember { mutableStateOf(false) }
+    var reloadAfterLogin by remember { mutableStateOf(false) }
+    var showLinkError by rememberSaveable { mutableStateOf(false) }
     val uriHandler = rememberExternalUriHandler()
     val existingNames = remember(existingTags) { existingTags.map { it.normalizedName }.toSet() }
-    LaunchedEffect(metadata?.sourceUrl) {
-        if (metadata != null && step == 0) step = 1
+    val validLink = source.pageUrl(url)
+    LaunchedEffect(metadata) { if (metadata != null) review = true }
+    LaunchedEffect(game.id) { if (state.gameId != game.id) onPrepareSearch(source) }
+    LaunchedEffect(f95SessionUser, reloadAfterLogin) {
+        if (reloadAfterLogin && f95SessionUser != null) {
+            reloadAfterLogin = false
+            metadata?.sourceUrl?.let(onFetch)
+        }
     }
-    LaunchedEffect(game.id) { onPrepareSearch(source) }
     Dialog(
-        onDismissRequest = { if (step > 0) step-- else onDismiss() },
+        onDismissRequest = { if (!state.saving) onDismiss() },
         properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)
     ) {
         AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding()) {
-                Row(
-                    Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 8.dp, vertical = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { if (step > 0) step-- else onDismiss() }) { Icon(Icons.Default.Close, "Fermer") }
-                    Column(Modifier.weight(1f)) {
-                        Text("Importer des métadonnées", style = MaterialTheme.typography.titleLarge)
-                        Text("Étape ${step + 1} sur 3 · ${game.title}", color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                    }
-                }
-                HorizontalDivider()
-                if (source == MetadataSource.F95ZONE) Row(
-                    Modifier.fillMaxWidth().padding(vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.AccountCircle, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
-                    Spacer(Modifier.width(8.dp))
-                    Text(
-                        if (f95SessionUser != null) "Connecté en tant que ${f95SessionUser}"
-                        else "Session F95Zone : non connectée",
-                        Modifier.weight(1f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        style = MaterialTheme.typography.bodyMedium
-                    )
-                    if (f95SessionUser != null) {
-                        TextButton(onClick = onDisconnectSession) { Text("Se déconnecter") }
-                    } else {
-                        Button(onClick = { showLogin = true }) { Text("Se connecter") }
-                    }
-                }
-                BoxWithConstraints(Modifier.fillMaxSize()) {
-                    val contentModifier = if (maxWidth >= 840.dp) {
-                        Modifier.widthIn(max = 920.dp).fillMaxHeight().align(Alignment.Center)
-                    } else Modifier.fillMaxSize()
-                    Column(contentModifier.imePadding().padding(horizontal = 16.dp, vertical = 8.dp)) {
-                        LinearProgressIndicator(progress = { (step + 1) / 3f }, modifier = Modifier.fillMaxWidth().padding(bottom = 6.dp))
-            when (step) {
-                0 -> Column(Modifier.fillMaxWidth().weight(1f).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        MetadataSource.entries.forEach { option ->
-                            FilterChip(selected = source == option, onClick = { showSearch = false; onPrepareSearch(option) }, enabled = !state.loading, label = { MaterialText(option.label) })
-                        }
-                    }
-                    OutlinedTextField(
-                        url, { url = it }, Modifier.fillMaxWidth().padding(top = 6.dp), singleLine = true,
-                        label = { Text("Lien de la fiche") }, placeholder = { MaterialText(if (source == MetadataSource.F95ZONE) "https://f95zone.to/threads/…" else "https://www.ryuugames.com/…/") },
-                        leadingIcon = { Icon(Icons.Default.Link, null) }
-                    )
-                    if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth())
-                    state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                    Button(
-                        onClick = { onFetch(url) }, enabled = url.isNotBlank() && !state.loading,
-                        modifier = Modifier.fillMaxWidth()
-                    ) { Icon(Icons.Default.Search, null); Spacer(Modifier.width(6.dp)); Text("Analyser le lien") }
-                    Button(
-                        onClick = {
-                            state.browserUrl?.let { url ->
-                                if (openInExternalBrowser) uriHandler.openUri(url) else showSearch = true
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        enabled = state.browserUrl != null && !state.loading
-                    ) {
-                        Icon(Icons.AutoMirrored.Filled.OpenInNew, null)
-                        Spacer(Modifier.width(7.dp))
-                        Text(if (openInExternalBrowser) "Ouvrir dans le navigateur" else "Rechercher automatiquement")
-                    }
-                    OutlinedButton(
-                        onClick = {
-                            state.browserUrl?.let { url ->
-                                if (openInExternalBrowser) showSearch = true else uriHandler.openUri(url)
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp),
-                        enabled = state.browserUrl != null && !state.loading
-                    ) {
-                        Icon(if (openInExternalBrowser) Icons.Default.Search else Icons.AutoMirrored.Filled.OpenInNew, null)
-                        Spacer(Modifier.width(7.dp))
-                        Text(if (openInExternalBrowser) "Afficher dans Astra" else "Ouvrir dans le navigateur")
-                    }
-                }
-                1 -> Column(Modifier.fillMaxWidth().weight(1f)) {
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Box(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding()) {
+                Column(Modifier.widthIn(max = 920.dp).fillMaxSize().align(Alignment.TopCenter)) {
+                    Row(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = onDismiss, enabled = !state.saving) { Icon(Icons.Default.Close, "Fermer") }
                         Column(Modifier.weight(1f)) {
-                            Text("Sélectionner les tags", style = MaterialTheme.typography.titleMedium)
-                            Text("${selectedTags.size} sur ${metadata?.tags?.size ?: 0} sélectionné(s)", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            Text(if (review && metadata != null) "Vérifier l’import" else "Importer des métadonnées", style = MaterialTheme.typography.titleLarge)
+                            MaterialText(game.title, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
                         }
-                        TextButton(onClick = { selectedTags = metadata?.tags.orEmpty() }) { Text("Tout") }
-                        TextButton(onClick = { selectedTags = emptyList() }) { Text("Aucun") }
                     }
-                    val detectedTags = metadata?.tags.orEmpty()
-                    if (detectedTags.isEmpty()) CenterMessage("Aucun tag détecté sur cette fiche.", Modifier.fillMaxWidth().weight(1f))
-                    else LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
-                        items(detectedTags, key = { it.lowercase(java.util.Locale.ROOT) }) { tag ->
-                            val normalized = tag.normalizeTagName()
-                            ListItem(
-                                modifier = Modifier.clickable { selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag },
-                                headlineContent = { MaterialText(tag) },
-                                supportingContent = { Text(if (normalized in existingNames) "Tag existant" else "Nouveau tag") },
-                                leadingContent = { Checkbox(tag in selectedTags, { selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag }) }
+                    HorizontalDivider()
+                    if (!review || metadata == null) {
+                        Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                            Text("Trouver la fiche du jeu", style = MaterialTheme.typography.titleMedium)
+                            Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                MetadataSource.entries.forEach { option ->
+                                    FilterChip(source == option, { showLinkError = false; onPrepareSearch(option) }, enabled = !busy, label = { MaterialText(option.label) })
+                                }
+                            }
+                            OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("Nom du jeu à rechercher") }, singleLine = true, enabled = !busy)
+                            Button(onClick = { review = true; onFind(query.trim()) }, enabled = query.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Search, null); Spacer(Modifier.width(8.dp)); Text("Trouver automatiquement")
+                            }
+                            HorizontalDivider(Modifier.padding(vertical = 4.dp))
+                            Text("Vous avez déjà un lien ?", style = MaterialTheme.typography.titleMedium)
+                            OutlinedTextField(
+                                url, { url = it; showLinkError = false }, Modifier.fillMaxWidth(), singleLine = true, enabled = !busy,
+                                label = { Text("Lien de la fiche") },
+                                placeholder = { MaterialText(if (source == MetadataSource.F95ZONE) "https://f95zone.to/threads/…" else "https://www.ryuugames.com/…/") },
+                                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri),
+                                isError = showLinkError && validLink == null,
+                                supportingText = { if (showLinkError && validLink == null) Text("Collez un lien valide pour la source sélectionnée.") }
                             )
+                            OutlinedButton(onClick = { if (validLink == null) showLinkError = true else { review = true; onFetch(validLink) } }, enabled = url.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.Link, null); Spacer(Modifier.width(8.dp)); Text("Lire cette fiche")
+                            }
+                            TextButton(onClick = {
+                                val target = source.searchUrl(query, state.searchEngine)
+                                if (openInExternalBrowser) uriHandler.openUri(target) else showSearch = true
+                            }, enabled = query.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Choisir dans le navigateur")
+                            }
+                            if (source == MetadataSource.F95ZONE) {
+                                HorizontalDivider()
+                                Text(if (metadata?.sessionExpired == true) "La session F95Zone a expiré. Reconnectez-vous pour récupérer les images."
+                                    else if (f95SessionUser != null) "Session F95Zone enregistrée · vérifiée à la lecture de la fiche"
+                                    else "Certaines fiches et images nécessitent une connexion à F95Zone.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                val needsLogin = f95SessionUser == null || metadata?.sessionExpired == true
+                                TextButton(onClick = { if (needsLogin) showLogin = true else onDisconnectSession() }, enabled = !busy) {
+                                    Text(if (needsLogin) "Se connecter à F95Zone" else "Se déconnecter")
+                                }
+                            }
+                            Text("Vous pourrez vérifier la sélection avant de l’enregistrer.", style = MaterialTheme.typography.bodySmall)
+                            if (state.loading) {
+                                LinearProgressIndicator(Modifier.fillMaxWidth())
+                                Text("Lecture des métadonnées…")
+                            }
+                            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                         }
-                    }
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { step = 0 }, Modifier.weight(1f)) { Text("Retour") }
-                        TextButton(onClick = { selectedTags = emptyList(); step = 2 }, Modifier.weight(1f)) { Text("Ignorer") }
-                        Button(onClick = { step = 2 }, Modifier.weight(1f)) { Text("Continuer") }
-                    }
-                }
-                else -> Column(Modifier.fillMaxWidth().weight(1f)) {
-                    Text("Choisir une image", style = MaterialTheme.typography.titleMedium, modifier = Modifier.padding(top = 10.dp))
-                    Text("L’image choisie pourra être recadrée avant enregistrement.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    val images = metadata?.images.orEmpty()
-                    val selectedImage = images.firstOrNull { it.imageUrl == selectedImageUrl }
-                    if (images.isEmpty()) CenterMessage("Aucune image détectée sur cette fiche.", Modifier.fillMaxWidth().weight(1f))
-                    else LazyVerticalGrid(
-                        GridCells.Adaptive(150.dp), Modifier.fillMaxWidth().weight(1f).padding(top = 10.dp),
-                        horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)
-                    ) {
-                        items(images, key = { it.imageUrl }) { image ->
-                            CoverCandidateCard(image, selected = selectedImageUrl == image.imageUrl) { selectedImageUrl = image.imageUrl }
+                    } else {
+                        val availableFields = MetadataField.entries.filter { it.incoming(metadata) != null }
+                        LazyColumn(Modifier.weight(1f).testTag("metadata-import-review"), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            item {
+                                MaterialText(metadata.title ?: source.label, style = MaterialTheme.typography.titleMedium)
+                                MaterialText(metadata.sourceUrl, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            item {
+                                MetadataChoiceRow("Enregistrer le lien source", includeLink, !busy, { includeLink = it })
+                                Text("Seuls les éléments cochés seront importés. Les tags actuels sont conservés.", style = MaterialTheme.typography.bodySmall)
+                            }
+                            item {
+                                Text("Informations", style = MaterialTheme.typography.titleMedium)
+                                if (availableFields.isEmpty()) Text("Aucune information supplémentaire détectée.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                else Text("Les champs vides sont présélectionnés. Cochez une valeur existante pour la remplacer.", style = MaterialTheme.typography.bodySmall)
+                            }
+                            items(availableFields, key = { it.name }) { field ->
+                                Column {
+                                    MetadataChoiceRow(field.label, field.name in selectedFields, !busy, { checked ->
+                                        selectedFields = if (checked) selectedFields + field.name else selectedFields - field.name
+                                    })
+                                    field.current(game)?.takeIf(String::isNotBlank)?.let { current ->
+                                        Text("Valeur actuelle", style = MaterialTheme.typography.labelSmall)
+                                        MaterialText(current, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 3, overflow = TextOverflow.Ellipsis)
+                                        Text("Valeur trouvée", style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(top = 6.dp))
+                                    }
+                                    MaterialText(field.incoming(metadata).orEmpty(), style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                            item {
+                                HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                                Text("Tags", style = MaterialTheme.typography.titleMedium)
+                                if (metadata.tags.isEmpty()) Text("Aucun tag détecté sur cette fiche.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                else {
+                                    Row {
+                                        TextButton(onClick = { selectedTags = metadata.tags }, enabled = !busy) { Text("Tout sélectionner") }
+                                        TextButton(onClick = { selectedTags = emptyList() }, enabled = !busy) { Text("Aucun") }
+                                    }
+                                    FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        metadata.tags.forEach { tag ->
+                                            FilterChip(selected = tag in selectedTags, onClick = { selectedTags = if (tag in selectedTags) selectedTags - tag else selectedTags + tag }, enabled = !busy,
+                                                label = { MaterialText(tag) },
+                                                leadingIcon = if (tag.normalizeTagName() in existingNames) ({ Icon(Icons.Default.Label, null, Modifier.size(16.dp)) }) else null)
+                                        }
+                                    }
+                                }
+                            }
+                            item {
+                                HorizontalDivider(Modifier.padding(vertical = 6.dp))
+                                Text("Jaquette", style = MaterialTheme.typography.titleMedium)
+                                Text("Facultatif · l’image choisie sera ensuite proposée au recadrage.", style = MaterialTheme.typography.bodySmall)
+                                MetadataChoiceRow(if (game.coverUri != null) "Conserver la jaquette actuelle" else "Ne pas ajouter de jaquette", selectedImageUrl == null, !busy, { selectedImageUrl = null })
+                                if (metadata.imagesRequireLogin || metadata.sessionExpired) {
+                                    Text(if (metadata.sessionExpired) "La session F95Zone a expiré. Reconnectez-vous pour récupérer les images."
+                                        else "F95Zone masque les images sans connexion. Connectez-vous pour les récupérer.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                    OutlinedButton(onClick = { showLogin = true }, enabled = !busy) { Text("Se connecter à F95Zone") }
+                                    TextButton(onClick = { onFetch(metadata.sourceUrl) }, enabled = !busy) { Text("Relire la fiche") }
+                                } else if (metadata.images.isEmpty()) Text("Aucune image détectée sur cette fiche.", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            items(metadata.images.chunked(2), key = { it.first().imageUrl }) { row ->
+                                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                                    row.forEach { candidate ->
+                                        Box(Modifier.weight(1f)) {
+                                            CoverCandidateCard(candidate, selectedImageUrl == candidate.imageUrl, enabled = !busy) {
+                                                selectedImageUrl = if (selectedImageUrl == candidate.imageUrl) null else candidate.imageUrl
+                                            }
+                                        }
+                                    }
+                                    if (row.size == 1) Spacer(Modifier.weight(1f))
+                                }
+                            }
                         }
-                    }
-                    Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        TextButton(onClick = { step = 1 }, Modifier.weight(1f)) { Text("Retour") }
-                        TextButton(onClick = { onComplete(selectedTags.toSet(), null) }, Modifier.weight(1f)) { Text("Ignorer") }
-                        Button(
-                            onClick = { selectedImage?.let { onComplete(selectedTags.toSet(), it) } },
-                            enabled = selectedImage != null, modifier = Modifier.weight(1f)
-                        ) { Text("Importer") }
-                    }
-                }
-            }
+                        Column(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            state.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                            if (state.saving) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Import en cours…") }
+                            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                                TextButton(onClick = { review = false }, enabled = !busy) { Text("Retour") }
+                                Button(onClick = {
+                                    onComplete(MetadataImportSelection(selectedFields.map(MetadataField::valueOf).toSet(), selectedTags.toSet(), metadata.images.firstOrNull { it.imageUrl == selectedImageUrl }, includeLink))
+                                }, enabled = !busy && (includeLink || selectedFields.isNotEmpty() || selectedTags.isNotEmpty() || selectedImageUrl != null), modifier = Modifier.weight(1f)) { Text("Importer la sélection") }
+                            }
+                        }
                     }
                 }
             }
         }
     }
-    if (showSearch && state.browserUrl != null) SearchF95PickerDialog(
-        source = source,
-        searchUrl = state.browserUrl,
-        searchEngine = state.searchEngine,
-        onThreadSelected = { selectedUrl ->
-            showSearch = false
-            url = selectedUrl
-            onFetch(selectedUrl)
-        },
+    if (showSearch) SearchF95PickerDialog(
+        source = source, searchUrl = source.searchUrl(query, state.searchEngine), searchEngine = state.searchEngine,
+        onThreadSelected = { selectedUrl -> showSearch = false; url = selectedUrl; review = true; onFetch(selectedUrl) },
         onDismiss = { showSearch = false }
     )
     if (showLogin) F95LoginDialog(
-        onSessionReady = { cookies, user ->
-            showLogin = false
-            onConnectSession(cookies, user)
-        },
+        onSessionReady = { cookies, user -> showLogin = false; reloadAfterLogin = metadata != null; onConnectSession(cookies, user) },
         onDismiss = { showLogin = false }
     )
+}
+
+@Composable
+private fun MetadataChoiceRow(label: String, selected: Boolean, enabled: Boolean, onChange: (Boolean) -> Unit) {
+    Row(Modifier.fillMaxWidth().heightIn(min = 48.dp).toggleable(selected, enabled = enabled, role = Role.Checkbox, onValueChange = onChange), verticalAlignment = Alignment.CenterVertically) {
+        Checkbox(selected, onCheckedChange = null, enabled = enabled)
+        Text(label, Modifier.weight(1f).padding(start = 10.dp), style = MaterialTheme.typography.bodyMedium)
+    }
 }
 
 @SuppressLint("SetJavaScriptEnabled")
@@ -328,6 +356,7 @@ internal fun F95LoginDialog(
 ) {
     var webView by remember { mutableStateOf<WebView?>(null) }
     var username by remember { mutableStateOf<String?>(null) }
+    var authenticated by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val latestCallback by rememberUpdatedState(onSessionReady)
 
@@ -349,10 +378,11 @@ internal fun F95LoginDialog(
                                     super.onPageFinished(view, url)
                                     if (!isAllowedWebUrl(url, loginOnly = true)) return
                                     view.evaluateJavascript(
-                                        "(function(){var e=document.querySelector('.p-navgroup-linkText');return e?e.textContent.trim():'';})()"
+                                        "(function(){var e=document.querySelector('.p-navgroup-link--user .p-navgroup-linkText');return JSON.stringify({authenticated:document.documentElement.getAttribute('data-logged-in')==='true',user:e?e.textContent.trim():''});})()"
                                     ) { result ->
-                                        val clean = result.trim('"').ifBlank { null }
-                                        if (clean != null && clean != "null") username = clean
+                                        val payload = runCatching { org.json.JSONObject(org.json.JSONTokener(result).nextValue() as String) }.getOrNull()
+                                        authenticated = payload?.optBoolean("authenticated") == true
+                                        username = payload?.optString("user")?.takeIf(String::isNotBlank)
                                     }
                                 }
                             }
@@ -373,7 +403,7 @@ internal fun F95LoginDialog(
                 Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
                     Button(onClick = {
                         val cookies = CookieManager.getInstance().getCookie("https://f95zone.to")
-                        if (cookies.isNullOrBlank() || !cookies.contains("xf_user=")) {
+                        if (!authenticated || cookies.isNullOrBlank() || !cookies.split(';').any { it.trim().startsWith("xf_session=") && it.substringAfter('=').isNotBlank() }) {
                             error = "Aucune session F95Zone détectée. Connectez-vous d’abord sur le site."
                         } else {
                             error = null
@@ -410,7 +440,7 @@ internal fun CoverPickerSheet(
                 },
                 enabled = state.browserUrl != null && !state.downloading,
                 modifier = Modifier.fillMaxWidth()
-            ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text(if (openInExternalBrowser) "Ouvrir dans le navigateur" else "Rechercher automatiquement") }
+            ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text(if (openInExternalBrowser) "Ouvrir dans le navigateur" else "Choisir dans le navigateur") }
             OutlinedButton(
                 onClick = {
                     state.browserUrl?.let { url ->
@@ -593,7 +623,7 @@ internal val IMAGE_SELECTION_SCRIPT = """
           candidates.push({url: url, title: node.getAttribute('aria-label') || node.getAttribute('alt') || '', score: 2000000000000});
         });
       });
-      document.images.forEach(function(img) {
+      Array.from(document.images).forEach(function(img) {
         const rect = img.getBoundingClientRect();
         const visible = rect.width > 80 && rect.height > 80 && rect.bottom > 0 && rect.top < window.innerHeight;
         const preview = img.closest('[aria-selected="true"], [aria-current="true"], [role="dialog"], [role="main"]') || visible;
@@ -604,28 +634,38 @@ internal val IMAGE_SELECTION_SCRIPT = """
       });
       const valid = candidates.filter(function(item) { return item.url && item.url.indexOf('https://') === 0; });
       const ranked = valid.sort(function(a, b) { return b.score - a.score; });
-      const top = ranked[0];
       const best = ranked[0];
       return best ? JSON.stringify({url: best.url, title: best.title || ''}) : '';
     })();
 """.trimIndent()
 
 @Composable
-internal fun CoverCandidateCard(candidate: CoverCandidate, selected: Boolean = false, onClick: () -> Unit) {
+internal fun CoverCandidateCard(candidate: CoverCandidate, selected: Boolean = false, enabled: Boolean = true, onClick: () -> Unit) {
     val clipboard = LocalClipboardManager.current
     val context = LocalContext.current
     val coverName = candidate.matchedTitle?.takeIf(String::isNotBlank)
         ?: runCatching { android.net.Uri.parse(candidate.imageUrl).lastPathSegment }.getOrNull()?.takeIf(String::isNotBlank)
         ?: candidate.source.ifBlank { "Image" }
     Surface(
-        modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
+        modifier = Modifier.fillMaxWidth().clickable(enabled = enabled, onClick = onClick),
         shape = RoundedCornerShape(14.dp),
         color = MaterialTheme.colorScheme.surfaceContainerHigh,
         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
     ) {
         Column {
             Box {
-                AsyncImage(candidate.imageUrl, candidate.matchedTitle, Modifier.fillMaxWidth().aspectRatio(1.15f), contentScale = ContentScale.Crop)
+                var failed by remember(candidate.thumbnailUrl) { mutableStateOf(false) }
+                val request = remember(candidate, context) {
+                    ImageRequest.Builder(context).data(candidate.thumbnailUrl).httpHeaders(
+                        NetworkHeaders.Builder().apply { candidate.contextUrl?.let { set("Referer", it) } }.build()
+                    ).build()
+                }
+                AsyncImage(request, candidate.matchedTitle, Modifier.fillMaxWidth().aspectRatio(1.15f), contentScale = ContentScale.Crop,
+                    onSuccess = { failed = false }, onError = { failed = true })
+                if (failed) Column(Modifier.fillMaxWidth().aspectRatio(1.15f).padding(12.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(Icons.Default.BrokenImage, null)
+                    Text("Aperçu indisponible", style = MaterialTheme.typography.labelMedium)
+                }
                 if (selected) Surface(
                     Modifier.align(Alignment.TopEnd).padding(8.dp), shape = RoundedCornerShape(50), color = MaterialTheme.colorScheme.primary
                 ) { Icon(Icons.Default.Check, "Image sélectionnée", Modifier.padding(5.dp).size(18.dp), tint = MaterialTheme.colorScheme.onPrimary) }

@@ -47,7 +47,7 @@ converties en sauvegardes Windows.
 - choix automatique et manuel de jaquettes dans le moteur sélectionné (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), sans filtre de contenu ajouté par Astra, sélection de l’image affichée, ouverture navigateur, choix local et recadrage libre ;
 - enrichissement silencieux des nouveaux jeux via VNDB (sans importer ses tags), puis recherche de la page de métadonnées avec le moteur sélectionné et URL canonique conservée dans la fiche ;
 - choix entre plusieurs sources de métadonnées, avec leurs liens conservés séparément ;
-- import de métadonnées pendant l'ajout ou l'édition : lien conservé dans la fiche, sélection des tags puis choix d'une image recadrable ;
+- import de métadonnées pendant l'ajout ou l'édition : recherche automatique ou lien, aperçu des valeurs actuelles et proposées, sélection des champs, tags et jaquette avant validation ;
 - assistant séquentiel de configuration des nouveaux jeux après chaque scan, avec actions fixes protégées du clavier et des barres système ;
 - édition complète des fiches et date du dernier lancement ;
 - ajout textuel de tags par virgules ou crochets pendant la configuration et l’édition, avec réutilisation automatique des tags existants ;
@@ -133,7 +133,16 @@ les garanties et limites des fournisseurs de documents.
 
 ## Jaquettes et métadonnées
 
-Les recherches d’images et de métadonnées utilisent le moteur choisi dans les paramètres (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia). Aucun paramètre de filtrage de contenu n’est ajouté par Astra. Les résultats d’images sont recherchés automatiquement à l’ouverture, et un bouton ouvre la même recherche dans le navigateur système. L’utilisateur peut aussi afficher les résultats dans le WebView intégré. Les liens de métadonnées sont validés et normalisés en HTTPS avant leur utilisation. VNDB complète silencieusement jaquette, description et développeur lors de l’ajout, sans importer ses tags ; le bouton des paramètres relance cet enrichissement sur les fiches incomplètes.
+Les recherches d’images et de métadonnées utilisent le moteur choisi dans les paramètres (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia). Aucun paramètre de filtrage de contenu n’est ajouté par Astra. Les résultats d’images sont recherchés automatiquement à l’ouverture, et un bouton ouvre la même recherche dans le navigateur système. L’utilisateur peut aussi afficher les résultats dans le WebView intégré. Les liens de métadonnées sont validés et normalisés en HTTPS avant leur utilisation. VNDB complète silencieusement jaquette, description et développeur lors de l’ajout, sans importer ses tags ; les fiches F95Zone ou Ryuugames liées complètent les champs manquants et proposent des images de repli. Un résultat F95Zone trouvé par recherche doit correspondre au titre avant tout enrichissement automatique. Le bouton des paramètres relance ce traitement sur les fiches incomplètes, en conservant les valeurs et jaquettes déjà choisies.
+
+L’import propose **Trouver automatiquement**, **Lire cette fiche** ou **Choisir dans le navigateur**, puis un aperçu unique. Seuls les champs cochés remplacent les informations actuelles ; fermer l’aperçu ne modifie pas la fiche. Les tags actuels sont conservés et la jaquette reste facultative. Le téléchargement précède l’enregistrement ; un échec laisse la sélection ouverte. Le recadrage suit l’import des informations.
+
+L’éditeur plein écran regroupe informations, description, tags et liens, avec deux panneaux sur écran large. Il conserve les saisies lorsqu’un import ou le choix d’une jaquette est ouvert. Les liens invalides sont signalés avant enregistrement et fermer un brouillon demande de confirmer son abandon.
+
+F95Zone peut masquer ses pièces jointes aux visiteurs. Astra reconnaît cette restriction et les sessions enregistrées que le serveur ne reconnaît plus. **Se connecter à F95Zone**, puis **Utiliser cette session**, relit la fiche ; **Relire la fiche** permet aussi de réessayer. Les cookies sont partagés avec les aperçus et téléchargements uniquement sur les hôtes HTTPS F95Zone, y compris après redirection. Une session peut expirer même si son nom est encore enregistré.
+
+Les [vérifications du parcours métadonnées](docs/VALIDATION_METADATA_2026-11-08.md) précisent les tests et leurs limites.
+
 
 ## Architecture
 

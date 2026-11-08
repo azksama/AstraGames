@@ -18,7 +18,7 @@ import fr.astragames.app.settings.SettingsRepository
 import fr.astragames.app.worker.GameUpdatesWorker
 import fr.astragames.app.worker.JoiPlayUpdateWorker
 
-class AstraApplication : Application() {
+class AstraApplication : Application(), coil3.SingletonImageLoader.Factory {
     internal val updates by lazy { fr.astragames.app.updates.AppUpdateManager(this) }
     val visibility = fr.astragames.app.core.security.AppVisibility()
     lateinit var container: AppContainer
@@ -42,12 +42,13 @@ class AstraApplication : Application() {
         val resolver = FileAccessResolver(this)
         val scanner = RecursiveSourceScanner(this, database.dao(), resolver)
         val finder = SaveFinder(this)
+        val f95Zone = F95ZoneProvider { url -> android.webkit.CookieManager.getInstance().getCookie(url) }
         container = AppContainer(
             repository = GameRepository(this, database.dao(), scanner, BackupManager(this, database)),
             settings = SettingsRepository(this),
             launcher = JoiPlayLauncher(),
-            covers = SearchCoverProvider(this),
-            f95Zone = F95ZoneProvider(),
+            covers = SearchCoverProvider(this, f95Zone),
+            f95Zone = f95Zone,
             ryuugames = fr.astragames.app.core.metadata.RyuugamesProvider(),
             vndb = VndbProvider(),
             joiPlayCatalog = JoiPlayCatalogProvider(),
@@ -59,6 +60,10 @@ class AstraApplication : Application() {
         fr.astragames.app.updates.AppUpdateWorker.schedule(this, updates.state.value.automatic, updates.state.value.wifiOnly)
 
     }
+    override fun newImageLoader(context: android.content.Context): coil3.ImageLoader =
+        coil3.ImageLoader.Builder(context).components {
+            add(coil3.network.okhttp.OkHttpNetworkFetcherFactory(callFactory = { container.covers.imageClient }))
+        }.build()
 }
 
 data class AppContainer(

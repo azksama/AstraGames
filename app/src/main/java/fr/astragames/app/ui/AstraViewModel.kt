@@ -21,6 +21,7 @@ import fr.astragames.app.core.model.ScanReport
 import fr.astragames.app.core.metadata.CoverCandidate
 import fr.astragames.app.core.metadata.F95Session
 import fr.astragames.app.core.metadata.MetadataSource
+import fr.astragames.app.core.metadata.needsMetadataEnrichment
 import fr.astragames.app.core.search.DuplicateDetector
 import fr.astragames.app.data.local.AuditEventEntity
 import fr.astragames.app.data.local.DeletedGameEntity
@@ -565,12 +566,12 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun moveTagCategory(id: String, direction: Int) = viewModelScope.launch {
         repository.moveTagCategory(id, direction)
     }
-    fun updateGame(gameId: String, edits: GameEdits, textTags: String = "") = viewModelScope.launch {
+    suspend fun updateGame(gameId: String, edits: GameEdits, textTags: String = "") {
         repository.updateGame(gameId, edits)
         if (textTags.isNotBlank()) repository.importTextTags(gameId, textTags)
         events.emit(UiEvent.Message("Jeu mis à jour"))
     }
-    fun configureScannedGame(gameId: String, edits: GameEdits, selectedTags: Set<String>, textTags: String) = viewModelScope.launch {
+    suspend fun configureScannedGame(gameId: String, edits: GameEdits, selectedTags: Set<String>, textTags: String) {
         repository.updateGame(gameId, edits)
         repository.setGameTags(gameId, selectedTags)
         if (textTags.isNotBlank()) repository.importTextTags(gameId, textTags)
@@ -635,6 +636,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                     mutableCoverSearch.value = mutableCoverSearch.value.copy(
                         downloading = false, error = error.message ?: "Impossible de télécharger cette image."
                     )
+                    events.emit(UiEvent.Message(error.message ?: "Impossible de télécharger cette image."))
                 }
         }.also { coverDownloadJob = it }
     }
@@ -657,12 +659,6 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
                     MetadataSource.RYUUGAMES -> app.container.ryuugames.fetch(url)
                 }
                 ensureActive()
-                if (source == MetadataSource.F95ZONE) repository.setF95Url(gameId, metadata.sourceUrl)
-                else repository.setRyuugamesUrl(gameId, metadata.sourceUrl)
-                repository.applyAutomaticMetadata(
-                    gameId = gameId, originalTitle = metadata.originalTitle, developer = metadata.developer, description = metadata.description,
-                    f95Url = metadata.sourceUrl.takeIf { source == MetadataSource.F95ZONE }, version = metadata.version, language = metadata.language
-                )
                 metadata
             }.onSuccess { metadata ->
                 mutableF95Import.value = mutableF95Import.value.copy(loading = false, metadata = metadata, error = null)
@@ -684,12 +680,57 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             )
         }.also { f95ImportJob = it }
     }
-    fun applyF95Tags(gameId: String, selectedTags: Set<String>) = viewModelScope.launch {
-        val imported = repository.importSourceTags(gameId, selectedTags, mutableF95Import.value.source.label)
-        events.emit(UiEvent.Message("$imported tag(s) associé(s) au jeu"))
-        if (mutableF95Import.value.gameId == gameId) clearF95Import()
+    fun findMetadata(gameId: String, title: String): Job {
+        f95ImportJob?.cancel()
+        val source = mutableF95Import.value.source
+        mutableF95Import.value = mutableF95Import.value.copy(loading = true, metadata = null, error = null)
+        return viewModelScope.launch {
+            runCatchingCancellable {
+                val engine = settingsRepository.settings.first().searchEngine
+                val url = when (source) {
+                    MetadataSource.F95ZONE -> app.container.f95Zone.findThread(title, engine)
+                    MetadataSource.RYUUGAMES -> app.container.ryuugames.findPage(title, engine)
+                } ?: error("Aucune fiche trouvée. Collez un lien ou poursuivez dans le navigateur.")
+                when (source) {
+                    MetadataSource.F95ZONE -> app.container.f95Zone.fetch(url)
+                    MetadataSource.RYUUGAMES -> app.container.ryuugames.fetch(url)
+                }
+            }.onSuccess { metadata ->
+                ensureActive()
+                mutableF95Import.value = mutableF95Import.value.copy(loading = false, metadata = metadata)
+            }.onFailure { error ->
+                mutableF95Import.value = mutableF95Import.value.copy(loading = false, error = error.message ?: "Recherche impossible.")
+            }
+        }.also { f95ImportJob = it }
     }
-    fun chooseF95Cover(gameId: String, candidate: CoverCandidate) = chooseRemoteCover(gameId, candidate)
+
+    fun applyMetadataImport(
+        gameId: String,
+        selection: fr.astragames.app.core.metadata.MetadataImportSelection,
+        onSuccess: () -> Unit
+    ): Job? {
+        val state = mutableF95Import.value
+        val metadata = state.metadata ?: return null
+        if (state.gameId != gameId || state.saving) return null
+        mutableF95Import.value = state.copy(saving = true, error = null)
+        return viewModelScope.launch {
+            var image: Uri? = null
+            runCatchingCancellable {
+                // Prepare the image first: a failed download leaves the review open and the game untouched.
+                image = selection.image?.let { app.container.covers.download(it) }
+                ensureActive()
+                repository.importMetadata(gameId, metadata, state.source, selection)
+            }.onSuccess {
+                mutableF95Import.value = F95ImportState()
+                onSuccess()
+                image?.let { cropRequests.emit(CropRequest(gameId, it)) }
+                events.emit(UiEvent.Message("Métadonnées importées"))
+            }.onFailure { error ->
+                image?.let(app.container.covers::discardDownload)
+                mutableF95Import.value = mutableF95Import.value.copy(saving = false, error = error.message ?: "Import impossible. Réessayez.")
+            }
+        }.also { f95ImportJob = it }
+    }
     fun clearF95Import() {
         f95ImportJob?.cancel()
         mutableF95Import.value = F95ImportState()
@@ -698,12 +739,12 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun connectF95Session(cookies: String, username: String?) = viewModelScope.launch {
         val xfUser = cookieValue(cookies, "xf_user")
         val xfSession = cookieValue(cookies, "xf_session")
-        if (xfUser == null || xfSession == null) {
+        if (xfSession == null) {
             events.emit(UiEvent.Message("Aucune session F95Zone détectée. Connectez-vous d’abord sur le site."))
             return@launch
         }
-        settingsRepository.setF95Session(username, xfUser, xfSession)
-        app.container.f95Zone.setSession(F95Session(username, xfUser, xfSession))
+        settingsRepository.setF95Session(username?.takeIf(String::isNotBlank) ?: "F95Zone", xfUser.orEmpty(), xfSession)
+        app.container.f95Zone.setSession(F95Session(username, xfUser.orEmpty(), xfSession))
         events.emit(UiEvent.Message("Session F95Zone enregistrée"))
     }
 
@@ -744,9 +785,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun refreshIncompleteMetadata() {
         if (metadataRefresh.value.running || metadataMutex.isLocked) return
         metadataJob?.cancel()
-        val ids = uiState.value.games.filter {
-            it.coverUri == null || it.description.isNullOrBlank() || it.developer.isNullOrBlank()
-        }.map { it.id }
+        val ids = uiState.value.games.filter { it.needsMetadataEnrichment() }.map { it.id }
         metadataJob = viewModelScope.launch {
             if (ids.isEmpty()) {
                 events.emit(UiEvent.Message("Toutes les métadonnées sont déjà présentes"))
@@ -755,8 +794,8 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             runCatchingCancellable { enrichGames(ids, visibleProgress = true) }
                 .onSuccess { enriched ->
                     events.emit(UiEvent.Message(
-                        if (enriched == 0) "Aucune métadonnée trouvée — vérifiez votre connexion"
-                        else "Actualisation terminée pour ${ids.size} jeu(x)"
+                        if (enriched == 0) "Aucune nouvelle métadonnée trouvée. Essayez un import depuis la fiche du jeu."
+                        else "$enriched jeu(x) complété(s) sur ${ids.size}"
                     ))
                 }
                 .onFailure { events.emit(UiEvent.Message(it.message ?: "Actualisation impossible")) }
@@ -768,7 +807,13 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         try {
             var enriched = 0
             ids.forEachIndexed { index, id ->
-                if (enrichGame(id)) enriched++
+                try {
+                    if (enrichGame(id)) enriched++
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Log.w("AstraMetadata", "Actualisation impossible pour le jeu $id", error)
+                }
                 if (visibleProgress) metadataRefresh.value = MetadataRefreshState(true, index + 1, ids.size)
                 if (index < ids.lastIndex) delay(VNDB_REQUEST_INTERVAL_MS)
             }
@@ -778,7 +823,7 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    private suspend fun enrichGame(gameId: String): Boolean {
+    internal suspend fun enrichGame(gameId: String): Boolean {
         val game = repository.getGame(gameId) ?: return false
         val searchEngine = settingsRepository.settings.first().searchEngine
         val vndb = try {
@@ -789,41 +834,68 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             Log.w("AstraMetadata", "VNDB introuvable pour « ${game.title} »", error)
             null
         }
-        val f95Url = game.f95Url ?: vndb?.f95Url ?: try {
+        val knownF95 = game.f95Url ?: vndb?.f95Url
+        val discoveredF95 = if (knownF95 == null && game.ryuugamesUrl.isNullOrBlank()) try {
             app.container.f95Zone.findThread(game.title, searchEngine)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
             Log.w("AstraMetadata", "F95 introuvable pour « ${game.title} »", error)
             null
-        }
-        repository.applyAutomaticMetadata(
-            gameId = game.id,
-            originalTitle = vndb?.originalTitle,
-            developer = vndb?.developers?.joinToString(" • "),
-            description = vndb?.description,
-            f95Url = f95Url
-        )
-        if (game.coverUri == null && vndb?.coverUrl != null) {
-            val candidate = CoverCandidate(
-                imageUrl = vndb.coverUrl,
-                thumbnailUrl = vndb.coverUrl,
-                source = "vndb.org",
-                contextUrl = "https://vndb.org/${vndb.id}",
-                matchedTitle = vndb.title,
-                confidence = 1f
-            )
-            val downloaded = try {
-                app.container.covers.download(candidate)
-            } catch (error: CancellationException) {
-                throw error
-            } catch (error: Exception) {
-                // La jaquette reste manquante ; l'enrichissement continue.
-                null
+        } else null
+        var f95Url = knownF95
+        val sourceMetadata = try {
+            val fetched = when {
+                knownF95 != null -> app.container.f95Zone.fetch(knownF95)
+                !game.ryuugamesUrl.isNullOrBlank() -> app.container.ryuugames.fetch(game.ryuugamesUrl)
+                discoveredF95 != null -> app.container.f95Zone.fetch(discoveredF95)
+                else -> null
             }
-            if (downloaded != null) repository.setCover(game.id, downloaded)
+            // Search engines can return a related game. Only trusted links or matching titles may auto-fill.
+            if (discoveredF95 != null && fetched != null) {
+                if (fr.astragames.app.core.metadata.matchesMetadataTitle(game.title, fetched.title.orEmpty())) {
+                    f95Url = fetched.sourceUrl
+                    fetched
+                } else null
+            } else fetched
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            Log.w("AstraMetadata", "Fiche indisponible pour « ${game.title} »", error)
+            null
         }
-        return vndb != null || f95Url != null
+        var changed = repository.applyAutomaticMetadata(
+            gameId = game.id,
+            originalTitle = vndb?.originalTitle ?: sourceMetadata?.originalTitle,
+            developer = vndb?.developers?.takeIf { it.isNotEmpty() }?.joinToString(" • ") ?: sourceMetadata?.developer,
+            description = vndb?.description ?: sourceMetadata?.description,
+            f95Url = f95Url, version = sourceMetadata?.version, language = sourceMetadata?.language
+        )
+        if (game.coverUri == null) {
+            val candidates = buildList {
+                if (vndb?.coverUrl != null) add(CoverCandidate(
+                    imageUrl = vndb.coverUrl, source = "vndb.org", contextUrl = "https://vndb.org/${vndb.id}",
+                    matchedTitle = vndb.title, confidence = 1f
+                ))
+                addAll(sourceMetadata?.images.orEmpty().take(3))
+            }.distinctBy { it.imageUrl }
+            for (candidate in candidates) {
+                val downloaded = try {
+                    app.container.covers.download(candidate)
+                } catch (error: CancellationException) {
+                    throw error
+                } catch (error: Exception) {
+                    Log.w("AstraMetadata", "Jaquette indisponible pour « ${game.title} »", error)
+                    null
+                }
+                if (downloaded != null) {
+                    try { changed = repository.setCover(game.id, downloaded, onlyIfMissing = true) || changed }
+                    finally { app.container.covers.discardDownload(downloaded) }
+                    break
+                }
+            }
+        }
+        return changed
     }
     fun completeOnboarding() = viewModelScope.launch { settingsRepository.completeOnboarding() }
     fun setLanguage(language: AppLanguage) = viewModelScope.launch { settingsRepository.setLanguage(language) }

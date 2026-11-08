@@ -105,7 +105,7 @@ class VndbProvider {
     private fun similarity(left: String, right: String): Double {
         if (left.isBlank() || right.isBlank()) return 0.0
         if (left == right) return 1.0
-        if (left.length >= 5 && (left in right || right in left)) return .9
+        // A short title such as "I" must not match every longer title containing that letter.
         val leftTokens = left.split(' ').filter(String::isNotBlank).toSet()
         val rightTokens = right.split(' ').filter(String::isNotBlank).toSet()
         val union = leftTokens union rightTokens

@@ -105,6 +105,7 @@ data class F95ImportState(
     val gameId: String? = null,
     val loading: Boolean = false,
     val metadata: F95ZoneMetadata? = null,
+    val saving: Boolean = false,
     val error: String? = null,
     val browserUrl: String? = null,
     val searchEngine: SearchEngine = SearchEngine.YANDEX

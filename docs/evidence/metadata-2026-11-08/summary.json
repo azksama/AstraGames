@@ -1,0 +1,19 @@
+{
+  "base_commit": "c4190cdc02b5cea81bba30134a37940187c76abe",
+  "apk": "app\\build\\outputs\\apk\\debug\\app-debug.apk",
+  "sha256": "05373e30e43d0a2086ce553d2c173617b0cd137f8d3612992bcd166e2a932690",
+  "bytes": 50065523,
+  "tests": {
+    "instrumentation": 40,
+    "landscape": 3,
+    "large-text": 3
+  },
+  "lint": {
+    "Warning": 117
+  },
+  "device": {
+    "avd": "small_phone",
+    "api": 36,
+    "abi": "x86_64"
+  }
+}

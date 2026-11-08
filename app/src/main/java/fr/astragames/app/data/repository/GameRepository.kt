@@ -27,6 +27,11 @@ import fr.astragames.app.core.model.ScanReportItem
 import fr.astragames.app.core.model.ScanReportItemStatus
 import fr.astragames.app.core.search.parseTextTagList
 import fr.astragames.app.core.metadata.canonicalF95ThreadUrl
+import fr.astragames.app.core.metadata.MetadataField
+import fr.astragames.app.core.metadata.MetadataSource
+import fr.astragames.app.core.metadata.MetadataImportSelection
+import fr.astragames.app.core.metadata.MetadataValues
+import fr.astragames.app.core.metadata.F95ZoneMetadata
 import fr.astragames.app.data.saves.readBounded
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -144,20 +149,29 @@ class GameRepository(
     }
     suspend fun setGameVersion(id: String, version: String) = dao.setGameVersion(id, version)
 
-    suspend fun setCover(id: String, uri: Uri) = withContext(Dispatchers.IO) {
+    suspend fun setCover(id: String, uri: Uri, onlyIfMissing: Boolean = false): Boolean = withContext(Dispatchers.IO) {
         val directory = File(context.filesDir, "covers").apply { mkdirs() }
-        val previous = dao.getGame(id)?.coverUri?.let(Uri::parse)
+        val game = dao.getGame(id) ?: return@withContext false
+        if (onlyIfMissing && !game.coverUri.isNullOrBlank()) return@withContext false
+        val previous = game.coverUri?.let(Uri::parse)
         val destination = File(directory, "${UUID.randomUUID()}.jpg")
         try {
             context.contentResolver.openInputStream(uri)?.use { input ->
             destination.outputStream().use(input::copyTo)
         } ?: error("Impossible de lire l'image recadrée.")
-            dao.setCover(id, Uri.fromFile(destination).toString())
+            val saved = Uri.fromFile(destination).toString()
+            if (onlyIfMissing) {
+                if (dao.setCoverIfMissing(id, saved) == 0) {
+                    destination.delete()
+                    return@withContext false
+                }
+            } else dao.setCover(id, saved)
         } catch (error: Exception) {
             runCatching { destination.delete() }
             throw error
         }
         previous?.path?.let(::File)?.takeIf { it.parentFile == directory && it != destination }?.delete()
+        true
     }
 
     suspend fun removeCover(id: String) = withContext(Dispatchers.IO) {
@@ -533,14 +547,13 @@ class GameRepository(
 
     suspend fun updateGame(gameId: String, edits: GameEdits) {
         val title = edits.title.trim()
-        if (title.isBlank()) return
+        require(title.isNotBlank()) { "Saisissez un titre pour le jeu." }
         val ryuu = edits.ryuugamesUrl?.trim()?.takeIf(String::isNotBlank)?.let { requireNotNull(fr.astragames.app.core.metadata.canonicalRyuugamesUrl(it)) { "Lien Ryuugames invalide." } }
         dao.updateGameFields(
             gameId, title, edits.originalTitle.cleanOrNull(), edits.developer.cleanOrNull(),
             edits.version.cleanOrNull(), edits.productCode.cleanOrNull(), edits.language.cleanOrNull(),
-            edits.description.cleanOrNull(), edits.f95Url.cleanF95UrlOrNull()
+            edits.description.cleanOrNull(), edits.f95Url.cleanF95UrlOrNull(), ryuu
         )
-        dao.setRyuugamesUrl(gameId, ryuu)
     }
 
     suspend fun setRyuugamesUrl(gameId: String, url: String?) = dao.setRyuugamesUrl(gameId,
@@ -556,19 +569,31 @@ class GameRepository(
         f95Url: String?,
         version: String? = null,
         language: String? = null
+    ): Boolean = dao.mergeMetadata(gameId, MetadataValues(
+        originalTitle = originalTitle.cleanOrNull(), developer = developer.cleanOrNull(),
+        version = version.cleanOrNull(), language = language.cleanOrNull(),
+        description = description.cleanOrNull(), f95Url = f95Url.cleanF95UrlOrNull()
+    ))
+
+    suspend fun importMetadata(
+        gameId: String,
+        metadata: F95ZoneMetadata,
+        source: MetadataSource,
+        selection: MetadataImportSelection
     ) {
-        val game = dao.getGame(gameId) ?: return
-        dao.updateGameFields(
-            id = game.id,
-            title = game.title,
-            originalTitle = game.originalTitle ?: originalTitle.cleanOrNull(),
-            developer = game.developer ?: developer.cleanOrNull(),
-            version = game.version ?: version.cleanOrNull(),
-            productCode = game.productCode,
-            language = game.language ?: language.cleanOrNull(),
-            description = game.description ?: description.cleanOrNull(),
-            f95Url = game.f95Url ?: f95Url.cleanF95UrlOrNull()
+        checkNotNull(dao.getGame(gameId)) { "Jeu introuvable." }
+        fun selected(field: MetadataField) = field.incoming(metadata).takeIf { field in selection.fields }
+        val values = MetadataValues(
+            originalTitle = selected(MetadataField.ORIGINAL_TITLE),
+            developer = selected(MetadataField.DEVELOPER),
+            version = selected(MetadataField.VERSION),
+            language = selected(MetadataField.LANGUAGE),
+            description = selected(MetadataField.DESCRIPTION),
+            f95Url = metadata.sourceUrl.takeIf { selection.includeSourceLink && source == MetadataSource.F95ZONE },
+            ryuugamesUrl = metadata.sourceUrl.takeIf { selection.includeSourceLink && source == MetadataSource.RYUUGAMES }
         )
+        dao.mergeMetadata(gameId, values, replaceExisting = true)
+        importSourceTags(gameId, selection.tags, source.label)
     }
 
     suspend fun importF95Tags(gameId: String, tagNames: Collection<String>): Int {
@@ -583,6 +608,7 @@ class GameRepository(
 
     private suspend fun associateTagNames(gameId: String, tagNames: Collection<String>, categoryName: String?): Int {
         val selectedNames = tagNames.map(String::trim).filter(String::isNotBlank).distinctBy(::normalize)
+        if (selectedNames.isEmpty()) return 0
         if (categoryName != null && selectedNames.isNotEmpty() && dao.getTagCategories().none { normalize(it.name) == normalize(categoryName) }) {
             createTagCategory(categoryName)
         }
@@ -793,7 +819,7 @@ class GameRepository(
 
     private fun String?.cleanF95UrlOrNull(): String? {
         val clean = cleanOrNull() ?: return null
-        return canonicalF95ThreadUrl(clean)
+        return requireNotNull(canonicalF95ThreadUrl(clean)) { "Lien F95Zone invalide. Utilisez le lien de la fiche du jeu." }
     }
 
     companion object {

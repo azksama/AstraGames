@@ -217,10 +217,10 @@ internal fun GameDetailScreen(
     }
     if (item != null && edit) EditGameDialog(
         game = item,
-        onSave = { edits, textTags -> vm.updateGame(item.id, edits, textTags); edit = false },
-        onF95 = { edit = false; importF95 = true },
-        onChangeCover = { edit = false; pickCover = true; vm.prepareCoverPicker(item.id) },
-        onRemoveCover = { edit = false; confirmCoverRemoval = true },
+        onSave = { edits, textTags -> vm.updateGame(item.id, edits, textTags) },
+        onF95 = { importF95 = true },
+        onChangeCover = { pickCover = true; vm.prepareCoverPicker(item.id) },
+        onRemoveCover = { confirmCoverRemoval = true },
         onDeleteGame = { edit = false; confirmGameRemoval = true },
         onDismiss = { edit = false }
     )
@@ -230,13 +230,15 @@ internal fun GameDetailScreen(
     if (item != null && pickCover) CoverPickerSheet(item, coverState, state.settings.openSearchInExternalBrowser, { vm.chooseRemoteCover(item.id, it) }, {
         onPickCover(item.id); pickCover = false
     }, { vm.removeCover(item.id); pickCover = false }, { pickCover = false; vm.clearCoverSearch() })
-    if (item != null && importF95) F95ImportSheet(item, state.tags, f95State, state.settings.openSearchInExternalBrowser, state.settings.f95SessionUser, { vm.fetchF95Metadata(item.id, it) }, {
-        vm.prepareF95Search(item.id, item.title, it)
-    }, { tags, image ->
-        vm.applyF95Tags(item.id, tags)
-        image?.let { vm.chooseF95Cover(item.id, it) }
-        importF95 = false
-    }, { importF95 = false; vm.clearF95Import() }, vm::connectF95Session, vm::disconnectF95)
+    if (item != null && importF95) F95ImportSheet(
+        item, state.tags, f95State, state.settings.openSearchInExternalBrowser, state.settings.f95SessionUser,
+        onFetch = { vm.fetchF95Metadata(item.id, it) },
+        onPrepareSearch = { vm.prepareF95Search(item.id, item.title, it) },
+        onFind = { vm.findMetadata(item.id, it) },
+        onComplete = { selection -> vm.applyMetadataImport(item.id, selection) { importF95 = false } },
+        onDismiss = { importF95 = false; vm.clearF95Import() },
+        onConnectSession = vm::connectF95Session, onDisconnectSession = vm::disconnectF95
+    )
     if (item?.coverUri != null && previewCover) CoverFullscreenDialog(item.coverUri, item.title) { previewCover = false }
     if (item != null && showCompatibilityActions) AlertDialog(
         onDismissRequest = { showCompatibilityActions = false },
