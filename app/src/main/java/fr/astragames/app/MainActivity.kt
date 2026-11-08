@@ -220,6 +220,7 @@ class MainActivity : FragmentActivity() {
                 uri = source,
                 cropImageOptions = CropImageOptions(
                     guidelines = CropImageView.Guidelines.ON,
+                    multiTouchEnabled = true,
                     fixAspectRatio = true,
                     aspectRatioX = 18,
                     aspectRatioY = 25,

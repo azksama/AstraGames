@@ -2,7 +2,7 @@
 
 ## Périmètre
 
-Refonte de l’import et de l’édition des métadonnées Android, vérification de l’enrichissement automatique et correction du chargement des jaquettes F95Zone. Travail local sur la branche `codex/wolf-runtime-release`, sans changement de version ni publication.
+Refonte de l’import et de l’édition des métadonnées Android, vérification de l’enrichissement automatique et correction du chargement des jaquettes F95Zone. Ce document conserve la validation initiale sur la base beta.23. L’intégration à la beta.24 et la qualification de la release suivante sont décrites dans le [bilan beta.25](VALIDATION_1.12.0-beta.25.md).
 
 ## Parcours livré
 
@@ -73,5 +73,5 @@ APK debug : `app/build/outputs/apk/debug/app-debug.apk` (50,065,523 octets). SHA
 - La session personnelle F95Zone de l’utilisateur et un téléchargement authentifié avec son compte n’ont pas été testés. Le comportement membre est couvert par des fixtures et des tests de transmission de cookies ; la vérification réseau réelle utilise une page visiteur.
 - L’acceptation par F95Zone d’une session expirée ou d’une vérification interactive ne peut pas être forcée. L’application propose la reconnexion et la relecture.
 - Ryuugames et les différents moteurs de recherche restent dépendants de leurs réponses externes ; tous les services n’ont pas fait l’objet d’un test réseau réel dans cette intervention.
-- Pas de validation sur téléphone physique ni de publication de release. L’APK fourni est une compilation debug destinée à l’essai.
+- Pas de validation sur téléphone physique. L’APK identifié dans ce bilan initial est une compilation debug ; l’APK public et sa signature figurent dans le bilan beta.25.
 - La recherche de défauts porte sur les parcours métadonnées, images, édition et stockage associés ; elle ne constitue pas un audit exhaustif des moteurs d’exécution de jeux.

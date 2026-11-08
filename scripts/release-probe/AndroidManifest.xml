@@ -1,0 +1,5 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android" package="fr.astragames.upgradeprobe">
+    <uses-sdk android:minSdkVersion="26" android:targetSdkVersion="36" />
+    <application android:label="Astra upgrade probe" android:debuggable="true" android:testOnly="true" />
+    <instrumentation android:name="fr.astragames.upgradeprobe.UpgradeProbe" android:targetPackage="fr.astragames.app" android:label="Astra upgrade verification" />
+</manifest>

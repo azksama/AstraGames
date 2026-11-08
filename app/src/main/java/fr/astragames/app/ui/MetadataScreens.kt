@@ -12,6 +12,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.rememberScrollState
@@ -425,13 +426,20 @@ internal fun CoverPickerSheet(
 ) {
     var showSearch by remember { mutableStateOf(false) }
     val uriHandler = rememberExternalUriHandler()
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 4.dp)) {
-            Text("Jaquette de ${game.title}", style = MaterialTheme.typography.titleLarge)
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        LazyVerticalGrid(
+            GridCells.Adaptive(150.dp), Modifier.fillMaxWidth().testTag("cover-picker-grid"),
+            contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 4.dp, bottom = 24.dp),
+            horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            item(span = { GridItemSpan(maxLineSpan) }) { Text("Jaquette de ${game.title}", style = MaterialTheme.typography.titleLarge) }
+            item(span = { GridItemSpan(maxLineSpan) }) {
             Row(Modifier.fillMaxWidth().padding(vertical = 10.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = onLocal, Modifier.weight(1f)) { Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text("Image locale") }
-                if (game.coverUri != null) TextButton(onClick = onRemove) { Text("Supprimer") }
+                OutlinedButton(onClick = onLocal, Modifier.weight(1f), enabled = !state.downloading) { Icon(Icons.Default.FolderOpen, null); Spacer(Modifier.width(6.dp)); Text("Image locale") }
+                if (game.coverUri != null) TextButton(onClick = onRemove, enabled = !state.downloading) { Text("Supprimer") }
             }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
             Button(
                 onClick = {
                     state.browserUrl?.let { url ->
@@ -441,6 +449,8 @@ internal fun CoverPickerSheet(
                 enabled = state.browserUrl != null && !state.downloading,
                 modifier = Modifier.fillMaxWidth()
             ) { Icon(Icons.Default.ImageSearch, null); Spacer(Modifier.width(8.dp)); Text(if (openInExternalBrowser) "Ouvrir dans le navigateur" else "Choisir dans le navigateur") }
+            }
+            item(span = { GridItemSpan(maxLineSpan) }) {
             OutlinedButton(
                 onClick = {
                     state.browserUrl?.let { url ->
@@ -454,25 +464,16 @@ internal fun CoverPickerSheet(
                 Spacer(Modifier.width(8.dp))
                 Text(if (openInExternalBrowser) "Afficher dans Astra" else "Ouvrir dans le navigateur")
             }
+            }
             when {
-                state.loading -> CenterMessage("Recherche d’images…", Modifier.height(180.dp), true)
-                state.downloading -> CenterMessage("Préparation du recadrage…", Modifier.height(220.dp), true)
-                state.error != null -> Box(Modifier.fillMaxWidth().height(160.dp), contentAlignment = Alignment.Center) {
-                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Text(state.error, color = MaterialTheme.colorScheme.error)
-                    }
+                state.loading -> item(span = { GridItemSpan(maxLineSpan) }) { CenterMessage("Recherche d’images…", Modifier.heightIn(min = 120.dp), true) }
+                state.downloading -> item(span = { GridItemSpan(maxLineSpan) }) { CenterMessage("Préparation du recadrage…", Modifier.heightIn(min = 120.dp), true) }
+                state.error != null -> item(span = { GridItemSpan(maxLineSpan) }) {
+                    Text(state.error, color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(vertical = 16.dp))
                 }
-                state.results.isNotEmpty() -> LazyVerticalGrid(
-                    GridCells.Adaptive(150.dp),
-                    Modifier.fillMaxWidth().heightIn(max = 360.dp).padding(top = 10.dp),
-                    horizontalArrangement = Arrangement.spacedBy(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
-                ) {
-                    items(state.results, key = { it.imageUrl }) { candidate ->
-                        CoverCandidateCard(candidate, onClick = { onCandidate(candidate) })
-                    }
+                else -> items(state.results, key = { it.imageUrl }) { candidate ->
+                    CoverCandidateCard(candidate, onClick = { onCandidate(candidate) })
                 }
-                else -> Spacer(Modifier.navigationBarsPadding().height(18.dp))
             }
         }
     }

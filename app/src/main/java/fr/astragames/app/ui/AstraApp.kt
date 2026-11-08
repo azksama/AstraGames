@@ -37,6 +37,8 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.sp
@@ -57,6 +59,11 @@ import fr.astragames.app.core.model.*
 import fr.astragames.app.settings.AppLanguage
 import fr.astragames.app.settings.CoverBlurMode
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import androidx.compose.animation.core.animate
+import androidx.compose.animation.core.spring
 import kotlin.math.abs
 
 internal enum class Destination(val route: String, val description: String, val visibleInMenu: Boolean = true) {
@@ -209,7 +216,11 @@ internal fun CompactBottomNavigation(route: String, nav: NavHostController, modi
 @Composable
 internal fun Modifier.pullDownSearch(route: String, nav: NavHostController): Modifier {
     val threshold = with(LocalDensity.current) { 80.dp.toPx() }
-    val pull = remember(route, threshold, nav) { SearchPullGesture(threshold) { nav.navigate(Destination.SEARCH.route) { launchSingleTop = true } } }
+    val scope = rememberCoroutineScope()
+    val pull = remember(route, threshold, nav) { SearchPullGesture(threshold, scope) { nav.navigate(Destination.SEARCH.route) { launchSingleTop = true } } }
+    val background = MaterialTheme.colorScheme.primaryContainer
+    val foreground = MaterialTheme.colorScheme.onPrimaryContainer
+    val statusBar = WindowInsets.statusBars.getTop(LocalDensity.current)
     val connection = remember(pull) {
         object : NestedScrollConnection {
             override fun onPostScroll(consumed: Offset, available: Offset, source: NestedScrollSource): Offset {
@@ -219,18 +230,32 @@ internal fun Modifier.pullDownSearch(route: String, nav: NavHostController): Mod
                 return Offset.Zero
             }
             override suspend fun onPreFling(available: Velocity): Velocity {
-                pull.reset()
+                pull.release(available.y)
                 return Velocity.Zero
             }
         }
     }
     return this.nestedScroll(connection).pointerInput(pull) {
         detectVerticalDragGestures(
-            onDragStart = { pull.reset() },
-            onDragEnd = { pull.reset() },
-            onDragCancel = { pull.reset() },
+            onDragStart = { pull.catch() },
+            onDragEnd = { pull.release() },
+            onDragCancel = { pull.cancel() },
             onVerticalDrag = { _, amount -> pull.drag(amount) }
         )
+    }.drawWithContent {
+        drawContent()
+        val distance = pull.distance
+        if (distance > 0f) {
+            val radius = 22.dp.toPx()
+            val travel = if (distance <= threshold) distance else threshold + (distance - threshold) * .2f
+            val center = Offset(size.width / 2, statusBar + travel - radius)
+            val alpha = (distance / threshold).coerceIn(0f, 1f)
+            drawCircle(background, radius, center, alpha)
+            val lens = center - Offset(2.dp.toPx(), 2.dp.toPx())
+            drawCircle(foreground, 6.dp.toPx(), lens, alpha, Stroke(2.dp.toPx()))
+            drawLine(foreground.copy(alpha = alpha), lens + Offset(4.dp.toPx(), 4.dp.toPx()),
+                lens + Offset(10.dp.toPx(), 10.dp.toPx()), 2.dp.toPx())
+        }
     }.semantics {
         customActions = listOf(CustomAccessibilityAction(AppLocalizer.text("Rechercher")) {
             nav.navigate(Destination.SEARCH.route) { launchSingleTop = true }
@@ -239,13 +264,31 @@ internal fun Modifier.pullDownSearch(route: String, nav: NavHostController): Mod
     }
 }
 
-internal class SearchPullGesture(private val threshold: Float, private val onSearch: () -> Unit) {
-    private var distance = 0f
-    private var opened = false
-    fun reset() { distance = 0f; opened = false }
+internal class SearchPullGesture(private val threshold: Float, private val scope: CoroutineScope, private val onSearch: () -> Unit) {
+    var distance by mutableFloatStateOf(0f)
+        private set
+    private var settling: Job? = null
+    private var tracking = false
+    fun reset() { settling?.cancel(); distance = 0f; tracking = false }
+    fun catch() { settling?.cancel(); tracking = true }
     fun drag(amount: Float) {
+        catch()
         distance = (distance + amount).coerceAtLeast(0f)
-        if (!opened && distance >= threshold) { opened = true; onSearch() }
+    }
+    fun release(velocity: Float = 0f) {
+        if (!tracking) return
+        tracking = false
+        if (distance >= threshold) { reset(); onSearch() } else settle(velocity)
+    }
+    fun cancel() { tracking = false; settle(0f) }
+    private fun settle(velocity: Float) {
+        settling?.cancel()
+        if (distance == 0f) return
+        settling = scope.launch {
+            animate(distance, 0f, initialVelocity = velocity.coerceAtMost(0f), animationSpec = spring(dampingRatio = 1f, stiffness = 600f)) { value, _ ->
+                distance = value.coerceAtLeast(0f)
+            }
+        }
     }
 }
 

@@ -1,0 +1,62 @@
+{
+  "runs": {
+    "tour-final": {
+      "passed": 71,
+      "ignored": 1,
+      "failed": 0
+    },
+    "gestures": {
+      "passed": 34,
+      "ignored": 0,
+      "failed": 0
+    },
+    "data-runtime": {
+      "passed": 36,
+      "ignored": 0,
+      "failed": 0
+    },
+    "gesture-final": {
+      "passed": 7,
+      "ignored": 0,
+      "failed": 0
+    },
+    "landscape": {
+      "passed": 9,
+      "ignored": 0,
+      "failed": 0
+    },
+    "reduced-motion": {
+      "passed": 4,
+      "ignored": 0,
+      "failed": 0
+    }
+  },
+  "unique_passed": 122,
+  "ignored": [
+    "fr.astragames.app.ui.GodotUiTest#installedOfficialGodotPluginsShowAsInstalledWithoutDownloadDuplicates"
+  ],
+  "upgrade_tables": 31,
+  "upgrade_files": 2,
+  "version": "1.12.0-beta.25",
+  "version_code": 53,
+  "apk": "Astra-1.12.0-beta.25.apk",
+  "apk_sha256": "ff5dcec4043d9efbd471b2b419bf138e8b2867e882be8d6d83f485130f9f9f74",
+  "apk_bytes": 48965204,
+  "certificate_sha256": "7425b524d8daac7759c58362e5f97a3bc5aa99d0645c2d8f0cd680490a4ad793",
+  "release_minified": true,
+  "debuggable": false,
+  "lint": {
+    "errors": 0,
+    "warnings": 131
+  },
+  "upgrade_from": "1.12.0-beta.24",
+  "upgrade_before_after_launch": true,
+  "abi_execution": "x86_64",
+  "android_emulator_api": [
+    36,
+    "36.1"
+  ],
+  "f95_live_authenticated_session_tested": false,
+  "native_16k_libraries": 30,
+  "passed_executions": 161
+}

@@ -15,7 +15,6 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.PopupMenu
 import com.winlator.xserver.XKeycode
-import kotlin.math.abs
 
 /** Independently movable controls. Empty space passes touch through to the game. */
 internal class WolfTouchControls(context: Context, private val key: (XKeycode, Boolean) -> Unit,
@@ -33,6 +32,7 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
         Control("shift", "Shift", XKeycode.KEY_SHIFT_L, 56))
     private val definitions get() = standardDefinitions + store?.customControls().orEmpty().map { Control(it.id, it.label, it.code, 72) }
     private val buttons = mutableMapOf<String, Button>()
+    private val dragControls = mutableMapOf<String, ControlDragGesture>()
     private val held = WolfHeldKeys(key)
     private val inputHandler = android.os.Handler(android.os.Looper.getMainLooper())
     private val scheduled = mutableMapOf<String, Runnable>()
@@ -102,28 +102,14 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
             var touchClick = false
             var activePointer = MotionEvent.INVALID_POINTER_ID
             var downEpoch = inputEpoch
-            var downX = 0f; var downY = 0f; var originX = 0f; var originY = 0f; var dragged = false
+            val drag = controlDrag(def.id, button)
             button.setOnClickListener {
                 if (editing) remap(definitions.first { it.id == def.id })
                 else if (!touchClick) activate(def, accessibleClick = true)
             }
             button.setOnTouchListener { view, event ->
                 if (editing) {
-                    when (event.actionMasked) {
-                        MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; originX = view.x; originY = view.y; dragged = false }
-                        MotionEvent.ACTION_MOVE -> {
-                            if (abs(event.rawX - downX) + abs(event.rawY - downY) > dp(8)) dragged = true
-                            if (dragged) {
-                                view.x = (originX + event.rawX - downX).coerceIn(paddingLeft.toFloat(), (width - paddingRight - view.width).coerceAtLeast(paddingLeft).toFloat())
-                                view.y = (originY + event.rawY - downY).coerceIn(paddingTop.toFloat(), (height - paddingBottom - view.height).coerceAtLeast(paddingTop).toFloat())
-                            }
-                        }
-                        MotionEvent.ACTION_UP -> if (dragged) {
-                            store?.position(def.id, landscape(), (view.x - paddingLeft) / (width - paddingLeft - paddingRight - view.width).coerceAtLeast(1),
-                                (view.y - paddingTop) / (height - paddingTop - paddingBottom - view.height).coerceAtLeast(1))
-                        } else view.performClick()
-                        MotionEvent.ACTION_CANCEL -> { view.x = originX; view.y = originY }
-                    }
+                    drag.touch(event)
                 } else {
                     fun finish(cancelled: Boolean) {
                         val valid = activePointer != MotionEvent.INVALID_POINTER_ID && downEpoch == inputEpoch
@@ -169,7 +155,7 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
         joystickBindings = standardDefinitions.filter { it.id in WolfControlLayout.directionIds }.associate { it.id to action(it).keys }
         val useJoystick = WolfControlLayout.movement(controlLayout) == WolfMovementMode.JOYSTICK
         val current = definitions
-        buttons.keys.filter { id -> current.none { it.id == id } }.toList().forEach { removeView(buttons.remove(it)) }
+        buttons.keys.filter { id -> current.none { it.id == id } }.toList().forEach { dragControls.remove(it)?.cancel(); removeView(buttons.remove(it)) }
         current.filter { it.id !in buttons }.forEach(::createButton)
         current.forEach { def -> buttons.getValue(def.id).apply {
             val action = action(def)
@@ -300,28 +286,17 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
         held.replaceGroup("joystick_", joystickBindings.filterKeys { it in directions }.mapKeys { "joystick_${it.key}" })
     }
     private fun configureJoystickEditing() {
-        var downX = 0f; var downY = 0f; var originX = 0f; var originY = 0f; var dragged = false
+        val drag = controlDrag("joystick", joystick)
         joystick.setOnClickListener { if (editing) controlDialogs?.joystick() }
         joystick.setOnTouchListener { view, event ->
             if (!editing) return@setOnTouchListener false
-            when (event.actionMasked) {
-                MotionEvent.ACTION_DOWN -> { downX = event.rawX; downY = event.rawY; originX = view.x; originY = view.y; dragged = false }
-                MotionEvent.ACTION_MOVE -> {
-                    if (abs(event.rawX - downX) + abs(event.rawY - downY) > dp(8)) dragged = true
-                    if (dragged) {
-                        view.x = (originX + event.rawX - downX).coerceIn(paddingLeft.toFloat(), (width - paddingRight - view.width).coerceAtLeast(paddingLeft).toFloat())
-                        view.y = (originY + event.rawY - downY).coerceIn(paddingTop.toFloat(), (height - paddingBottom - view.height).coerceAtLeast(paddingTop).toFloat())
-                    }
-                }
-                MotionEvent.ACTION_UP -> if (dragged) {
-                    store?.position("joystick", landscape(), (view.x - paddingLeft) / (width - paddingLeft - paddingRight - view.width).coerceAtLeast(1),
-                        (view.y - paddingTop) / (height - paddingTop - paddingBottom - view.height).coerceAtLeast(1))
-                } else view.performClick()
-                MotionEvent.ACTION_CANCEL -> { view.x = originX; view.y = originY }
-            }
-            true
+            drag.touch(event)
         }
     }
+    private fun controlDrag(id: String, view: View) = ControlDragGesture(view) {
+        store?.position(id, landscape(), (view.x - paddingLeft) / (width - paddingLeft - paddingRight - view.width).coerceAtLeast(1),
+            (view.y - paddingTop) / (height - paddingTop - paddingBottom - view.height).coerceAtLeast(1))
+    }.also { dragControls[id] = it }
     /** Used by the Activity after SAF reads, with validation before any preset or game state write. */
     fun importPreset(json: String): String {
         val store = requireNotNull(store) { "Réglages du jeu indisponibles." }
@@ -330,6 +305,7 @@ internal class WolfTouchControls(context: Context, private val key: (XKeycode, B
         return imported.name
     }
     fun releaseAll() {
+        dragControls.values.forEach { it.cancel() }
         inputEpoch++
         scheduled.values.toList().forEach(inputHandler::removeCallbacks); scheduled.clear()
         joystick.reset(); held.releaseAll()

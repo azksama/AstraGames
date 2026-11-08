@@ -2,10 +2,12 @@
 
 Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay, avec MKXP-Z intégré pour RPG Maker XP/VX/VX Ace, ou avec Winlator, Wine et Box64 intégrés pour Wolf RPG. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
 
-La préversion **1.12.0-beta.24 (code 52)** réunit MKXP-Z intégré, les corrections
-UI/UX et de stockage, ainsi que les protections de restauration Wolf et d’intégrité
-des archives de mods. Les [notes de version](docs/RELEASE_1.12.0-beta.24.md)
-présentent les changements ; le [bilan de validation](docs/VALIDATION_1.12.0-beta.24.md)
+La préversion **1.12.0-beta.25 (code 53)** simplifie l’édition et l’import des
+métadonnées, répare le chargement des jaquettes F95Zone et améliore les gestes de
+recherche, de recadrage et de déplacement des commandes. Elle conserve les apports
+de la beta.24, dont MKXP-Z et les correctifs de sauvegardes et de mods.
+Les [notes de version](docs/RELEASE_1.12.0-beta.25.md)
+présentent les changements ; le [bilan de validation](docs/VALIDATION_1.12.0-beta.25.md)
 identifie l’APK concerné, les contrôles effectués et leurs limites.
 
 Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été retirés.
@@ -175,7 +177,7 @@ Prérequis : JDK 17 ou supérieur compatible avec Gradle et Android SDK 36.
 Le NDK 29.0.14206865 et CMake 3.22.1 sont fixés dans les fichiers Gradle ;
 AGP sélectionne ses Build Tools. Les contrôles de signature et d'alignement de
 cette préversion utilisent les outils SDK 36.1.0. Voir les
-[instructions de construction](docs/BUILD_1.12.0-beta.24.md).
+[instructions de construction](docs/BUILD_1.12.0-beta.25.md).
 
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
@@ -302,9 +304,9 @@ Une notification ouvre l’écran lorsqu’un APK est prêt. **Télécharger et 
 
 Le fichier doit correspondre à la taille et au SHA-256 annoncés par GitHub, au package Astra, à une version supérieure et à la signature de l’installation actuelle. Ces contrôles sont répétés avant de donner accès au fichier à l’installateur. Les APK non signés sont exclus. Les versions distribuées avec la clé de développement locale peuvent se mettre à jour entre elles ; une installation signée avec une autre clé doit disposer d’un APK compatible.
 
-Le certificat historique de distribution est conservé pour la préversion beta.24.
-La portée du contrôle de mise à jour depuis beta.23 et les empreintes de l’APK sont
-précisées dans le [bilan public](docs/VALIDATION_1.12.0-beta.24.md). Conserver
+Le certificat historique de distribution est conservé pour la préversion beta.25.
+La portée du contrôle de mise à jour depuis beta.24 et les empreintes de l’APK sont
+précisées dans le [bilan public](docs/VALIDATION_1.12.0-beta.25.md). Conserver
 l’installation et ses données pour garder l’accès aux archives chiffrées.
 
 ## Portée de validation

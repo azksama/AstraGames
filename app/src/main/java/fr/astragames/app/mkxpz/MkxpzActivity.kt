@@ -20,6 +20,7 @@ import java.io.File
 class MkxpzActivity : SDLActivity() {
     private val held = mutableSetOf<Int>()
     private val clickPulses = mutableMapOf<Int, Any>()
+    private val controlButtons = mutableListOf<View>()
     private var valid = false
     private var lockOnReturn = false
     private var locked = false
@@ -81,10 +82,12 @@ class MkxpzActivity : SDLActivity() {
                 setOnTouchListener { view, event ->
                     when (event.actionMasked) {
                         MotionEvent.ACTION_DOWN -> {
+                            view.isPressed = !locked
                             clickPulses.remove(code)
                             if (!locked && held.add(code)) onNativeKeyDown(code)
                         }
                         MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                            view.isPressed = false
                             clickPulses.remove(code)
                             if (held.remove(code)) onNativeKeyUp(code)
                             if (event.actionMasked == MotionEvent.ACTION_UP) {
@@ -95,6 +98,7 @@ class MkxpzActivity : SDLActivity() {
                     }
                     true
                 }
+                controlButtons += this
             }, LinearLayout.LayoutParams(0, -1, 1f))
         }
         key("◀", KeyEvent.KEYCODE_DPAD_LEFT)
@@ -234,6 +238,7 @@ class MkxpzActivity : SDLActivity() {
     }
 
     private fun releaseKeys() {
+        controlButtons.forEach { it.isPressed = false }
         clickPulses.clear()
         held.forEach { onNativeKeyUp(it) }
         held.clear()
