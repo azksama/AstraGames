@@ -4,6 +4,8 @@ import androidx.compose.material3.Text as MaterialText
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.layout.*
@@ -38,6 +40,8 @@ import fr.astragames.app.data.local.TagCategoryEntity
 import fr.astragames.app.data.local.TagEntity
 import fr.astragames.app.data.repository.CollectionRuleDraft
 import java.util.Date
+import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 
 @Composable
 internal fun TagEditDialog(tag: TagEntity?, categories: List<TagCategoryEntity>, onSave: (Pair<String, String?>) -> Unit, onDismiss: () -> Unit) {
@@ -111,27 +115,48 @@ internal fun GameFolderDialog(
 )
 
 @Composable
-internal fun DeleteGameDialog(game: GameEntity, onConfirm: (Boolean) -> Unit, onDismiss: () -> Unit) {
-    var deleteFiles by remember { mutableStateOf(false) }
+internal fun DeleteGameDialog(game: GameEntity, onConfirm: suspend (Boolean) -> Unit, onDismiss: () -> Unit) =
+    RemoveGamesDialog(listOf(game), true, onConfirm, onDismiss)
+
+@Composable
+internal fun RemoveGamesDialog(games: List<GameEntity>, initiallyDeleteFiles: Boolean, onConfirm: suspend (Boolean) -> Unit, onDismiss: () -> Unit) {
+    var deleteFiles by remember { mutableStateOf(initiallyDeleteFiles) }
+    var busy by remember { mutableStateOf(false) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = { if (!busy) onDismiss() },
         icon = { Icon(Icons.Default.DeleteForever, null) },
-        title = { Text("Supprimer ${game.title} ?") },
+        title = { Text(if (games.size == 1) games.first().title else "${games.size} jeux sélectionnés") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                Text(if (deleteFiles) "Le dossier complet du jeu sera supprimé définitivement du téléphone." else "Le jeu sera retiré et ignoré lors des prochains scans. Vous pourrez le réautoriser dans Paramètres > Jeux supprimés.")
-                Row(
-                    Modifier.fillMaxWidth().clip(RoundedCornerShape(14.dp)).toggleable(value = deleteFiles, role = Role.Checkbox, onValueChange = { deleteFiles = it }).padding(10.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(deleteFiles, onCheckedChange = null)
-                    Spacer(Modifier.width(8.dp)); Text("Supprimer aussi les fichiers associés")
+            Column(Modifier.verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                listOf(true, false).forEach { files ->
+                    Row(Modifier.fillMaxWidth().selectable(deleteFiles == files, enabled = !busy, role = Role.RadioButton,
+                        onClick = { deleteFiles = files; error = null }).padding(vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        RadioButton(deleteFiles == files, null, enabled = !busy)
+                        Text(if (files) "Supprimer le jeu et les fichiers" else "Ignorer le dossier", Modifier.padding(start = 8.dp))
+                    }
                 }
-                if (deleteFiles) Text("Cette action est irréversible et le jeu ne figurera pas dans l’historique des jeux supprimés.", color = MaterialTheme.colorScheme.error)
+                Text(if (deleteFiles) "Les dossiers ci-dessous et tout leur contenu, y compris les sauvegardes qu’ils contiennent, seront supprimés définitivement du téléphone. Les jeux seront retirés d’Astra."
+                    else "Les fichiers sont conservés. Ces dossiers et leurs sous-dossiers ne seront plus analysés et leurs jeux seront retirés d’Astra. Réautorisation dans Paramètres > Dossiers ignorés.")
+                games.forEach { game ->
+                    MaterialText(game.physicalPath ?: game.documentUri, style = MaterialTheme.typography.bodySmall)
+                }
+                if (busy) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Opération en cours…") }
+                error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             }
         },
-        confirmButton = { TextButton(onClick = { onConfirm(deleteFiles) }, colors = ButtonDefaults.textButtonColors(contentColor = MaterialTheme.colorScheme.error)) { Text("Supprimer") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+        confirmButton = { TextButton(onClick = {
+            busy = true; error = null
+            scope.launch {
+                try { onConfirm(deleteFiles) }
+                catch (failure: Exception) { if (failure is CancellationException) throw failure; error = failure.message ?: "Opération impossible" }
+                finally { busy = false }
+            }
+        }, enabled = !busy && games.isNotEmpty(), colors = ButtonDefaults.textButtonColors(contentColor = if (deleteFiles) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.primary)) {
+            Text(if (deleteFiles) "Supprimer définitivement" else "Ignorer")
+        } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !busy) { Text("Annuler") } }
     )
 }
 
@@ -143,7 +168,9 @@ internal fun QuickGameActionsSheet(
     onFavorite: () -> Unit,
     onOpen: () -> Unit,
     onSelect: () -> Unit,
-    onDismiss: () -> Unit
+    onDismiss: () -> Unit,
+    onDelete: (() -> Unit)? = null,
+    onIgnore: (() -> Unit)? = null
 ) {
     ModalBottomSheet(onDismissRequest = onDismiss) {
         LazyColumn(Modifier.fillMaxWidth(), contentPadding = PaddingValues(bottom = 24.dp)) {
@@ -159,6 +186,8 @@ internal fun QuickGameActionsSheet(
             leadingContent = { Icon(if (game.favorite) Icons.Default.Favorite else Icons.Default.FavoriteBorder, null, tint = if (game.favorite) Color.Red else LocalContentColor.current) }
         ) }
         item { ListItem(modifier = Modifier.clickable(role = Role.Button, onClick = onSelect), headlineContent = { Text("Démarrer une sélection multiple") }, leadingContent = { Icon(Icons.Default.Checklist, null) }) }
+        onIgnore?.let { action -> item { ListItem(modifier = Modifier.clickable(onClick = action), headlineContent = { Text("Ignorer le dossier") }, leadingContent = { Icon(Icons.Default.FolderOff, null) }) } }
+        onDelete?.let { action -> item { ListItem(modifier = Modifier.clickable(onClick = action), headlineContent = { Text("Supprimer le jeu et les fichiers", color = MaterialTheme.colorScheme.error) }, leadingContent = { Icon(Icons.Default.DeleteForever, null) }) } }
         }
     }
 }

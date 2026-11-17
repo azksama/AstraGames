@@ -1,0 +1,5 @@
+fr.astragames.app.ui.LibraryManagementUiTest:.....
+
+Time: 11.905
+
+OK (5 tests)

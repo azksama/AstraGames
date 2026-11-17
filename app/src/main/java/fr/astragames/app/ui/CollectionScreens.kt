@@ -85,7 +85,8 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
     ) { padding ->
         if (selectedSmart != null || selectedCustom != null) {
             Box(Modifier.padding(padding).fillMaxSize()) {
-                GameCollection(displayedGames, state.settings.viewMode, state.settings.gridColumns, onGame, vm::toggleFavorite)
+                if (smartKey == "recent") RecentlyAddedCollection(state.games, state.settings.viewMode, state.settings.gridColumns, onGame, vm::toggleFavorite)
+                else GameCollection(displayedGames, state.settings.viewMode, state.settings.gridColumns, onGame, vm::toggleFavorite)
             }
         } else AdaptiveLists(Modifier.padding(padding).imePadding(), split = LandscapeLayout && currentId == null, first = {
             if (currentId == null) {

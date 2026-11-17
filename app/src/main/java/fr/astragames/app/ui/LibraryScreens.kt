@@ -53,6 +53,9 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
     var bulkFolder by remember { mutableStateOf(false) }
     var bulkTags by remember { mutableStateOf(false) }
     var bulkDelete by remember { mutableStateOf(false) }
+    var deleteFiles by remember { mutableStateOf(true) }
+    var removalGames by remember { mutableStateOf<List<GameEntity>>(emptyList()) }
+    var showDuplicates by remember { mutableStateOf(false) }
     val coverBlur = LocalCoverBlurState.current
     BackHandler(selectedGames.isNotEmpty()) { selectedGames = emptySet() }
     LaunchedEffect(state.games) {
@@ -70,7 +73,8 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
                             DropdownMenuItem(text = { Text("Ajouter aux favoris") }, leadingIcon = { Icon(Icons.Default.FavoriteBorder, null) }, onClick = { vm.setGamesFavorite(selectedGames); selectionMenu = false })
                             DropdownMenuItem(text = { Text("Ajouter des tags") }, leadingIcon = { Icon(Icons.Default.Style, null) }, onClick = { bulkTags = true; selectionMenu = false })
                             DropdownMenuItem(text = { Text("Classer") }, leadingIcon = { Icon(Icons.Default.FolderCopy, null) }, onClick = { bulkFolder = true; selectionMenu = false })
-                            DropdownMenuItem(text = { Text("Supprimer", color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Default.DeleteOutline, null) }, onClick = { bulkDelete = true; selectionMenu = false })
+                            DropdownMenuItem(text = { Text("Ignorer les dossiers") }, leadingIcon = { Icon(Icons.Default.FolderOff, null) }, onClick = { removalGames = state.games.filter { it.id in selectedGames }; deleteFiles = false; bulkDelete = true; selectionMenu = false })
+                            DropdownMenuItem(text = { Text("Supprimer les jeux et fichiers", color = MaterialTheme.colorScheme.error) }, leadingIcon = { Icon(Icons.Default.DeleteOutline, null) }, onClick = { removalGames = state.games.filter { it.id in selectedGames }; deleteFiles = true; bulkDelete = true; selectionMenu = false })
                         }
                     }
                     IconButton(onClick = { selectedGames = emptySet() }) { Icon(Icons.Default.Close, AppLocalizer.text("Quitter la sélection")) }
@@ -108,6 +112,9 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
         Column(Modifier.padding(padding).fillMaxSize()) {
             Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 SearchEntry(onSearch)
+                AssistChip(onClick = { vm.searchDuplicates(); showDuplicates = true }, label = {
+                    Text(if (state.duplicateGroups.isEmpty()) "Rechercher des doublons" else "Doublons · ${state.duplicateGroups.size} groupe(s)")
+                }, leadingIcon = { Icon(Icons.Default.ContentCopy, null, Modifier.size(18.dp)) })
             }
             Spacer(Modifier.height(6.dp))
             when {
@@ -132,7 +139,9 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
         onFavorite = { vm.toggleFavorite(game.id); quickGame = null },
         onOpen = { onGame(game.id); quickGame = null },
         onSelect = { selectedGames = selectedGames + game.id; quickGame = null },
-        onDismiss = { quickGame = null }
+        onDismiss = { quickGame = null },
+        onDelete = { removalGames = listOf(game); deleteFiles = true; bulkDelete = true; quickGame = null },
+        onIgnore = { removalGames = listOf(game); deleteFiles = false; bulkDelete = true; quickGame = null }
     ) }
     if (bulkFolder) GameFolderDialog(state.folders, null, {
         vm.setGamesFolder(selectedGames, it); selectedGames = emptySet(); bulkFolder = false
@@ -140,9 +149,10 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
     if (bulkTags) GameTagPickerSheet(state.tags, state.tagCategories, emptySet(), {
         vm.addTagsToGames(selectedGames, it); selectedGames = emptySet(); bulkTags = false
     }, { bulkTags = false })
-    if (bulkDelete) ConfirmDialog(
-        "Retirer ${selectedGames.size} jeu(x) ?", "Ils seront ignorés lors des prochains scans. Aucun fichier ne sera supprimé.",
-        { vm.deleteGames(selectedGames); selectedGames = emptySet(); bulkDelete = false }, { bulkDelete = false }
+    if (showDuplicates) DuplicatesDialog(state, vm) { showDuplicates = false }
+    if (bulkDelete) RemoveGamesDialog(
+        removalGames, deleteFiles,
+        { vm.removeGames(removalGames.map { it.id }.toSet(), it); selectedGames = emptySet(); bulkDelete = false }, { bulkDelete = false }
     )
 }
 

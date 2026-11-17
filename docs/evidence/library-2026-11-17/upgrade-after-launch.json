@@ -1,0 +1,134 @@
+{
+  "version": "1.12.0-beta.26",
+  "firstInstallTime": 1793827980418,
+  "tables": {
+    "android_metadata": {
+      "rows": 1,
+      "sha256": "6f08c4ab1d085d1c689c7d3d692227c2b5c04385c82d0910ffb6971db1ed4216"
+    },
+    "audit_events": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "collection_rules": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "collections": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "cover_candidates": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "deleted_games": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "game_save_locations": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "game_search": {
+      "rows": 1,
+      "sha256": "d2924a3953a6d7889409a654672234a683f9d640a3eda7b5a6d41aef3c3ebcea"
+    },
+    "game_search_content": {
+      "rows": 1,
+      "sha256": "031ebea3f6bc03086e7f8116cfa95c0683978f82bc51f5cc499fd0881e5289db"
+    },
+    "game_search_docsize": {
+      "rows": 1,
+      "sha256": "57ff18753e9d7fdfcfc152fa52b8099930934dd52230210d987dda2fb9456e70"
+    },
+    "game_search_segdir": {
+      "rows": 1,
+      "sha256": "4547f88d768911e99511c715b1d067018cff8d289067d375bdc36cc3e90c873e"
+    },
+    "game_search_segments": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "game_search_stat": {
+      "rows": 1,
+      "sha256": "7e71f35c6115be7f947ccd98ea70e33e0e43f621d1cd2d28db8a7aa519e157c4"
+    },
+    "game_sources": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "game_tags": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "games": {
+      "rows": 1,
+      "sha256": "0a12560358053a49e051a9c045864bfc70987f3fd3e0c91847c84b22947b049c"
+    },
+    "ignored_duplicate_groups": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "launch_profiles": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "library_folders": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "metadata": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "mod_installations": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "mod_installed_files": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "mods": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "play_sessions": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "room_master_table": {
+      "rows": 1,
+      "sha256": "708e281c7579ecbea2cad83894d759937f46d16981ff08f9be134d22b48db655"
+    },
+    "save_backups": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "scan_history": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "scan_report_items": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "source_exclusions": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "tag_categories": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    "tags": {
+      "rows": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "files": {
+    "datastore\/astra_settings.preferences_pb": "b6dd58492ca4dd9e38436cc7d86f95b8f4b12d8c17606194a5f2515c9f35b743",
+    "save-backups\/beta26-upgrade-fixture\/preservation.txt": "ef03c3f93dfc09a7aafc6387bbd63f590c812c7277da3950a4725fc2c6625364"
+  }
+}

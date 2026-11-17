@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
 import fr.astragames.app.core.filesystem.FileAccessResolver
+import fr.astragames.app.core.filesystem.GameFolders
 import fr.astragames.app.core.model.GameLauncherType
 import fr.astragames.app.core.model.DetectionResult
 import fr.astragames.app.core.model.GameEngine
@@ -43,6 +44,9 @@ class RecursiveSourceScanner(
     private val fileAccessResolver: FileAccessResolver
 ) {
     private val scanLock = Mutex()
+
+    /** A scan must not recreate a record while its folder is being removed or ignored. */
+    suspend fun <T> withLibraryMutation(block: suspend () -> T): T = scanLock.withLock { block() }
 
     suspend fun scan(
         sourceId: String,
@@ -115,26 +119,22 @@ class RecursiveSourceScanner(
                 0, 0, 0, 0, 0, 0, 0, listOf(message), listOf(item)
             )
         }
-        if (!targeted) dao.getDeletedGamesForSource(sourceId).forEach { deleted ->
-            val stillExists = runCatching {
-                DocumentFile.fromSingleUri(context, deleted.documentUri.toUri())?.exists() == true
-            }.getOrDefault(false)
-            if (!stillExists) dao.restoreDeletedGame(deleted.id)
-        }
+        // Keep exclusions until the user restores them, including while a volume is offline.
+        val ignoredFolders = dao.getIgnoredFolders()
 
         suspend fun walk(directory: DocumentFile, relativePath: String, depth: Int) {
             coroutineContext.ensureActive()
             require(depth <= 128 && visited.size < 100_000) { "Source trop profonde ou trop volumineuse : limitez le dossier à analyser." }
             if (!visited.add(directory.uri.toString())) return
             if (source.maxDepth != null && depth > source.maxDepth) return
-            val deletedGame = dao.findDeletedGameByDocumentUri(directory.uri.toString())
+            val deletedGame = ignoredFolders.firstOrNull { GameFolders.contains(context, it.documentUri, directory.uri.toString()) }
             if (deletedGame != null) {
                 ignored++
                 reportItems += ScanReportItem(
                     relativePath.ifBlank { source.displayName }, deletedGame.title,
-                    ScanReportItemStatus.IGNORED, "Jeu supprimé de la bibliothèque par l’utilisateur"
+                    ScanReportItemStatus.IGNORED, "Dossier ignoré par l’utilisateur"
                 )
-                progress("Jeu supprimé ignoré", relativePath.ifBlank { source.displayName }, depth, visited.size, found)
+                progress("Dossier ignoré", relativePath.ifBlank { source.displayName }, depth, visited.size, found)
                 return
             }
             val knownGame = knownGamesByUri[directory.uri.toString()]
@@ -219,15 +219,6 @@ class RecursiveSourceScanner(
                     detection.executableName
                 } else executable?.name ?: detection.executableName
                 val fingerprint = GameFingerprint.create(detection.engine, normalized.title, normalized.productCode, executableName)
-                if (dao.findDeletedGameByFingerprint(fingerprint) != null) {
-                    ignored++
-                    reportItems += ScanReportItem(
-                        relativePath.ifBlank { source.displayName }, normalized.title,
-                        ScanReportItemStatus.IGNORED, "Jeu supprimé reconnu par son empreinte"
-                    )
-                    progress("Jeu supprimé ignoré", relativePath.ifBlank { source.displayName }, depth, visited.size, found)
-                    return
-                }
                 val existing = dao.findGameByDocumentUri(directory.uri.toString())
                     ?: dao.findGameByFingerprint(fingerprint)?.takeIf { previous ->
                         // An accessible copy is a duplicate, not a move of the existing record.

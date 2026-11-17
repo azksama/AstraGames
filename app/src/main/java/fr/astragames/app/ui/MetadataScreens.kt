@@ -128,9 +128,11 @@ internal fun F95ImportSheet(
                                 }
                             }
                             OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), label = { Text("Nom du jeu à rechercher") }, singleLine = true, enabled = !busy)
-                            Button(onClick = { review = true; onFind(query.trim()) }, enabled = query.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.Default.Search, null); Spacer(Modifier.width(8.dp)); Text("Trouver automatiquement")
+                            Button(onClick = { showSearch = true }, enabled = query.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
+                                Icon(Icons.Default.TravelExplore, null); Spacer(Modifier.width(8.dp)); Text("Rechercher dans Astra")
                             }
+                            Text("Cherchez la fiche, ouvrez-la, puis appuyez sur « Utiliser le lien ».", style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { review = true; onFind(query.trim()) }, enabled = query.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) { Text("Trouver automatiquement") }
                             HorizontalDivider(Modifier.padding(vertical = 4.dp))
                             Text("Vous avez déjà un lien ?", style = MaterialTheme.typography.titleMedium)
                             OutlinedTextField(
@@ -146,9 +148,9 @@ internal fun F95ImportSheet(
                             }
                             TextButton(onClick = {
                                 val target = source.searchUrl(query, state.searchEngine)
-                                if (openInExternalBrowser) uriHandler.openUri(target) else showSearch = true
+                                uriHandler.openUri(target)
                             }, enabled = query.isNotBlank() && !busy, modifier = Modifier.fillMaxWidth()) {
-                                Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Choisir dans le navigateur")
+                                Icon(Icons.AutoMirrored.Filled.OpenInNew, null); Spacer(Modifier.width(8.dp)); Text("Ouvrir dans le navigateur du téléphone")
                             }
                             if (source == MetadataSource.F95ZONE) {
                                 HorizontalDivider()
@@ -271,82 +273,6 @@ private fun MetadataChoiceRow(label: String, selected: Boolean, enabled: Boolean
         Checkbox(selected, onCheckedChange = null, enabled = enabled)
         Text(label, Modifier.weight(1f).padding(start = 10.dp), style = MaterialTheme.typography.bodyMedium)
     }
-}
-
-@SuppressLint("SetJavaScriptEnabled")
-@Composable
-internal fun SearchF95PickerDialog(
-    searchUrl: String,
-    searchEngine: SearchEngine,
-    onThreadSelected: (String) -> Unit,
-    onDismiss: () -> Unit,
-    source: MetadataSource = MetadataSource.F95ZONE
-) {
-    var webView by remember { mutableStateOf<WebView?>(null) }
-    var selectionError by remember { mutableStateOf<String?>(null) }
-    val latestSelection by rememberUpdatedState(onThreadSelected)
-
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
-        AstraDialogSystemBars()
-        Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-            Column(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing)) {
-                CompactHeader(
-                    "Rechercher sur ${searchEngine.displayName}",
-                    "Appui long sur la fiche du jeu",
-                    onBack = onDismiss
-                )
-                AndroidView(
-                    factory = { context ->
-                        WebView(context).apply {
-                            configureNetworkOnly()
-                            webViewClient = object : NetworkOnlyWebViewClient() {
-                                override fun shouldOverrideUrlLoading(view: WebView, request: WebResourceRequest): Boolean {
-                                    return !isAllowedWebUrl(request.url.toString())
-                                }
-                            }
-                            setOnLongClickListener {
-                                val hit = hitTestResult
-                                if (hit.type !in setOf(WebView.HitTestResult.SRC_ANCHOR_TYPE, WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)) {
-                                    return@setOnLongClickListener false
-                                }
-                                val threadUrl = hit.extra?.let(source::pageUrl)
-                                if (threadUrl == null) {
-                                    selectionError = "Ce lien ne correspond pas à la source sélectionnée."
-                                } else {
-                                    selectionError = null
-                                    latestSelection(threadUrl)
-                                }
-                                true
-                            }
-                            if (isAllowedWebUrl(searchUrl)) loadUrl(searchUrl)
-                            webView = this
-                        }
-                    },
-                    update = { webView = it },
-                    modifier = Modifier.weight(1f).fillMaxWidth()
-                )
-                selectionError?.let {
-                    Text(
-                        it,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 10.dp)
-                    )
-                }
-                Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
-                    Button(onClick = {
-                        val threadUrl = webView?.url?.let(source::pageUrl)
-                        if (threadUrl == null) {
-                            selectionError = "Ce lien ne correspond pas à la source sélectionnée."
-                        } else {
-                            selectionError = null
-                            latestSelection(threadUrl)
-                        }
-                    }) { Text("Utiliser le lien") }
-                }
-            }
-        }
-    }
-    DisposableEffect(Unit) { onDispose { webView?.destroy() } }
 }
 
 @SuppressLint("SetJavaScriptEnabled")

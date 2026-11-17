@@ -21,6 +21,12 @@ interface AstraDao {
     @Query("SELECT id FROM games")
     suspend fun getGameIds(): List<String>
 
+    @Query("SELECT * FROM games")
+    suspend fun getAllGames(): List<GameEntity>
+
+    @Query("UPDATE game_sources SET gamesCount = (SELECT COUNT(*) FROM games WHERE games.sourceId = game_sources.id)")
+    suspend fun refreshSourceGameCounts()
+
     @Query("SELECT * FROM games WHERE sourceId = :sourceId")
     suspend fun getGamesForSource(sourceId: String): List<GameEntity>
 
@@ -480,6 +486,15 @@ interface AstraDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertDeletedGame(game: DeletedGameEntity)
 
+    @Transaction
+    suspend fun ignoreAndRemoveGames(ignored: DeletedGameEntity, gameIds: List<String>) {
+        upsertDeletedGame(ignored)
+        gameIds.forEach { deleteGameCompletely(it) }
+    }
+
+    @Query("SELECT * FROM deleted_games")
+    suspend fun getIgnoredFolders(): List<DeletedGameEntity>
+
     @Query("DELETE FROM deleted_games WHERE id = :id")
     suspend fun restoreDeletedGame(id: String)
 
@@ -491,6 +506,9 @@ interface AstraDao {
 
     @Query("DELETE FROM ignored_duplicate_groups WHERE groupKey = :groupKey")
     suspend fun unignoreDuplicateGroup(groupKey: String)
+
+    @Query("DELETE FROM ignored_duplicate_groups")
+    suspend fun resetIgnoredDuplicateGroups()
     @Insert
     suspend fun insertAudit(event: AuditEventEntity)
     @Query("SELECT * FROM audit_events ORDER BY timestamp DESC")

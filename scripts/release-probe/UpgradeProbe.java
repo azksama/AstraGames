@@ -82,9 +82,11 @@ public final class UpgradeProbe extends Instrumentation {
         File proof = new File(context.getExternalFilesDir(null), "release-upgrade");
         require(proof.isDirectory() || proof.mkdirs(), "Cannot create evidence directory");
         Files.write(new File(proof, mode + ".json").toPath(), snapshot.toString(2).getBytes(StandardCharsets.UTF_8));
-        if (mode.equals("before")) require(info.versionName.equals("1.12.0-beta.24"), "Expected the published beta.24 baseline");
+        String beforeVersion = arguments.getString("beforeVersion", "1.12.0-beta.24");
+        String afterVersion = arguments.getString("afterVersion", "1.12.0-beta.25");
+        if (mode.equals("before")) require(info.versionName.equals(beforeVersion), "Expected the published " + beforeVersion + " baseline");
         else {
-            require(info.versionName.equals("1.12.0-beta.25"), "Expected beta.25");
+            require(info.versionName.equals(afterVersion), "Expected " + afterVersion);
             JSONObject before = new JSONObject(new String(Files.readAllBytes(new File(proof, "before.json").toPath()), StandardCharsets.UTF_8));
             require(before.getLong("firstInstallTime") == info.firstInstallTime, "Installation identity changed");
             require(before.getJSONObject("tables").toString().equals(tables.toString()), "Catalogue table contents changed");

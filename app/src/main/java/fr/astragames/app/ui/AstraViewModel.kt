@@ -62,6 +62,7 @@ import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
@@ -102,6 +103,10 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     val f95Import: StateFlow<F95ImportState> = mutableF95Import
     private val mutableDuplicatePreview = MutableStateFlow<DuplicateMergePreview?>(null)
     val duplicatePreview: StateFlow<DuplicateMergePreview?> = mutableDuplicatePreview
+    private val mutableDuplicateBusy = MutableStateFlow(false)
+    val duplicateBusy: StateFlow<Boolean> = mutableDuplicateBusy
+    private val mutableDuplicateError = MutableStateFlow<String?>(null)
+    val duplicateError: StateFlow<String?> = mutableDuplicateError
     val openFolderRequests = MutableSharedFlow<Uri>(extraBufferCapacity = 1)
     val notificationPermissionRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
     val biometricUnlockRequests = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
@@ -473,6 +478,17 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
             .onSuccess { events.emit(UiEvent.Message("${ids.size} jeu(x) retiré(s) de la bibliothèque")) }
             .onFailure { events.emit(UiEvent.Message(it.message ?: "Suppression impossible")) }
     }
+    suspend fun removeGames(ids: Set<String>, deleteFiles: Boolean, onRemoved: () -> Unit = {}) = viewModelScope.async {
+        repository.deleteGames(ids, deleteFiles)
+        // Removing the observed game dismisses its dialog; finish navigation outside that dialog's scope.
+        onRemoved()
+        events.emit(UiEvent.Message(if (deleteFiles) "Jeux et fichiers supprimés" else "Dossiers ignorés · fichiers conservés"))
+    }.await()
+
+    fun searchDuplicates() = viewModelScope.launch {
+        runCatchingCancellable { repository.resetIgnoredDuplicateGroups() }
+            .onFailure { events.emit(UiEvent.Message(it.message ?: "Recherche impossible")) }
+    }
     fun saveCollection(id: String?, name: String, matchMode: String, rules: List<CollectionRuleDraft>, onSaved: () -> Unit = {}) = viewModelScope.launch {
         runCatchingCancellable { repository.createOrUpdateCollection(id, name, matchMode, rules) }
             .onSuccess { onSaved(); events.emit(UiEvent.Message("Collection intelligente enregistrée")) }
@@ -489,10 +505,11 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
     fun previewDuplicateMerge(primaryId: String, secondaryId: String) {
         duplicatePreviewJob?.cancel()
         mutableDuplicatePreview.value = null
+        mutableDuplicateError.value = null
         duplicatePreviewJob = viewModelScope.launch {
             runCatchingCancellable { repository.previewDuplicateMerge(primaryId, secondaryId) }
                 .onSuccess { ensureActive(); mutableDuplicatePreview.value = it }
-                .onFailure { events.emit(UiEvent.Message(it.message ?: "Comparaison impossible")) }
+                .onFailure { mutableDuplicateError.value = it.message ?: "Comparaison impossible" }
         }
     }
     fun clearDuplicatePreview() { duplicatePreviewJob?.cancel(); mutableDuplicatePreview.value = null }
@@ -500,13 +517,18 @@ class AstraViewModel(application: Application) : AndroidViewModel(application) {
         primaryId: String, secondaryId: String, migrateSaves: Boolean,
         strategy: SaveConflictStrategy, deleteSecondaryFiles: Boolean, onDone: () -> Unit
     ) = viewModelScope.launch {
+        if (mutableDuplicateBusy.value) return@launch
+        mutableDuplicateBusy.value = true
+        mutableDuplicateError.value = null
+        try {
         runCatchingCancellable { repository.mergeDuplicate(primaryId, secondaryId, migrateSaves, strategy, deleteSecondaryFiles) }
             .onSuccess { result ->
                 mutableDuplicatePreview.value = null
                 onDone()
                 events.emit(UiEvent.Message("Doublon fusionné • ${result.savesConsidered} sauvegarde(s) analysée(s)"))
             }
-            .onFailure { events.emit(UiEvent.Message(it.message ?: "Fusion impossible")) }
+            .onFailure { mutableDuplicateError.value = it.message ?: "Fusion impossible" }
+        } finally { mutableDuplicateBusy.value = false }
     }
     fun deleteGame(id: String, deleteFiles: Boolean, onDeleted: () -> Unit = {}) = viewModelScope.launch {
         runCatchingCancellable { repository.deleteGame(id, deleteFiles) }

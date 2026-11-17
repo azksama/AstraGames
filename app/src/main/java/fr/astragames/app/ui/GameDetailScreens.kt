@@ -283,7 +283,7 @@ internal fun GameDetailScreen(
         vm.setGameFolder(item.id, it); pickFolder = false
     }, { pickFolder = false })
     if (item != null && confirmGameRemoval) DeleteGameDialog(item, {
-        vm.deleteGame(item.id, it, onBack); confirmGameRemoval = false
+        vm.removeGames(setOf(item.id), it) { confirmGameRemoval = false; onBack() }
     }, { confirmGameRemoval = false })
     if (item != null && confirmCoverRemoval) AlertDialog(
         onDismissRequest = { confirmCoverRemoval = false },

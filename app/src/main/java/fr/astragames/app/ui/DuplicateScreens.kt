@@ -18,6 +18,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -41,6 +42,9 @@ internal fun DuplicatesDialog(state: AstraUiState, vm: AstraViewModel, onDismiss
     var primaryId by remember(selectedKey) { mutableStateOf(selectedGroup?.games?.firstOrNull()?.id) }
     val secondary = selectedGroup?.games?.firstOrNull { it.id != primaryId }
     val preview by vm.duplicatePreview.collectAsStateWithLifecycle()
+    val busy by vm.duplicateBusy.collectAsStateWithLifecycle()
+    val error by vm.duplicateError.collectAsStateWithLifecycle()
+    var removalGame by remember { mutableStateOf<GameEntity?>(null) }
     var migrateSaves by remember(selectedKey) { mutableStateOf(true) }
     var strategy by remember(selectedKey) { mutableStateOf(SaveConflictStrategy.KEEP_BOTH) }
     var deleteFiles by remember(selectedKey) { mutableStateOf(false) }
@@ -48,13 +52,13 @@ internal fun DuplicatesDialog(state: AstraUiState, vm: AstraViewModel, onDismiss
     LaunchedEffect(primaryId, secondary?.id) {
         if (primaryId != null && secondary != null) vm.previewDuplicateMerge(primaryId!!, secondary.id)
     }
-    Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
+    Dialog(onDismissRequest = { if (!busy) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
             ScrollingColumn(topBar = { CompactHeader(
-                    selectedGroup?.let { "Comparer les doublons" } ?: "Doublons détectés",
+                    selectedGroup?.let { "Comparer les doublons" } ?: "Doublons possibles",
                     selectedGroup?.let { "Choisissez l’exemplaire principal" } ?: "${state.duplicateGroups.size} groupe(s)",
-                    onBack = if (selectedGroup != null) ({ selectedKey = null; vm.clearDuplicatePreview() }) else onDismiss
+                    onBack = { if (!busy) { if (selectedGroup != null) { selectedKey = null; vm.clearDuplicatePreview() } else onDismiss() } }
                 ) }) {
                 if (selectedGroup != null && primaryId != null && secondary != null) {
                     DuplicateComparisonContent(
@@ -62,18 +66,26 @@ internal fun DuplicatesDialog(state: AstraUiState, vm: AstraViewModel, onDismiss
                         migrateSaves = migrateSaves, onMigrateSaves = { migrateSaves = it },
                         strategy = strategy, onStrategy = { strategy = it }, deleteFiles = deleteFiles,
                         onDeleteFiles = { deleteFiles = it }, onPrimary = { primaryId = it },
+                        onRemove = { removalGame = it }, busy = busy, error = error,
                         onIgnore = { vm.ignoreDuplicateGroup(selectedGroup.key); selectedKey = null },
                         onMerge = {
                             if (deleteFiles) confirmPhysical = true else vm.mergeDuplicate(primaryId!!, secondary.id, migrateSaves, strategy, false) { selectedKey = null }
                         }
                     )
-                } else if (state.duplicateGroups.isEmpty()) CenterMessage("Aucun doublon détecté", Modifier.fillMaxSize())
-                else LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+                } else LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
+                    item { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Comparez les titres, versions et emplacements avant de supprimer une copie. Les fichiers ne sont pas comparés octet par octet.")
+                        OutlinedButton(onClick = { vm.scanAll() }, enabled = !state.scanning && state.sources.any { it.enabled }) {
+                            Text(if (state.scanning) "Analyse en cours…" else "Analyser les dossiers")
+                        }
+                        TextButton(onClick = { vm.searchDuplicates() }) { Text("Rechercher à nouveau, groupes masqués inclus") }
+                        if (state.duplicateGroups.isEmpty()) Text("Aucun doublon détecté")
+                    } }
                     itemsIndexed(state.duplicateGroups, key = { _, group -> group.key }) { index, group ->
                         RoundedListItem(
                             modifier = Modifier.clickable { selectedKey = group.key; primaryId = group.games.first().id },
                             headlineContent = { MaterialText("${group.games.first().title} • ${AppLocalizer.text("${group.games.size} exemplaires", LocalAppLanguage.current)}") },
-                            supportingContent = { MaterialText(group.games.joinToString("\n") { it.physicalPath ?: it.documentUri }, maxLines = 4, overflow = TextOverflow.Ellipsis) },
+                            supportingContent = { Text(group.reason); MaterialText(group.games.joinToString("\n") { it.physicalPath ?: it.documentUri }, maxLines = 4, overflow = TextOverflow.Ellipsis) },
                             leadingContent = { Icon(Icons.Default.ContentCopy, null) },
                             trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Comparer") }
                         )
@@ -82,9 +94,12 @@ internal fun DuplicatesDialog(state: AstraUiState, vm: AstraViewModel, onDismiss
             }
         }
     }
+    removalGame?.let { game -> RemoveGamesDialog(listOf(game), true, {
+        vm.removeGames(setOf(game.id), it); removalGame = null; selectedKey = null; vm.clearDuplicatePreview()
+    }, { removalGame = null }) }
     if (confirmPhysical && primaryId != null && secondary != null) ConfirmDialog(
         "Supprimer le dossier secondaire ?",
-        "Les sauvegardes sont traitées avant la suppression. Le dossier ${secondary.title} sera ensuite supprimé définitivement du téléphone.",
+        "${if (migrateSaves) "Les sauvegardes seront récupérées avant la suppression." else "Les sauvegardes présentes dans ce dossier seront supprimées."}\n${secondary.physicalPath ?: secondary.documentUri}\nCe dossier sera supprimé définitivement du téléphone.",
         {
             confirmPhysical = false
             vm.mergeDuplicate(primaryId!!, secondary.id, migrateSaves, strategy, true) { selectedKey = null }
@@ -107,16 +122,26 @@ internal fun DuplicateComparisonContent(
     onDeleteFiles: (Boolean) -> Unit,
     onPrimary: (String) -> Unit,
     onIgnore: () -> Unit,
-    onMerge: () -> Unit
+    onMerge: () -> Unit,
+    onRemove: (GameEntity) -> Unit = {},
+    busy: Boolean = false,
+    error: String? = null
 ) {
-    LazyColumn(contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+    LazyColumn(Modifier.testTag("duplicate-comparison"), contentPadding = PaddingValues(horizontal = 14.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             BoxWithConstraints {
-                if (maxWidth >= 700.dp) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    group.games.forEach { game -> DuplicateGameCard(game, state, game.id == primaryId, { onPrimary(game.id) }, Modifier.weight(1f)) }
+                if (maxWidth >= 700.dp && group.games.size == 2) Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    group.games.forEach { game -> DuplicateGameCard(game, state, game.id == primaryId, { if (!busy) onPrimary(game.id) }, Modifier.weight(1f), { onRemove(game) }, busy) }
                 } else LazyRow(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    items(group.games, key = { it.id }) { game -> DuplicateGameCard(game, state, game.id == primaryId, { onPrimary(game.id) }, Modifier.width(290.dp)) }
+                    items(group.games, key = { it.id }) { game -> DuplicateGameCard(game, state, game.id == primaryId, { if (!busy) onPrimary(game.id) }, Modifier.width(290.dp), { onRemove(game) }, busy) }
                 }
+            }
+        }
+        item {
+            Text(group.reason, style = MaterialTheme.typography.labelLarge)
+            group.games.firstOrNull { it.id != primaryId }?.let { secondary ->
+                Text("Exemplaire à retirer lors de la fusion : ${secondary.title}")
+                MaterialText(secondary.physicalPath ?: secondary.documentUri, style = MaterialTheme.typography.bodySmall)
             }
         }
         item { Card { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -126,19 +151,19 @@ internal fun DuplicateComparisonContent(
                 else "${preview.primarySaves.size} dans le jeu principal • ${preview.secondarySaves.size} à récupérer • ${preview.conflictingSaves.size} conflit(s)"
             )
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(migrateSaves, onMigrateSaves); Text("Récupérer les sauvegardes du doublon")
+                Checkbox(migrateSaves, onMigrateSaves, enabled = !busy); Text("Récupérer les sauvegardes du doublon")
             }
             if (migrateSaves && (preview?.conflictingSaves?.isNotEmpty() == true)) {
                 Text("En cas de même nom", style = MaterialTheme.typography.labelLarge)
                 SaveConflictStrategy.entries.forEach { choice -> FilterChip(
-                    strategy == choice, { onStrategy(choice) }, { Text(choice.label()) }, Modifier.padding(end = 6.dp)
+                    strategy == choice, { onStrategy(choice) }, { Text(choice.label()) }, Modifier.padding(end = 6.dp), enabled = !busy
                 ) }
             }
         } } }
         item { Card { Column(Modifier.fillMaxWidth().padding(14.dp)) {
             Text("Après la fusion", style = MaterialTheme.typography.titleMedium)
-            Row(Modifier.fillMaxWidth().clickable { onDeleteFiles(!deleteFiles) }, verticalAlignment = Alignment.CenterVertically) {
-                Checkbox(deleteFiles, onDeleteFiles)
+            Row(Modifier.fillMaxWidth().clickable(enabled = !busy) { onDeleteFiles(!deleteFiles) }, verticalAlignment = Alignment.CenterVertically) {
+                Checkbox(deleteFiles, onDeleteFiles, enabled = !busy)
                 Column { Text("Supprimer le dossier secondaire"); Text(
                     if (deleteFiles) "Suppression physique irréversible après confirmation" else "Conserver les fichiers et ignorer définitivement ce doublon",
                     style = MaterialTheme.typography.bodySmall, color = if (deleteFiles) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurfaceVariant
@@ -146,16 +171,18 @@ internal fun DuplicateComparisonContent(
             }
         } } }
         item { Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            OutlinedButton(onClick = onIgnore, Modifier.weight(1f)) { Text("Ignorer ce groupe") }
-            Button(onClick = onMerge, Modifier.weight(1f), enabled = preview != null) { Text("Fusionner") }
+            OutlinedButton(onClick = onIgnore, Modifier.weight(1f), enabled = !busy) { Text("Masquer ce groupe") }
+            Button(onClick = onMerge, Modifier.weight(1f), enabled = !busy && preview != null && preview.primary.id == primaryId && preview.secondary.id == group.games.firstOrNull { it.id != primaryId }?.id) { Text("Fusionner") }
         } }
+        if (busy) item { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Fusion en cours…") }
+        error?.let { item { Text(it, color = MaterialTheme.colorScheme.error) } }
         if (group.games.size > 2) item { Text("Après cette fusion, les exemplaires restants seront reproposés un par un.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         item { Spacer(Modifier.height(24.dp)) }
     }
 }
 
 @Composable
-internal fun DuplicateGameCard(game: GameEntity, state: AstraUiState, selected: Boolean, onSelect: () -> Unit, modifier: Modifier) {
+internal fun DuplicateGameCard(game: GameEntity, state: AstraUiState, selected: Boolean, onSelect: () -> Unit, modifier: Modifier, onRemove: () -> Unit = {}, busy: Boolean = false) {
     Card(
         modifier.clickable(onClick = onSelect),
         border = if (selected) BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null
@@ -164,9 +191,11 @@ internal fun DuplicateGameCard(game: GameEntity, state: AstraUiState, selected: 
         GameCover(game, Modifier.fillMaxWidth().height(150.dp))
         MaterialText(game.title, style = MaterialTheme.typography.titleMedium)
         Text(game.engine.readableEngine())
-        MaterialText(game.physicalPath ?: game.documentUri, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall)
+        game.version?.let { Text("Version $it") }
+        MaterialText(game.physicalPath ?: game.documentUri, style = MaterialTheme.typography.bodySmall)
         Text("${game.playCount} lancements • ${state.playStats[game.id]?.totalDurationMs.asDuration()}", style = MaterialTheme.typography.bodySmall)
         if (game.favorite) Text("Favori", color = Color.Red)
+        OutlinedButton(onClick = onRemove, enabled = !busy) { Text("Supprimer ou ignorer") }
     } }
 }
 
@@ -181,13 +210,13 @@ internal fun DeletedGamesDialog(games: List<DeletedGameEntity>, onRestore: (Stri
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize().statusBarsPadding().navigationBarsPadding(), color = MaterialTheme.colorScheme.background) {
-            ScrollingColumn(topBar = { CompactHeader("Jeux supprimés", "${games.size} jeu(x)", onBack = onDismiss) }) {
-                if (games.isEmpty()) CenterMessage("Aucun jeu supprimé", Modifier.fillMaxSize())
+            ScrollingColumn(topBar = { CompactHeader("Dossiers ignorés", "${games.size} dossier(s)", onBack = onDismiss) }) {
+                if (games.isEmpty()) CenterMessage("Aucun dossier ignoré", Modifier.fillMaxSize())
                 else LazyColumn(contentPadding = PaddingValues(bottom = 32.dp)) {
                     items(games, key = { it.id }) { game -> RoundedListItem(
                         headlineContent = { MaterialText(game.title) },
-                        supportingContent = { Text("Supprimé le ${game.deletedAt.asDateTime()}\n${game.physicalPath ?: game.documentUri}", maxLines = 3) },
-                        leadingContent = { Icon(Icons.Default.DeleteOutline, null) },
+                        supportingContent = { Text("Ignoré le ${game.deletedAt.asDateTime()}\n${game.physicalPath ?: game.documentUri}") },
+                        leadingContent = { Icon(Icons.Default.FolderOff, null) },
                         trailingContent = { TextButton(onClick = { onRestore(game.id) }) { Text("Réautoriser") } }
                     ) }
                 }

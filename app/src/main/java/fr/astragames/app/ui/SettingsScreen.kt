@@ -208,7 +208,7 @@ internal fun SettingsScreen(
                 leadingContent = { Icon(Icons.Default.ContentCopy, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
             ) }
             item { RoundedListItem(
-                modifier = Modifier.clickable { showDeleted = true }, headlineContent = { Text("Jeux supprimés") },
+                modifier = Modifier.clickable { showDeleted = true }, headlineContent = { Text("Dossiers ignorés") },
                 supportingContent = { Text("${state.deletedGames.size} jeu(x) ignoré(s) pendant les scans") },
                 leadingContent = { Icon(Icons.Default.DeleteSweep, null) }, trailingContent = { Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir") }
             ) }

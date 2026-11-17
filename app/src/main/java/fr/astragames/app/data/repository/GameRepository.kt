@@ -21,6 +21,7 @@ import fr.astragames.app.data.local.LaunchProfileEntity
 import fr.astragames.app.data.local.TagEntity
 import fr.astragames.app.data.local.TagCategoryEntity
 import fr.astragames.app.data.scanner.RecursiveSourceScanner
+import fr.astragames.app.core.filesystem.GameFolders
 import fr.astragames.app.data.scanner.ScanProgressUpdate
 import fr.astragames.app.core.model.ScanReport
 import fr.astragames.app.core.model.ScanReportItem
@@ -34,6 +35,7 @@ import fr.astragames.app.core.metadata.MetadataValues
 import fr.astragames.app.core.metadata.F95ZoneMetadata
 import fr.astragames.app.data.saves.readBounded
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
@@ -227,6 +229,8 @@ class GameRepository(
     suspend fun ignoreDuplicateGroup(groupKey: String) =
         dao.ignoreDuplicateGroup(IgnoredDuplicateGroupEntity(groupKey, System.currentTimeMillis()))
 
+    suspend fun resetIgnoredDuplicateGroups() = dao.resetIgnoredDuplicateGroups()
+
     suspend fun previewDuplicateMerge(primaryId: String, secondaryId: String, includeSaves: Boolean = true): DuplicateMergePreview = withContext(Dispatchers.IO) {
         require(primaryId != secondaryId) { "Selectionnez deux jeux differents." }
         val primary = dao.getGame(primaryId) ?: error("Jeu principal introuvable.")
@@ -246,9 +250,14 @@ class GameRepository(
         migrateSaves: Boolean,
         saveStrategy: SaveConflictStrategy,
         deleteSecondaryFiles: Boolean
-    ): DuplicateMergeResult = withContext(Dispatchers.IO) {
+    ): DuplicateMergeResult = scanner.withLibraryMutation { withContext(Dispatchers.IO + NonCancellable) {
         if (!deleteSecondaryFiles) requireNoInstalledMods(secondaryId)
         val preview = previewDuplicateMerge(primaryId, secondaryId, includeSaves = migrateSaves)
+        require(!GameFolders.contains(context, preview.secondary.documentUri, preview.primary.documentUri) &&
+            !GameFolders.contains(context, preview.primary.documentUri, preview.secondary.documentUri)) {
+            "Ces fiches utilisent le même dossier ou des dossiers imbriqués. La fusion est bloquée pour protéger les fichiers."
+        }
+        if (deleteSecondaryFiles) validateGameDeletion(preview.secondary)
         if (migrateSaves) migrateSaveFiles(preview, saveStrategy)
         if (deleteSecondaryFiles) deleteGameFolder(preview.secondary)
 
@@ -291,39 +300,52 @@ class GameRepository(
             removeManagedCover(secondary.coverUri)
         }
         dao.deleteGameCompletely(secondary.id)
+        dao.refreshSourceGameCounts()
         dao.getGame(primary.id)?.let { merged -> dao.upsertGame(merged) }
         return@withContext DuplicateMergeResult(preview.secondarySaves.size, preview.conflictingSaves.size)
-    }
+    } }
 
-    suspend fun deleteGames(ids: Set<String>) = withContext(Dispatchers.IO) {
-        ids.forEach { requireNoInstalledMods(it) }
-        ids.forEach { deleteGame(it, deleteAssociatedFiles = false) }
-    }
-
-    suspend fun deleteGame(id: String, deleteAssociatedFiles: Boolean) = withContext(Dispatchers.IO) {
-        val game = dao.getGame(id) ?: return@withContext
-        if (!deleteAssociatedFiles) requireNoInstalledMods(id)
-        if (deleteAssociatedFiles) {
-            val uri = Uri.parse(game.documentUri)
-            require(uri.scheme == "content") {
-                "La suppression des fichiers n’est autorisée que pour un dossier Android sélectionné."
+    suspend fun deleteGames(ids: Set<String>, deleteAssociatedFiles: Boolean = false) = scanner.withLibraryMutation {
+        withContext(Dispatchers.IO) {
+            val games = ids.mapNotNull { dao.getGame(it) }
+            // Validate the entire selection before the first irreversible operation.
+            games.forEach { if (deleteAssociatedFiles) validateGameDeletion(it) else requireNoInstalledMods(it.id) }
+            var completed = 0
+            games.forEach { game ->
+                try {
+                    withContext(NonCancellable) { removeGameLocked(game, deleteAssociatedFiles) }
+                    completed++
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    throw IllegalStateException("${game.title} : ${error.message ?: "opération impossible"}" +
+                        if (completed > 0) " ($completed jeu(x) déjà traité(s))." else "", error)
+                }
             }
-            val folder = DocumentFile.fromSingleUri(context, uri)
-                ?: error("Le dossier associé au jeu est introuvable.")
-            require(folder.exists() && folder.isDirectory) { "Le dossier associé au jeu est introuvable." }
-            check(folder.delete()) { "Android n’a pas autorisé la suppression du dossier du jeu." }
+        }
+    }
+
+    suspend fun deleteGame(id: String, deleteAssociatedFiles: Boolean) = deleteGames(setOf(id), deleteAssociatedFiles)
+
+    private suspend fun removeGameLocked(game: GameEntity, deleteFiles: Boolean) {
+        if (deleteFiles) {
+            deleteGameFolder(game)
+            dao.deleteGameCompletely(game.id)
         } else {
-            dao.upsertDeletedGame(
+            val affected = dao.getAllGames().filter { GameFolders.contains(context, game.documentUri, it.documentUri) }
+            affected.forEach { requireNoInstalledMods(it.id) }
+            dao.ignoreAndRemoveGames(
                 DeletedGameEntity(
                     id = UUID.randomUUID().toString(), title = game.title, documentUri = game.documentUri,
                     physicalPath = game.physicalPath, fingerprint = game.fingerprint, sourceId = game.sourceId,
-                    deletedAt = System.currentTimeMillis()
-                )
+                    deletedAt = System.currentTimeMillis(), reason = "USER_IGNORED"
+                ), affected.map { it.id }
             )
+            affected.filter { it.id != game.id }.forEach { removeManagedCover(it.coverUri) }
         }
         removeManagedCover(game.coverUri)
-        dao.deleteGameCompletely(id)
-        recordAudit("GAME_DELETED", "Jeu supprimé : ${game.title}${if (deleteAssociatedFiles) " (fichiers inclus)" else ""}")
+        dao.refreshSourceGameCounts()
+        recordAudit(if (deleteFiles) "GAME_DELETED" else "GAME_IGNORED",
+            if (deleteFiles) "Jeu et dossier supprimés : ${game.title}" else "Dossier ignoré : ${game.title}")
     }
 
     private suspend fun requireNoInstalledMods(gameId: String) {
@@ -332,7 +354,7 @@ class GameRepository(
         }
     }
 
-    suspend fun restoreDeletedGame(id: String) = dao.restoreDeletedGame(id)
+    suspend fun restoreDeletedGame(id: String) = scanner.withLibraryMutation { dao.restoreDeletedGame(id) }
 
     suspend fun createBackup(treeUri: Uri): String = backupManager.create(treeUri)
     suspend fun restoreBackup(uri: Uri) = backupManager.restore(uri)
@@ -362,12 +384,29 @@ class GameRepository(
             ?.let { runCatching { it.delete() } }
     }
 
-    private fun deleteGameFolder(game: GameEntity) {
+    private suspend fun validateGameDeletion(game: GameEntity) {
         val uri = Uri.parse(game.documentUri)
         require(uri.scheme == "content") { "La suppression physique nécessite un dossier Android SAF." }
+        val source = dao.getSource(game.sourceId) ?: error("Source introuvable. Rétablissez l’accès au dossier dans les paramètres.")
+        require(GameFolders.contains(context, source.treeUri, game.documentUri)) { "Le dossier du jeu ne se trouve pas dans sa source autorisée." }
+        require(dao.observeSources().first().none { GameFolders.contains(context, game.documentUri, it.treeUri) }) {
+            "Ce dossier est une source de jeux. Sélectionnez son dossier parent comme source pour supprimer ce jeu, ou choisissez Ignorer."
+        }
+        require(dao.getAllGames().none { it.id != game.id && (GameFolders.contains(context, game.documentUri, it.documentUri) || GameFolders.contains(context, it.documentUri, game.documentUri)) }) {
+            "Ce dossier contient ou partage les fichiers d’un autre jeu. Choisissez Ignorer pour protéger cet autre jeu."
+        }
         val folder = DocumentFile.fromSingleUri(context, uri)
-            ?.takeIf { it.exists() && it.isDirectory } ?: error("Le dossier secondaire est introuvable.")
-        check(folder.delete()) { "Android n’a pas autorisé la suppression du dossier secondaire." }
+            ?.takeIf { it.exists() && it.isDirectory } ?: error("Dossier inaccessible. Vérifiez son accès dans les paramètres, ou choisissez Ignorer.")
+        require(folder.canWrite()) { "Android n’autorise pas la suppression de ce dossier. Accordez l’accès à sa source dans les paramètres." }
+    }
+
+    private suspend fun deleteGameFolder(game: GameEntity) {
+        validateGameDeletion(game)
+        val uri = Uri.parse(game.documentUri)
+        check(DocumentsContract.deleteDocument(context.contentResolver, uri)) { "Android n’a pas autorisé la suppression du dossier. La fiche est conservée." }
+        check(DocumentFile.fromSingleUri(context, uri)?.exists() != true) {
+            "Le dossier est encore présent. La fiche est conservée ; vérifiez les fichiers avant de réessayer."
+        }
     }
 
     private fun findSaveFiles(game: GameEntity): List<SaveFileDescriptor> {
