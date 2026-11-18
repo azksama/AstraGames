@@ -3,11 +3,20 @@ package fr.astragames.app.ui
 import android.content.Intent
 import android.graphics.Bitmap
 import android.net.Uri
+import android.os.ParcelFileDescriptor
 import android.provider.DocumentsContract
+import android.provider.Settings
+import android.view.WindowManager
+import androidx.activity.ComponentActivity
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.test.*
-import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
+import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.documentfile.provider.DocumentFile
+import androidx.lifecycle.SavedStateHandle
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.viewModelScope
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -40,9 +49,10 @@ import java.util.UUID
 /** Real VM, Room, SAF scanner and navigation; intended for the dedicated SDK fixture AVDs. */
 @RunWith(AndroidJUnit4::class)
 class GlobalCatalogueFlowTest {
-    @get:Rule val compose = createComposeRule()
+    @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
     private val app = ApplicationProvider.getApplicationContext<AstraApplication>()
     private val store = ViewModelStore()
+    private val savedState = SavedStateHandle()
     private val fixtureId = "global-catalogue-${UUID.randomUUID()}"
     private val gameId = "$fixtureId-game"
     private val sourceName = "source-${UUID.randomUUID()}"
@@ -80,7 +90,7 @@ class GlobalCatalogueFlowTest {
         sourceTree = tree("$fixtureId/$sourceName")
         modsTree = tree("$fixtureId/denied-mods")
         compose.runOnUiThread {
-            vm = AstraViewModel(app)
+            vm = AstraViewModel(app, savedState)
             store.put(fixtureId, vm)
             vm.viewModelScope.launch {
                 vm.events.collect { event -> if (event is UiEvent.Message) observedMessages += event.text }
@@ -118,10 +128,8 @@ class GlobalCatalogueFlowTest {
         }
     }
 
-    @Test fun sourceScanSearchProfileAndModsFailureKeepTheCatalogueUsable() {
-        val originalGameIds = runBlocking { app.container.dao.getGameIds().toSet() }
-        val originalMods = runBlocking { app.container.dao.getMods() }
-        compose.setContent {
+    private fun openCatalogue(restore: StateRestorationTester? = null, pickCover: (String) -> Unit = { error("Unexpected cover picker") }) {
+        val content: @Composable () -> Unit = {
             val state by vm.uiState.collectAsStateWithLifecycle()
             // Only onboarding is bypassed in the harness, without persisting that preference.
             // Catalogue, sources, settings, filters and tools all come from the actual VM.
@@ -130,14 +138,21 @@ class GlobalCatalogueFlowTest {
                     state.copy(settings = state.settings.copy(onboardingCompleted = true)), vm,
                     onPickSource = { vm.addSource(sourceTree) },
                     onPickTags = { error("Unexpected tag picker") },
-                    onPickCover = { error("Unexpected cover picker") },
+                    onPickCover = pickCover,
                     onPickBackupFolder = { error("Unexpected backup picker") },
                     onRestoreBackup = { error("Unexpected restore picker") },
                     onOpenBackupFolder = { error("Unexpected backup folder") }
                 )
             }
         }
+        if (restore == null) compose.setContent(content) else restore.setContent(content)
         compose.waitUntil(10_000) { vm.uiState.value.settingsLoaded && !vm.isLocked.value }
+    }
+
+    @Test fun sourceScanSearchProfileAndModsFailureKeepTheCatalogueUsable() {
+        val originalGameIds = runBlocking { app.container.dao.getGameIds().toSet() }
+        val originalMods = runBlocking { app.container.dao.getMods() }
+        openCatalogue()
         compose.onNodeWithContentDescription("Ajouter une source").performClick()
         compose.waitUntil(10_000) { vm.uiState.value.sources.any { it.treeUri == sourceTree.toString() } }
         val source = vm.uiState.value.sources.single { it.treeUri == sourceTree.toString() }
@@ -267,6 +282,181 @@ class GlobalCatalogueFlowTest {
         compose.onNode(hasSetTextAction() and hasText("Rechercher")).assertTextContains(title)
         compose.onNode(hasText(title) and !hasSetTextAction()).assertIsDisplayed()
         assertEquals(originalMods, runBlocking { app.container.dao.getMods() })
+    }
+
+    @Test fun scanOpensAFullPageForEachNewGameAndReturnsToTheLibrary() {
+        val games = scanForSetup(listOf("Atlas des brumes", "Clair de lune", "Les jardins suspendus"))
+        compose.onNodeWithText("Configurer").performClick()
+        assertSetupPage(games[0])
+        compose.onNodeWithText("Jeux à configurer · 3").assertIsDisplayed()
+        // Capture the same reproducible page after the scan notification has expired.
+        compose.waitUntil(12_000) { compose.onAllNodesWithText("3 jeux trouvés, 3 ajoutés").fetchSemanticsNodes().isEmpty() }
+        capture("game-setup")
+        setupField("Nom").performTextReplacement("Édition des brumes")
+        closeSoftKeyboard()
+        compose.onNodeWithText("Enregistrer et suivant").performClick()
+        assertSetupPage(games[1])
+        assertEquals("Édition des brumes", runBlocking { app.container.dao.getGame(games[0].id)?.title })
+        setupField("Nom").performTextReplacement("Brouillon")
+        closeSoftKeyboard()
+        compose.onNodeWithText("Passer").performClick()
+        compose.onNodeWithText("Abandonner les modifications").performClick()
+        assertSetupPage(games[2])
+        assertEquals(games[1].title, runBlocking { app.container.dao.getGame(games[1].id)?.title })
+        setupField("Version").performTextReplacement("1.2")
+        closeSoftKeyboard()
+        compose.onNodeWithText("Terminer").performClick()
+        assertReturnedToLibrary()
+        assertEquals("1.2", runBlocking { app.container.dao.getGame(games[2].id)?.version })
+    }
+
+    @Test fun draftSurvivesMetadataPickerAndRestorationAndBackAsksBeforeLeaving() {
+        val restore = StateRestorationTester(compose)
+        var coverTarget: String? = null
+        val game = scanForSetup(listOf("Atlas des brumes"), restore) { coverTarget = it }.single()
+        compose.onNodeWithText("Configurer").performClick()
+        assertSetupPage(game)
+        setupField("Nom").performClick().performTextReplacement("")
+        closeSoftKeyboard()
+        compose.onNodeWithText("Terminer").assertIsNotEnabled()
+        setupField("Nom").performTextReplacement("Mon brouillon")
+        closeSoftKeyboard()
+        compose.onNodeWithTag("new-game-setup-fields").performScrollToIndex(0)
+        compose.onNodeWithText("Importer des métadonnées").performScrollTo().performClick()
+        pressBack()
+        compose.onNodeWithText("Changer").performScrollTo().performClick()
+        compose.onNodeWithText("Image locale").performScrollTo().performClick()
+        compose.runOnIdle { assertEquals(game.id, coverTarget) }
+        restore.emulateSavedInstanceStateRestore()
+        assertSetupPage(game)
+        setupField("Nom").assertTextContains("Mon brouillon")
+        pressBack()
+        compose.onNodeWithText("Continuer à modifier").performClick()
+        setupField("Nom").assertTextContains("Mon brouillon")
+        compose.onNodeWithContentDescription("Retour").performClick()
+        compose.onNodeWithText("Abandonner les modifications").performClick()
+        assertReturnedToLibrary()
+        assertEquals(game.title, runBlocking { app.container.dao.getGame(game.id)?.title })
+    }
+
+    @Test fun deferringSetupFromTheReportKeepsTheAddedGame() {
+        val game = scanForSetup(listOf("Clair de lune")).single()
+        compose.onNodeWithText("Plus tard").performClick()
+        assertReturnedToLibrary()
+        compose.onNodeWithText("Configurer").assertDoesNotExist()
+        assertNotNull(runBlocking { app.container.dao.getGame(game.id) })
+    }
+
+    @Test fun restoringPendingGamesOffersSetupWithoutAnotherScan() {
+        val source = runBlocking {
+            app.container.repository.addSource(sourceTree)
+            app.container.dao.observeSources().first().single { it.treeUri == sourceTree.toString() }
+        }
+        sourceId = source.id
+        compose.runOnUiThread { vm.scanSource(source.id) }
+        compose.waitUntil(15_000) { vm.scanReports.value.any { it.sourceId == source.id && it.added == 1 } }
+        val game = runBlocking { app.container.repository.games.first().single { it.sourceId == source.id } }
+        compose.runOnUiThread {
+            val restored = SavedStateHandle(savedState.keys().associateWith { savedState.get<Any?>(it) })
+            store.clear()
+            vm = AstraViewModel(app, restored)
+            store.put(fixtureId, vm)
+        }
+        openCatalogue()
+        compose.waitUntil(6_000) { compose.onAllNodesWithText("Nouveau jeu").fetchSemanticsNodes().isNotEmpty() }
+        compose.onNodeWithText("Configurer").performClick()
+        assertSetupPage(game)
+        pressBack()
+        compose.waitUntil(6_000) { vm.uiState.value.setupQueue.isEmpty() }
+        compose.onNodeWithTag("astra_nav_home").assertIsSelected()
+        assertNotNull(runBlocking { app.container.dao.getGame(game.id) })
+    }
+
+    @Test fun softwareKeyboardKeepsTheFocusedSetupFieldVisibleAndEditable() {
+        val preference = "show_ime_with_hard_keyboard"
+        val original = Settings.Secure.getString(app.contentResolver, preference)
+        val automation = InstrumentationRegistry.getInstrumentation().uiAutomation
+        fun shell(command: String) {
+            ParcelFileDescriptor.AutoCloseInputStream(automation.executeShellCommand(command)).use { it.readBytes() }
+        }
+        fun keyboardTop(): Int? = compose.runOnUiThread {
+            val decor = compose.activity.window.decorView
+            val insets = ViewCompat.getRootWindowInsets(decor)
+            if (insets?.isVisible(WindowInsetsCompat.Type.ime()) == true) decor.height - insets.getInsets(WindowInsetsCompat.Type.ime()).bottom else null
+        }
+        try {
+            shell("settings put secure $preference 1")
+            compose.runOnUiThread { compose.activity.window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE) }
+            val game = scanForSetup(listOf("Atlas des brumes")).single()
+            compose.onNodeWithText("Configurer").performClick()
+            assertSetupPage(game)
+            val field = setupField("Développeur")
+            field.performTouchInput { click() }
+            compose.waitUntil(10_000) { keyboardTop() != null }
+            field.assertIsFocused().performTextInput("Atelier Astra")
+            field.assertTextContains("Atelier Astra")
+            compose.waitUntil(5_000) {
+                val bounds = field.fetchSemanticsNode().boundsInWindow
+                val top = keyboardTop()
+                top != null && bounds.height > 0f && bounds.bottom <= top + 1
+            }
+            closeSoftKeyboard()
+            compose.waitUntil(6_000) { keyboardTop() == null }
+            compose.onNodeWithText("Terminer").performClick()
+            assertReturnedToLibrary()
+            assertEquals("Atelier Astra", runBlocking { app.container.dao.getGame(game.id)?.developer })
+        } finally {
+            shell(if (original == null) "settings delete secure $preference" else "settings put secure $preference $original")
+        }
+    }
+
+    private fun scanForSetup(names: List<String>, restore: StateRestorationTester? = null, pickCover: (String) -> Unit = {}): List<GameEntity> {
+        val root = requireNotNull(documentDir(app, tree(fixtureId)))
+        val batch = requireNotNull(root.createDirectory("Nouveautes"))
+        names.forEach { name ->
+            val game = requireNotNull(batch.createDirectory(name))
+            val www = requireNotNull(game.createDirectory("www"))
+            write(requireNotNull(www.createDirectory("js")), "rpg_core.js", "// MV fixture")
+            write(www, "index.html", "<!doctype html><title>$name</title>")
+        }
+        sourceTree = tree("$fixtureId/Nouveautes")
+        openCatalogue(restore, pickCover)
+        val addSource = hasContentDescription("Ajouter une source") and hasClickAction()
+        compose.waitUntil(10_000) { compose.onAllNodes(addSource).fetchSemanticsNodes().isNotEmpty() }
+        compose.onNode(addSource).performClick()
+        compose.waitUntil(10_000) { vm.uiState.value.sources.any { it.treeUri == sourceTree.toString() } }
+        val source = vm.uiState.value.sources.single { it.treeUri == sourceTree.toString() }
+        sourceId = source.id
+        compose.onNodeWithContentDescription("Jeux").performClick()
+        compose.onNodeWithTag("astra_game_library").assertIsDisplayed()
+        compose.runOnIdle { vm.scanSource(source.id) }
+        compose.waitUntil(15_000) {
+            vm.scanReports.value.any { it.sourceId == source.id && it.added == names.size } &&
+                vm.uiState.value.setupQueue.size == names.size && !vm.uiState.value.scanning
+        }
+        compose.onNodeWithText("Rapport de scan").assertIsDisplayed()
+        return vm.uiState.value.setupQueue
+    }
+
+    private fun assertSetupPage(game: GameEntity) {
+        compose.waitUntil(6_000) { compose.onAllNodesWithText("Configurer ${game.title}").fetchSemanticsNodes().isNotEmpty() }
+        val page = compose.onNodeWithTag("new-game-setup").assertIsDisplayed().fetchSemanticsNode().boundsInRoot
+        val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
+        assertEquals(root, page)
+        compose.onAllNodes(isDialog()).assertCountEquals(0)
+        compose.onNodeWithTag("astra_nav_library").assertDoesNotExist()
+    }
+
+    private fun setupField(label: String): SemanticsNodeInteraction {
+        val field = hasSetTextAction() and hasText(label)
+        compose.onNodeWithTag("new-game-setup-fields").performScrollToNode(field)
+        return compose.onNode(field)
+    }
+
+    private fun assertReturnedToLibrary() {
+        compose.waitUntil(6_000) { vm.uiState.value.setupQueue.isEmpty() && compose.onAllNodesWithTag("new-game-setup").fetchSemanticsNodes().isEmpty() }
+        compose.onNodeWithTag("astra_game_library").assertIsDisplayed()
+        compose.onNodeWithTag("astra_nav_library").assertIsSelected()
     }
 
     private fun tree(documentId: String): Uri = DocumentsContract.buildTreeDocumentUri(

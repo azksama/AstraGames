@@ -21,6 +21,8 @@ import androidx.compose.material.icons.automirrored.filled.Rule
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.semantics.Role
@@ -31,6 +33,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import androidx.navigation.compose.*
+import fr.astragames.app.core.runCatchingCancellable
+import fr.astragames.app.core.collections.FolderHierarchy
 import fr.astragames.app.core.model.*
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.CollectionEntity
@@ -40,79 +44,161 @@ import fr.astragames.app.data.local.TagCategoryEntity
 import fr.astragames.app.data.local.TagEntity
 import fr.astragames.app.data.repository.CollectionRuleDraft
 import java.util.Date
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.launch
 import kotlin.coroutines.cancellation.CancellationException
 
+internal val idSetSaver = Saver<Set<String>, ArrayList<String>>(save = { ArrayList(it) }, restore = { it.toSet() })
+
+internal fun Throwable.saveErrorMessage(): String =
+    if (this is android.database.sqlite.SQLiteException) "Enregistrement impossible." else message ?: "Enregistrement impossible."
+
+internal class DialogSubmission(private val scope: CoroutineScope) {
+    var pending by mutableStateOf(false)
+        private set
+    var error by mutableStateOf<String?>(null)
+        private set
+
+    fun clearError() { error = null }
+
+    fun submit(save: suspend () -> Unit) {
+        if (pending) return
+        pending = true
+        error = null
+        scope.launch(start = CoroutineStart.UNDISPATCHED) {
+            try {
+                runCatchingCancellable { save() }.onFailure { error = it.saveErrorMessage() }
+            } finally { pending = false }
+        }
+    }
+}
+
 @Composable
-internal fun TagEditDialog(tag: TagEntity?, categories: List<TagCategoryEntity>, onSave: (Pair<String, String?>) -> Unit, onDismiss: () -> Unit) {
-    var name by remember(tag) { mutableStateOf(tag?.name.orEmpty()) }; var category by remember(tag) { mutableStateOf(tag?.groupName) }
-    AlertDialog(
-        onDismissRequest = onDismiss, title = { Text(if (tag == null) "Nouveau tag" else "Modifier le tag") },
-        text = { Column {
-            OutlinedTextField(name, { name = it }, Modifier.fillMaxWidth(), label = { Text("Nom") }, singleLine = true)
-            Spacer(Modifier.height(12.dp)); Text("Catégorie", style = MaterialTheme.typography.labelLarge)
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { FilterChip(category == null, { category = null }, { Text("Aucune") }) }
-                items(categories, key = { it.id }) { item -> FilterChip(category == item.name, { category = item.name }, { MaterialText(item.name) }) }
+internal fun rememberDialogSubmission(): DialogSubmission {
+    val scope = rememberCoroutineScope()
+    return remember(scope) { DialogSubmission(scope) }
+}
+
+@Composable
+internal fun TagEditDialog(
+    tag: TagEntity?, categories: List<TagCategoryEntity>,
+    onSave: suspend (name: String, categoryId: String?, categoryChanged: Boolean) -> Unit, onDismiss: () -> Unit
+) {
+    var pickedId by rememberSaveable(tag?.id) { mutableStateOf<String?>(null) }
+    var categoryChanged by rememberSaveable(tag?.id) { mutableStateOf(false) }
+    val currentId = if (categoryChanged) pickedId else categories.firstOrNull { it.name == tag?.groupName }?.id
+    val legacyGroup = tag?.groupName?.takeIf { !categoryChanged && currentId == null }
+    NameDialog(if (tag == null) "Nouveau tag" else "Modifier le tag", tag?.name.orEmpty(),
+        { onSave(it, currentId, categoryChanged) }, onDismiss, draftKey = tag?.id.orEmpty()) { enabled ->
+        Spacer(Modifier.height(12.dp))
+        Text("Catégorie", style = MaterialTheme.typography.labelLarge)
+        legacyGroup?.let { MaterialText(it) }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            item { FilterChip(currentId == null && legacyGroup == null, { pickedId = null; categoryChanged = true }, { Text("Aucune") }, enabled = enabled) }
+            items(categories, key = { it.id }) { item ->
+                FilterChip(currentId == item.id, { pickedId = item.id; categoryChanged = true }, { MaterialText(item.name) }, enabled = enabled)
             }
+        }
+    }
+}
+
+@Composable
+internal fun NameDialog(
+    title: String,
+    initial: String,
+    onSave: suspend (String) -> Unit,
+    onDismiss: () -> Unit,
+    draftKey: String = initial,
+    extraFields: @Composable (enabled: Boolean) -> Unit = {}
+) {
+    var draft by rememberSaveable(draftKey) { mutableStateOf<String?>(null) }
+    val value = draft ?: initial
+    val submission = rememberDialogSubmission()
+    val saving = submission.pending
+    AlertDialog(
+        onDismissRequest = { if (!saving) onDismiss() }, title = { Text(title) },
+        text = { Column(Modifier.verticalScroll(rememberScrollState())) {
+            OutlinedTextField(value, { draft = it.takeUnless { text -> text == initial }; submission.clearError() }, Modifier.fillMaxWidth(), label = { Text("Nom") },
+                singleLine = true, enabled = !saving, isError = submission.error != null)
+            submission.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            extraFields(!saving)
         } },
-        confirmButton = { TextButton(onClick = { onSave(name to category) }, enabled = name.isNotBlank()) { Text("Enregistrer") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+        confirmButton = {
+            TextButton(enabled = !saving && value.isNotBlank(), onClick = {
+                submission.submit { onSave(value) }
+            }) { Text("Enregistrer") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !saving) { Text("Annuler") } }
     )
 }
 
 @Composable
-internal fun NameDialog(title: String, initial: String, onSave: (String) -> Unit, onDismiss: () -> Unit) {
-    var value by remember(initial) { mutableStateOf(initial) }
+internal fun CategoryChoiceDialog(categories: List<TagCategoryEntity>, onChoice: suspend (String?) -> Unit, onDismiss: () -> Unit) {
+    val submission = rememberDialogSubmission()
     AlertDialog(
-        onDismissRequest = onDismiss, title = { Text(title) },
-        text = { OutlinedTextField(value, { value = it }, Modifier.fillMaxWidth(), label = { Text("Nom") }, singleLine = true) },
-        confirmButton = { TextButton(onClick = { onSave(value) }, enabled = value.isNotBlank()) { Text("Enregistrer") } },
-        dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+        onDismissRequest = { if (!submission.pending) onDismiss() }, title = { Text("Classer les tags") },
+        text = { Column {
+            submission.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                item { ListItem(modifier = Modifier.clickable(enabled = !submission.pending) { submission.submit { onChoice(null) } },
+                    headlineContent = { Text("Sans catégorie") }, leadingContent = { Icon(Icons.Default.Style, null) }) }
+                items(categories, key = { it.id }) { category ->
+                    ListItem(modifier = Modifier.clickable(enabled = !submission.pending) { submission.submit { onChoice(category.id) } },
+                        headlineContent = { MaterialText(category.name) }, leadingContent = { Icon(Icons.Default.Folder, null) })
+                }
+            }
+        } }, confirmButton = {}, dismissButton = { TextButton(onClick = onDismiss, enabled = !submission.pending) { Text("Annuler") } }
     )
 }
 
 @Composable
-internal fun CategoryChoiceDialog(categories: List<TagCategoryEntity>, onChoice: (String?) -> Unit, onDismiss: () -> Unit) {
+internal fun ConfirmDialog(
+    title: String, message: String, onConfirm: suspend () -> Unit, onDismiss: () -> Unit,
+    confirmLabel: String = "Supprimer", dismissLabel: String = "Annuler"
+) {
+    val submission = rememberDialogSubmission()
     AlertDialog(
-        onDismissRequest = onDismiss, title = { Text("Classer les tags") },
-        text = { LazyColumn(Modifier.heightIn(max = 420.dp)) {
-            item { ListItem(modifier = Modifier.clickable { onChoice(null) }, headlineContent = { Text("Sans catégorie") }, leadingContent = { Icon(Icons.Default.Style, null) }) }
-            items(categories, key = { it.id }) { category -> ListItem(modifier = Modifier.clickable { onChoice(category.name) }, headlineContent = { MaterialText(category.name) }, leadingContent = { Icon(Icons.Default.Folder, null) }) }
-        } }, confirmButton = {}, dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
+        onDismissRequest = { if (!submission.pending) onDismiss() }, title = { Text(title) },
+        text = { Column { Text(message); submission.error?.let { Text(it, color = MaterialTheme.colorScheme.error) } } },
+        confirmButton = { TextButton(onClick = { submission.submit(onConfirm) }, enabled = !submission.pending) { Text(confirmLabel) } },
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !submission.pending) { Text(dismissLabel) } }
     )
 }
-
-@Composable
-internal fun ConfirmDialog(title: String, message: String, onConfirm: () -> Unit, onDismiss: () -> Unit, confirmLabel: String = "Supprimer") = AlertDialog(
-    onDismissRequest = onDismiss, title = { Text(title) }, text = { Text(message) },
-    confirmButton = { TextButton(onClick = onConfirm) { Text(confirmLabel) } }, dismissButton = { TextButton(onClick = onDismiss) { Text("Annuler") } }
-)
 
 @Composable
 internal fun GameFolderDialog(
     folders: List<LibraryFolderEntity>,
     selectedId: String?,
-    onChoice: (String?) -> Unit,
+    onChoice: suspend (String?) -> Unit,
     onDismiss: () -> Unit
-) = AlertDialog(
-    onDismissRequest = onDismiss,
-    title = { Text("Classer le jeu") },
-    text = {
-        LazyColumn(Modifier.heightIn(max = 420.dp)) {
-            item { ListItem(
-                modifier = Modifier.selectable(selected = selectedId == null, role = Role.RadioButton, onClick = { onChoice(null) }), headlineContent = { Text("Sans dossier") },
-                leadingContent = { RadioButton(selectedId == null, null) }
-            ) }
-            items(folders, key = { it.id }) { folder -> ListItem(
-                modifier = Modifier.selectable(selected = selectedId == folder.id, role = Role.RadioButton, onClick = { onChoice(folder.id) }), headlineContent = { MaterialText(folder.name) },
-                leadingContent = { RadioButton(selectedId == folder.id, null) }
-            ) }
-        }
-    },
-    confirmButton = {},
-    dismissButton = { TextButton(onClick = onDismiss) { Text("Fermer") } }
-)
+) {
+    val hierarchy = remember(folders) { FolderHierarchy(folders) }
+    val submission = rememberDialogSubmission()
+    AlertDialog(
+        onDismissRequest = { if (!submission.pending) onDismiss() },
+        title = { Text("Classer le jeu") },
+        text = { Column {
+            submission.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            LazyColumn(Modifier.heightIn(max = 420.dp)) {
+                item { ListItem(
+                    modifier = Modifier.selectable(selected = selectedId == null, enabled = !submission.pending,
+                        role = Role.RadioButton, onClick = { submission.submit { onChoice(null) } }),
+                    headlineContent = { Text("Sans dossier") },
+                    leadingContent = { RadioButton(selectedId == null, null) }
+                ) }
+                items(folders, key = { it.id }) { folder -> ListItem(
+                    modifier = Modifier.selectable(selected = selectedId == folder.id, enabled = !submission.pending,
+                        role = Role.RadioButton, onClick = { submission.submit { onChoice(folder.id) } }),
+                    headlineContent = { MaterialText(hierarchy.pathOf(folder.id) ?: folder.name) },
+                    leadingContent = { RadioButton(selectedId == folder.id, null) }
+                ) }
+            }
+        } },
+        confirmButton = {},
+        dismissButton = { TextButton(onClick = onDismiss, enabled = !submission.pending) { Text("Fermer") } }
+    )
+}
 
 @Composable
 internal fun DeleteGameDialog(game: GameEntity, onConfirm: suspend (Boolean) -> Unit, onDismiss: () -> Unit) =
@@ -193,7 +279,7 @@ internal fun QuickGameActionsSheet(
 }
 
 @Composable
-internal fun SearchableTagSelector(tags: List<TagEntity>, selectedId: String, onSelect: (String) -> Unit) {
+internal fun SearchableTagSelector(tags: List<TagEntity>, selectedId: String, enabled: Boolean, onSelect: (String) -> Unit) {
     var query by remember { mutableStateOf("") }
     val language = LocalAppLanguage.current
     val sortedTags = remember(tags, query, language) {
@@ -209,15 +295,16 @@ internal fun SearchableTagSelector(tags: List<TagEntity>, selectedId: String, on
             label = { Text("Rechercher un tag") },
             leadingIcon = { Icon(Icons.Default.Search, null) },
             textStyle = MaterialTheme.typography.bodySmall,
+            enabled = enabled,
             singleLine = true
         )
         if (sortedTags.isEmpty()) Text("Aucun tag trouvé", color = MaterialTheme.colorScheme.onSurfaceVariant)
         else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 260.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             items(sortedTags, key = { it.id }) { tag ->
                 ListItem(
-                    modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).selectable(selected = tag.id == selectedId, role = Role.RadioButton, onClick = { onSelect(tag.id) }),
+                    modifier = Modifier.heightIn(min = 48.dp).clip(RoundedCornerShape(12.dp)).selectable(selected = tag.id == selectedId, enabled = enabled, role = Role.RadioButton, onClick = { onSelect(tag.id) }),
                     headlineContent = { MaterialText(tag.name, style = MaterialTheme.typography.bodyMedium) },
-                    leadingContent = { RadioButton(selected = tag.id == selectedId, onClick = null) },
+                    leadingContent = { RadioButton(selected = tag.id == selectedId, onClick = null, enabled = enabled) },
                     colors = ListItemDefaults.colors(
                         containerColor = if (tag.id == selectedId) MaterialTheme.colorScheme.secondaryContainer else MaterialTheme.colorScheme.surfaceContainerLow
                     )
@@ -228,18 +315,19 @@ internal fun SearchableTagSelector(tags: List<TagEntity>, selectedId: String, on
 }
 
 @Composable
-internal fun <T> DropdownSelector(label: String, values: List<T>, selected: T, localizeValues: Boolean = true, text: (T) -> String, onSelect: (T) -> Unit) {
+internal fun <T> DropdownSelector(label: String, values: List<T>, selected: T, enabled: Boolean, localizeValues: Boolean = true, text: (T) -> String, onSelect: (T) -> Unit) {
     var expanded by remember { mutableStateOf(false) }
+    val language = LocalAppLanguage.current
     Column {
         Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         Box {
-            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth()) {
-                androidx.compose.material3.Text(if (localizeValues) AppLocalizer.text(text(selected)) else text(selected), Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
+            OutlinedButton(onClick = { expanded = true }, Modifier.fillMaxWidth(), enabled = enabled) {
+                androidx.compose.material3.Text(if (localizeValues) AppLocalizer.text(text(selected), language) else text(selected), Modifier.weight(1f), maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Icon(Icons.Default.ArrowDropDown, null)
             }
             DropdownMenu(expanded, { expanded = false }, Modifier.heightIn(max = 360.dp)) {
                 values.forEach { value -> DropdownMenuItem(
-                    text = { androidx.compose.material3.Text(if (localizeValues) AppLocalizer.text(text(value)) else text(value)) },
+                    text = { androidx.compose.material3.Text(if (localizeValues) AppLocalizer.text(text(value), language) else text(value)) },
                     leadingIcon = { if (value == selected) Icon(Icons.Default.Check, null) },
                     onClick = { onSelect(value); expanded = false }
                 ) }
@@ -262,13 +350,6 @@ internal fun defaultRuleValue(field: String, state: AstraUiState) = when (field)
     "FOLDER" -> state.folders.firstOrNull()?.id.orEmpty()
     "FAVORITE", "COVER", "AVAILABLE" -> "true"
     else -> "7"
-}
-
-internal fun operatorsFor(field: String) = when (field) {
-    "DATE_ADDED" -> listOf("WITHIN_DAYS", "OLDER_THAN_DAYS")
-    "LAST_PLAYED" -> listOf("WITHIN_DAYS", "OLDER_THAN_DAYS", "NEVER")
-    "PLAY_TIME" -> listOf("GREATER_THAN", "LESS_THAN")
-    else -> listOf("IS", "NOT")
 }
 
 internal fun String.fieldLabel() = when (this) {

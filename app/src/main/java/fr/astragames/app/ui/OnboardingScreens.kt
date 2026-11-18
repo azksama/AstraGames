@@ -13,6 +13,9 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -42,6 +45,7 @@ internal fun OnboardingScreen(
     val uriHandler = rememberExternalUriHandler()
     Box(
         Modifier.fillMaxSize()
+            .semantics { testTagsAsResourceId = true }.testTag("astra_onboarding")
             .background(Brush.linearGradient(listOf(
                 MaterialTheme.colorScheme.background,
                 MaterialTheme.colorScheme.primaryContainer.copy(alpha = .22f).compositeOver(MaterialTheme.colorScheme.background)
@@ -162,9 +166,9 @@ internal fun OnboardingScreen(
                         if (step > 0) TextButton(onClick = { step-- }, Modifier.weight(1f)) { Text("Retour") }
                         else Spacer(Modifier.weight(1f))
                         if (step < 4) {
-                            Button(onClick = { step++ }, Modifier.weight(1f)) { Text("Continuer") }
+                            Button(onClick = { step++ }, Modifier.weight(1f).testTag("astra_setup_next_$step")) { Text("Continuer") }
                         } else {
-                            Button(onClick = onFinish, Modifier.weight(1f)) { Text("Terminer") }
+                            Button(onClick = onFinish, Modifier.weight(1f).testTag("astra_setup_next_$step")) { Text("Terminer") }
                         }
                     }
                     if (step == 1 && !hasSource || step == 2 && !hasTags) {

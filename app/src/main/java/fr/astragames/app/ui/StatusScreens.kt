@@ -64,7 +64,7 @@ internal fun GameUpdatesScreen(state: AstraUiState, vm: AstraViewModel, onBack: 
                                         Icon(Icons.AutoMirrored.Filled.OpenInNew, AppLocalizer.text("Ouvrir la fiche du jeu"))
                                     }
                                 }
-                                IconButton(onClick = { vm.acknowledgeGameUpdate(update.game.id) }) {
+                                IconButton(onClick = { vm.acknowledgeGameUpdate(update.game.id, update.latestVersion) }) {
                                     Icon(Icons.Default.CheckCircle, AppLocalizer.text("Marquer comme vu"), tint = MaterialTheme.colorScheme.primary)
                                 }
                             }

@@ -20,6 +20,7 @@ class FixtureDocumentsProvider : DocumentsProvider() {
     @Volatile private var deniedAccess: String? = null
     @Volatile private var deniedDelete: String? = null
     @Volatile private var ineffectiveDelete: String? = null
+    @Volatile private var loadingChildren: String? = null
     override fun onCreate() = true
     private fun file(id: String): File = File(root, id).also {
         require(it.canonicalFile.toPath().startsWith(root.canonicalFile.toPath()))
@@ -31,6 +32,7 @@ class FixtureDocumentsProvider : DocumentsProvider() {
         if (method == "denyAccess") { deniedAccess = arg; return Bundle() }
         if (method == "denyDelete") { deniedDelete = arg; return Bundle() }
         if (method == "ineffectiveDelete") { ineffectiveDelete = arg; return Bundle() }
+        if (method == "loadingChildren") { loadingChildren = arg; return Bundle() }
         if (method == "denyRenames") { deniedRenames = arg; return Bundle() }
         if (method == "resetQueryStats") {
             documentQueries.set(0); childQueries.set(0)
@@ -77,7 +79,13 @@ class FixtureDocumentsProvider : DocumentsProvider() {
     override fun queryChildDocuments(parentDocumentId: String, projection: Array<out String>?, sortOrder: String?): Cursor {
         requireAccess(parentDocumentId)
         childQueries.incrementAndGet()
-        return MatrixCursor(projection ?: COLUMNS).apply { file(parentDocumentId).listFiles().orEmpty().forEach { row(this, it) } }
+        return MatrixCursor(projection ?: COLUMNS).apply {
+            if (parentDocumentId == loadingChildren) {
+                extras = Bundle().apply { putBoolean(DocumentsContract.EXTRA_LOADING, true) }
+            } else {
+                file(parentDocumentId).listFiles().orEmpty().forEach { row(this, it) }
+            }
+        }
     }
 
     private fun row(cursor: MatrixCursor, file: File) {

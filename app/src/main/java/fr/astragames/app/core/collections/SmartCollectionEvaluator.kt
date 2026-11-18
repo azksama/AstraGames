@@ -1,5 +1,6 @@
 package fr.astragames.app.core.collections
 
+import fr.astragames.app.core.model.GameEngine
 import fr.astragames.app.data.local.CollectionEntity
 import fr.astragames.app.data.local.CollectionRuleEntity
 import fr.astragames.app.data.local.GameEntity
@@ -8,6 +9,29 @@ import fr.astragames.app.data.local.GameTagCrossRef
 import fr.astragames.app.data.local.LibraryFolderEntity
 
 object SmartCollectionEvaluator {
+    val fields = listOf("ENGINE", "TAG", "FOLDER", "FAVORITE", "COVER", "AVAILABLE", "DATE_ADDED", "LAST_PLAYED", "PLAY_TIME")
+
+    fun operatorsFor(field: String) = when (field) {
+        "DATE_ADDED" -> listOf("WITHIN_DAYS", "OLDER_THAN_DAYS")
+        "LAST_PLAYED" -> listOf("WITHIN_DAYS", "OLDER_THAN_DAYS", "NEVER")
+        "PLAY_TIME" -> listOf("GREATER_THAN", "LESS_THAN")
+        else -> listOf("IS", "NOT")
+    }
+
+    internal inline fun isValidRule(
+        field: String, operator: String, value: String,
+        tagExists: (String) -> Boolean, folderExists: (String) -> Boolean
+    ): Boolean {
+        if (field !in fields || operator !in operatorsFor(field)) return false
+        return when (field) {
+            "ENGINE" -> GameEngine.entries.any { it.name == value }
+            "TAG" -> tagExists(value)
+            "FOLDER" -> folderExists(value)
+            "FAVORITE", "COVER", "AVAILABLE" -> value.toBooleanStrictOrNull() != null
+            else -> operator == "NEVER" || value.toDoubleOrNull()?.let { it.isFinite() && it >= 0 } == true
+        }
+    }
+
     fun matches(
         collection: CollectionEntity,
         rules: List<CollectionRuleEntity>,
@@ -18,7 +42,7 @@ object SmartCollectionEvaluator {
         now: Long = System.currentTimeMillis(),
         folderIdsByRoot: Map<String, Set<String>> = emptyMap()
     ): Boolean {
-        if (rules.isEmpty()) return false
+        if (game.hidden || rules.isEmpty()) return false
         return if (collection.matchMode == "ANY") {
             rules.any { matches(it, game, refs, folders, playStat, now, folderIdsByRoot) }
         } else {
@@ -38,8 +62,8 @@ object SmartCollectionEvaluator {
         "ENGINE" -> compareText(game.engine, rule.operator, rule.value)
         "TAG" -> (refs.any { it.gameId == game.id && it.tagId == rule.value }) xor (rule.operator == "NOT")
         "FOLDER" -> {
-            val ids = folderIdsByRoot[rule.value] ?: descendantFolderIds(rule.value, folders)
-            (game.libraryFolderId in ids) xor (rule.operator == "NOT")
+            val ids = folderIdsByRoot[rule.value] ?: FolderHierarchy(folders).descendantsOf(rule.value)
+            ids.isNotEmpty() && ((game.libraryFolderId in ids) xor (rule.operator == "NOT"))
         }
         "FAVORITE" -> compareBoolean(game.favorite, rule.operator, rule.value)
         "AVAILABLE" -> compareBoolean(!game.missing, rule.operator, rule.value)
@@ -72,13 +96,6 @@ object SmartCollectionEvaluator {
         "GREATER_THAN" -> actual > value.toDoubleOrNull().orZero()
         "LESS_THAN" -> actual < value.toDoubleOrNull().orZero()
         else -> actual == value.toDoubleOrNull().orZero()
-    }
-
-    private fun descendantFolderIds(rootId: String, folders: List<LibraryFolderEntity>): Set<String> {
-        val result = mutableSetOf(rootId)
-        var changed: Boolean
-        do changed = result.addAll(folders.filter { it.parentId in result }.map { it.id }) while (changed)
-        return result
     }
 
     private fun Double?.orZero() = this ?: 0.0

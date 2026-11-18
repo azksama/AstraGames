@@ -49,8 +49,8 @@ internal fun DuplicatesDialog(state: AstraUiState, vm: AstraViewModel, onDismiss
     var strategy by remember(selectedKey) { mutableStateOf(SaveConflictStrategy.KEEP_BOTH) }
     var deleteFiles by remember(selectedKey) { mutableStateOf(false) }
     var confirmPhysical by remember { mutableStateOf(false) }
-    LaunchedEffect(primaryId, secondary?.id) {
-        if (primaryId != null && secondary != null) vm.previewDuplicateMerge(primaryId!!, secondary.id)
+    LaunchedEffect(primaryId, secondary?.id, migrateSaves) {
+        if (primaryId != null && secondary != null) vm.previewDuplicateMerge(primaryId!!, secondary.id, migrateSaves)
     }
     Dialog(onDismissRequest = { if (!busy) onDismiss() }, properties = DialogProperties(usePlatformDefaultWidth = false)) {
         AstraDialogSystemBars()
@@ -146,10 +146,10 @@ internal fun DuplicateComparisonContent(
         }
         item { Card { Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text("Sauvegardes", style = MaterialTheme.typography.titleMedium)
-            Text(
-                if (preview == null) "Recherche des sauvegardes…"
-                else "${preview.primarySaves.size} dans le jeu principal • ${preview.secondarySaves.size} à récupérer • ${preview.conflictingSaves.size} conflit(s)"
-            )
+            if (migrateSaves && error == null) {
+                Text(if (preview == null) "Recherche des sauvegardes…"
+                    else "${preview.primarySaves.size} dans le jeu principal • ${preview.secondarySaves.size} à récupérer • ${preview.conflictingSaves.size} conflit(s)")
+            }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Checkbox(migrateSaves, onMigrateSaves, enabled = !busy); Text("Récupérer les sauvegardes du doublon")
             }

@@ -98,7 +98,7 @@ class LibraryIndexTest {
         games: List<GameEntity>, refs: List<GameTagCrossRef> = emptyList(),
         folders: List<LibraryFolderEntity> = emptyList(), collections: List<CollectionEntity> = emptyList(),
         rules: List<CollectionRuleEntity> = emptyList()
-    ) = LibraryIndex(games, refs, folders, collections, rules, emptyList())
+    ) = LibraryIndex(games, refs, folders, collections, rules, emptyList(), tagIds = refs.mapTo(hashSetOf()) { it.tagId })
 
     private fun game(id: String, title: String = id) = GameEntity(
         id = id, title = title, documentUri = "content://games/$id", physicalPath = null,

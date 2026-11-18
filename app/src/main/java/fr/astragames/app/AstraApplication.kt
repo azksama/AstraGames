@@ -15,7 +15,7 @@ import fr.astragames.app.data.saves.SaveManager
 import fr.astragames.app.launcher.JoiPlayLauncher
 import fr.astragames.app.launcher.JoiPlayCatalogProvider
 import fr.astragames.app.settings.SettingsRepository
-import fr.astragames.app.worker.GameUpdatesWorker
+import fr.astragames.app.data.repository.GameUpdateChecker
 import fr.astragames.app.worker.JoiPlayUpdateWorker
 
 class AstraApplication : Application(), coil3.SingletonImageLoader.Factory {
@@ -44,7 +44,7 @@ class AstraApplication : Application(), coil3.SingletonImageLoader.Factory {
         val finder = SaveFinder(this)
         val f95Zone = F95ZoneProvider { url -> android.webkit.CookieManager.getInstance().getCookie(url) }
         container = AppContainer(
-            repository = GameRepository(this, database.dao(), scanner, BackupManager(this, database)),
+            repository = GameRepository(this, database, scanner, BackupManager(this, database)),
             settings = SettingsRepository(this),
             launcher = JoiPlayLauncher(),
             covers = SearchCoverProvider(this, f95Zone),
@@ -78,4 +78,7 @@ data class AppContainer(
     val saveManager: SaveManager,
     val modsManager: ModsManager,
     val dao: fr.astragames.app.data.local.AstraDao
-)
+) {
+    internal val gameVersionChecker = GameUpdateChecker(repository.games, settings.gameUpdates,
+        f95Zone::fetchVersion, { url -> ryuugames.fetch(url).version })
+}

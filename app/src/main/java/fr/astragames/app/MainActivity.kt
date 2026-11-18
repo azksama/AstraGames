@@ -31,12 +31,16 @@ import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
 import fr.astragames.app.ui.AstraApp
 import fr.astragames.app.ui.AstraViewModel
+import fr.astragames.app.ui.UiEvent
 import fr.astragames.app.ui.AppUpdateScreen
 import fr.astragames.app.ui.AppUpdateNotice
 import fr.astragames.app.ui.LocalAppLanguage
 import fr.astragames.app.ui.theme.AstraTheme
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.withContext
 import fr.astragames.app.windows.WolfDiagnostics
 import fr.astragames.app.ui.WolfDiagnosticsDialog
@@ -45,11 +49,14 @@ import java.io.File
 class MainActivity : FragmentActivity() {
     private val viewModel by viewModels<AstraViewModel>()
     private val notificationPermission = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    private var coverGameId: String? = null
+    private val coverGameId = MutableStateFlow<String?>(null)
+    private var downloadedCropSource: Uri? = null
+    private var cropOutput: Uri? = null
+    private val covers get() = (application as AstraApplication).container.covers
     private var recoveredWolfReport by mutableStateOf<File?>(null)
     private val coverPicker = registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        val gameId = coverGameId
-        if (uri != null && gameId != null) launchCrop(gameId, uri) else coverGameId = null
+        val gameId = coverGameId.value
+        if (uri != null && gameId != null) launchCrop(gameId, uri) else coverGameId.value = null
     }
     private val sourcePicker = registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
         uri?.let(viewModel::addSource)
@@ -73,19 +80,28 @@ class MainActivity : FragmentActivity() {
         uri?.let { viewModel.tools.importModZip(it, null, false) }
     }
     private val coverCropper = registerForActivityResult(CropImageContract()) { result ->
-        val gameId = coverGameId
-        if (result.isSuccessful && gameId != null) result.uriContent?.let { viewModel.setCover(gameId, it) }
-        coverGameId = null
+        val gameId = coverGameId.value
+        val saving = if (result.isSuccessful && gameId != null) result.uriContent?.let { viewModel.setCover(gameId, it) } else null
+        releaseCropFiles(saving)
+        coverGameId.value = null
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        coverGameId = savedInstanceState?.getString("coverGameId")
+        coverGameId.value = savedInstanceState?.getString("coverGameId")
+        downloadedCropSource = savedInstanceState?.getString("downloadedCropSource")?.let(Uri::parse)
+        cropOutput = savedInstanceState?.getString("cropOutput")?.let(Uri::parse)
         enableEdgeToEdge(statusBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT), navigationBarStyle = SystemBarStyle.dark(android.graphics.Color.TRANSPARENT))
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) window.isNavigationBarContrastEnforced = false
         lifecycleScope.launch {
-            repeatOnLifecycle(Lifecycle.State.STARTED) {
-                viewModel.cropRequests.collect { request -> launchCrop(request.gameId, request.source) }
+            repeatOnLifecycle(Lifecycle.State.RESUMED) {
+                combine(viewModel.pendingCrops, coverGameId, viewModel.isLocked) { queue, active, locked ->
+                    queue.isNotEmpty() && active == null && !locked
+                }.collect { ready ->
+                    if (ready && coverGameId.value == null && !viewModel.isLocked.value) {
+                        viewModel.takeNextCrop()?.let { request -> launchCrop(request.gameId, request.source, downloaded = true) }
+                    }
+                }
             }
         }
         lifecycleScope.launch {
@@ -137,7 +153,7 @@ class MainActivity : FragmentActivity() {
                     onPickSource = { sourcePicker.launch(null) },
                     onPickTags = { tagPicker.launch(arrayOf("text/plain", "text/csv", "application/json")) },
                     onPickCover = { gameId ->
-                        coverGameId = gameId
+                        coverGameId.value = gameId
                         viewModel.prepareExternalPicker()
                         coverPicker.launch(arrayOf("image/*"))
                     },
@@ -187,8 +203,23 @@ class MainActivity : FragmentActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
-        outState.putString("coverGameId", coverGameId)
+        outState.putString("coverGameId", coverGameId.value)
+        outState.putString("downloadedCropSource", downloadedCropSource?.toString())
+        outState.putString("cropOutput", cropOutput?.toString())
         super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroy() {
+        if (isFinishing) releaseCropFiles()
+        super.onDestroy()
+    }
+
+    private fun releaseCropFiles(saving: Job? = null) {
+        val files = listOfNotNull(downloadedCropSource, cropOutput)
+        downloadedCropSource = null
+        cropOutput = null
+        if (saving == null) files.forEach(covers::discardDownload)
+        else saving.invokeOnCompletion { files.forEach(covers::discardDownload) }
     }
 
     private fun promptBiometric() {
@@ -213,10 +244,13 @@ class MainActivity : FragmentActivity() {
         )
     }
 
-    private fun launchCrop(gameId: String, source: Uri) {
-        coverGameId = gameId
-        coverCropper.launch(
-            CropImageContractOptions(
+    private fun launchCrop(gameId: String, source: Uri, downloaded: Boolean = false) {
+        coverGameId.value = gameId
+        downloadedCropSource = source.takeIf { downloaded }
+        try {
+            val output = covers.createCropOutput()
+            cropOutput = output
+            val options = CropImageContractOptions(
                 uri = source,
                 cropImageOptions = CropImageOptions(
                     guidelines = CropImageView.Guidelines.ON,
@@ -226,10 +260,16 @@ class MainActivity : FragmentActivity() {
                     aspectRatioY = 25,
                     imageSourceIncludeCamera = false,
                     imageSourceIncludeGallery = false,
+                    customOutputUri = output,
                     outputCompressQuality = 100
                 )
             )
-        )
+            coverCropper.launch(options)
+        } catch (_: RuntimeException) {
+            releaseCropFiles()
+            coverGameId.value = null
+            viewModel.events.tryEmit(UiEvent.Message("Impossible d’ouvrir le recadrage de la jaquette."))
+        }
     }
 
     private fun openBackupFolder() {

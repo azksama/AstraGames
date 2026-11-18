@@ -7,6 +7,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import fr.astragames.app.core.metadata.*
 import fr.astragames.app.data.local.GameEntity
+import fr.astragames.app.data.local.TagCategoryEntity
+import fr.astragames.app.data.local.TagEntity
 import fr.astragames.app.data.repository.GameEdits
 import fr.astragames.app.settings.AppLanguage
 import fr.astragames.app.ui.theme.AstraTheme
@@ -23,6 +25,28 @@ class MetadataUiTest {
         executableName = "index.html", engine = "RPG_MAKER_MV", launcher = "JOIPLAY", sourceId = "metadata-test",
         dateAdded = 1, lastModified = 1, fingerprint = "metadata-ui", developer = "Studio Aurora", version = "1.0")
     private val url = "https://f95zone.to/threads/mossbound.123/"
+
+    @Test fun refusedTagRenameKeepsTheDraftAndCategoryForRetry() {
+        val tag = TagEntity("puzzle", "Puzzle", "puzzle", "Genres")
+        val categories = listOf(TagCategoryEntity("genres", "Genres", "genres"))
+        var saved: Pair<String, String?>? = null
+        content {
+            TagEditDialog(tag, categories, { name, categoryId, categoryChanged ->
+                require(name != "Aventure") { "Un tag porte déjà ce nom." }
+                assertFalse(categoryChanged)
+                saved = name to categoryId
+            }, {})
+        }
+        val name = compose.onNode(hasSetTextAction())
+        name.performTextReplacement("Aventure")
+        compose.onNodeWithText("Enregistrer").performClick()
+        compose.onNodeWithText("Un tag porte déjà ce nom.").assertIsDisplayed()
+        compose.onNodeWithText("Genres").assertIsSelected()
+        name.assertTextContains("Aventure")
+        name.performTextReplacement("Énigme")
+        compose.onNodeWithText("Enregistrer").performClick()
+        compose.runOnIdle { assertEquals("Énigme" to "genres", saved) }
+    }
 
     @Test fun editorPreservesTypedTitleWhenAnImportUpdatesOtherFields() {
         var displayed by mutableStateOf(game)

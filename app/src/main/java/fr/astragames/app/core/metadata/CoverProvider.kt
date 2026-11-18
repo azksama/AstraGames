@@ -188,7 +188,17 @@ class SearchCoverProvider(
             }.build()
     }
 
-    suspend fun download(candidate: CoverCandidate): Uri = withContext(Dispatchers.IO) {
+    suspend fun download(candidate: CoverCandidate): Uri {
+        var completed: Uri? = null
+        try {
+            return withContext(Dispatchers.IO) { downloadImage(candidate).also { completed = it } }
+        } catch (error: CancellationException) {
+            completed?.let(::discardDownload)
+            throw error
+        }
+    }
+
+    private suspend fun downloadImage(candidate: CoverCandidate): Uri {
         val appContext = checkNotNull(context) { "Contexte Android absent pour télécharger la jaquette." }
         var lastError: Exception? = null
         for (url in (listOf(candidate.imageUrl) + candidate.fallbackUrls).distinct().take(4)) {
@@ -236,7 +246,7 @@ class SearchCoverProvider(
                     val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     BitmapFactory.decodeFile(output.path, bounds)
                     check(bounds.outWidth > 0 && bounds.outHeight > 0) { "Cette image est illisible. Essayez une autre jaquette." }
-                    return@withContext FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", output)
+                    return FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", output)
                 }
             } catch (error: CancellationException) {
                 partialFile?.delete()
@@ -249,12 +259,22 @@ class SearchCoverProvider(
         throw lastError ?: IllegalStateException("Impossible de télécharger cette image.")
     }
 
+    fun createCropOutput(): Uri {
+        val appContext = checkNotNull(context)
+        val directory = File(appContext.cacheDir, "cover-imports").apply { mkdirs() }
+        check(directory.isDirectory) { "Impossible de préparer le recadrage." }
+        val output = File(directory, "crop-${UUID.randomUUID()}.jpg")
+        return FileProvider.getUriForFile(appContext, "${appContext.packageName}.files", output)
+    }
+
     fun discardDownload(uri: Uri) {
         val appContext = context ?: return
-        if (uri.authority == "${appContext.packageName}.files") {
-            val name = uri.lastPathSegment ?: return
-            File(appContext.cacheDir, "cover-imports/$name").takeIf { it.parentFile == File(appContext.cacheDir, "cover-imports") }?.delete()
-        }
+        val segments = uri.pathSegments
+        if (uri.scheme != "content" || uri.authority != "${appContext.packageName}.files" ||
+            segments.size != 2 || segments.first() != "cover_imports") return
+        val directory = File(appContext.cacheDir, "cover-imports")
+        val file = File(directory, segments.last())
+        if (file.parentFile == directory && file.isFile) file.delete()
     }
 
     private fun hostOf(value: String): String = runCatching { URI(value).host?.removePrefix("www.") }.getOrNull().orEmpty()

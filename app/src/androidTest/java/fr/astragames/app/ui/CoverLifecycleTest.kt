@@ -2,6 +2,9 @@ package fr.astragames.app.ui
 
 import android.app.Activity
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Color
+import android.net.Uri
 import android.os.SystemClock
 import androidx.core.content.FileProvider
 import androidx.lifecycle.Lifecycle
@@ -19,12 +22,14 @@ import android.view.View
 import android.view.ViewGroup
 import fr.astragames.app.AstraApplication
 import fr.astragames.app.MainActivity
+import fr.astragames.app.data.local.GameEntity
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.File
+import java.util.UUID
 
 @RunWith(AndroidJUnit4::class)
 class CoverLifecycleTest {
@@ -47,21 +52,16 @@ class CoverLifecycleTest {
                 // Authentication is simulated; the activity transitions and cropper are real Android components.
                 scenario.onActivity {
                     vm.unlockApp()
-                    vm.cropRequests.tryEmit(CropRequest("lifecycle-fixture", FileProvider.getUriForFile(app, "${app.packageName}.files", image)))
+                    vm.enqueueCrop(CropRequest("lifecycle-fixture", FileProvider.getUriForFile(app, "${app.packageName}.files", image)))
                 }
-                var crop: Activity? = null
-                await {
-                    InstrumentationRegistry.getInstrumentation().runOnMainSync {
-                        crop = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).firstOrNull { it is CropImageActivity }
-                    }
-                    crop != null
-                }
+                val crop = awaitCrop()
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
-                verifyPinchCrop(crop!!)
-                InstrumentationRegistry.getInstrumentation().runOnMainSync { crop!!.finish() }
+                verifyPinchCrop(crop)
+                InstrumentationRegistry.getInstrumentation().runOnMainSync { crop.finish() }
                 await { scenario.state == Lifecycle.State.RESUMED }
                 InstrumentationRegistry.getInstrumentation().waitForIdleSync()
                 assertFalse("Internal crop must not relock Astra", vm.isLocked.value)
+                assertFalse("The cancelled crop should release its downloaded source", image.exists())
                 scenario.moveToState(Lifecycle.State.CREATED)
                 scenario.moveToState(Lifecycle.State.RESUMED)
                 await { vm.isLocked.value }
@@ -75,6 +75,66 @@ class CoverLifecycleTest {
             }
             image.delete()
         }
+    }
+
+    @Test fun completedDownloadWhileStoppedSavesTheCroppedImageOnReturn() {
+        val app = ApplicationProvider.getApplicationContext<AstraApplication>()
+        val directory = File(app.cacheDir, "cover-imports").apply { mkdirs() }
+        val downloadsBefore = directory.list().orEmpty().toSet()
+        val outputsBefore = app.cacheDir.list().orEmpty().filter { it.startsWith("cropped") }.toSet()
+        val image = File.createTempFile("background-", ".png", directory)
+        val bitmap = Bitmap.createBitmap(180, 250, Bitmap.Config.ARGB_8888).apply { eraseColor(Color.GREEN) }
+        image.outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }
+        bitmap.recycle()
+        val id = UUID.randomUUID().toString()
+        val game = GameEntity(id, "Crop fixture", documentUri = "content://crop/$id", physicalPath = null,
+            executableName = null, engine = "HTML5", launcher = "EXTERNAL", sourceId = "crop-test", dateAdded = 1, lastModified = 1, fingerprint = id)
+        val dao = app.container.dao
+        try {
+            runBlocking { dao.upsertGame(game) }
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                lateinit var vm: AstraViewModel
+                scenario.onActivity { vm = ViewModelProvider(it)[AstraViewModel::class.java] }
+                scenario.moveToState(Lifecycle.State.CREATED)
+                val request = CropRequest(id, FileProvider.getUriForFile(app, "${app.packageName}.files", image))
+                InstrumentationRegistry.getInstrumentation().runOnMainSync { vm.enqueueCrop(request) }
+                scenario.moveToState(Lifecycle.State.RESUMED)
+                val crop = awaitCrop()
+                assertTrue(image.isFile)
+                val instrumentation = InstrumentationRegistry.getInstrumentation()
+                await {
+                    var ready = false
+                    instrumentation.runOnMainSync { ready = crop.findViewById<CropImageView>(com.canhub.cropper.R.id.cropImageView).cropRect != null }
+                    ready
+                }
+                instrumentation.runOnMainSync { assertTrue(crop.findViewById<View>(com.canhub.cropper.R.id.crop_image_menu_crop).performClick()) }
+                await { scenario.state == Lifecycle.State.RESUMED && directory.list().orEmpty().toSet() == downloadsBefore }
+                assertEquals(outputsBefore, app.cacheDir.list().orEmpty().filter { it.startsWith("cropped") }.toSet())
+                val uri = Uri.parse(runBlocking { dao.getGame(id)!!.coverUri })
+                val result = requireNotNull(BitmapFactory.decodeFile(uri.path))
+                try {
+                    assertTrue(result.width > 0 && result.height > 0)
+                    assertTrue(Color.green(result.getPixel(result.width / 2, result.height / 2)) > 240)
+                } finally { result.recycle() }
+            }
+        } finally {
+            runBlocking {
+                if (dao.getGame(id)?.coverUri != null) app.container.repository.removeCover(id)
+                dao.deleteGameCompletely(id)
+            }
+            image.delete()
+        }
+    }
+
+    private fun awaitCrop(): Activity {
+        var crop: Activity? = null
+        await {
+            InstrumentationRegistry.getInstrumentation().runOnMainSync {
+                crop = ActivityLifecycleMonitorRegistry.getInstance().getActivitiesInStage(Stage.RESUMED).firstOrNull { it is CropImageActivity }
+            }
+            crop != null
+        }
+        return requireNotNull(crop)
     }
 
     private fun verifyPinchCrop(activity: Activity) {

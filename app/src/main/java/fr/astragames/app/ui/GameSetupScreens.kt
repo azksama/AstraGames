@@ -1,5 +1,6 @@
 package fr.astragames.app.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.material3.Text as MaterialText
 
 import androidx.compose.foundation.background
@@ -7,6 +8,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.state.ToggleableState
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.triStateToggleable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -21,10 +23,13 @@ import androidx.compose.material.icons.automirrored.filled.DriveFileMove
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.mapSaver
 import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.snapshots.SnapshotStateMap
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
@@ -46,7 +51,7 @@ import fr.astragames.app.data.local.TagEntity
 import fr.astragames.app.data.repository.GameEdits
 
 @Composable
-internal fun ScanReportDialog(reports: List<ScanReport>, onDismiss: () -> Unit) {
+internal fun ScanReportDialog(reports: List<ScanReport>, onDismiss: () -> Unit, onConfigure: (() -> Unit)? = null) {
     var selectedIndex by remember(reports) { mutableIntStateOf(0) }
     var filter by remember(reports) { mutableStateOf<ScanReportItemStatus?>(null) }
     val report = reports.getOrNull(selectedIndex.coerceAtMost(reports.lastIndex)) ?: return
@@ -109,7 +114,13 @@ internal fun ScanReportDialog(reports: List<ScanReport>, onDismiss: () -> Unit) 
                             )
                         }
                     }
-                    Button(onClick = onDismiss, Modifier.fillMaxWidth().padding(16.dp)) { Text("Fermer") }
+                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(12.dp),
+                        verticalAlignment = Alignment.CenterVertically) {
+                        if (onConfigure != null) TextButton(onClick = onDismiss) { Text("Plus tard") }
+                        Button(onClick = onConfigure ?: onDismiss, Modifier.weight(1f)) {
+                            Text(if (onConfigure != null) "Configurer" else "Fermer")
+                        }
+                    }
                 }
             }
         }
@@ -154,44 +165,44 @@ internal fun ScanReportItemStatus.tint() = when (this) {
     ScanReportItemStatus.IGNORED -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
-internal fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPickCover: (String) -> Unit) {
-    var accepted by rememberSaveable { mutableStateOf(false) }
-    if (!accepted) {
-        AlertDialog(
-            onDismissRequest = vm::dismissGameSetup,
-            icon = { Icon(Icons.Default.AutoAwesome, null) },
-            title = { Text("${state.setupQueue.size} nouveau(x) jeu(x)") },
-            text = { Text("Voulez-vous configurer chaque jeu maintenant ? Astra passera automatiquement au suivant.") },
-            confirmButton = { TextButton(onClick = { accepted = true }) { Text("Configurer") } },
-            dismissButton = { TextButton(onClick = vm::dismissGameSetup) { Text("Plus tard") } }
-        )
-        return
-    }
-    val game = state.setupQueue.firstOrNull() ?: return
-    val assigned by remember(game.id) { vm.gameTags(game.id) }.collectAsStateWithLifecycle(emptyList())
-    val coverState by vm.coverSearch.collectAsStateWithLifecycle()
-    val f95State by vm.f95Import.collectAsStateWithLifecycle()
-    val latestVersions by vm.latestGameVersions.collectAsStateWithLifecycle()
+internal fun NewGamesSetupInvitation(count: Int, onConfigure: () -> Unit, onDismiss: () -> Unit) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        icon = { Icon(Icons.Default.AutoAwesome, null) },
+        title = {
+            if (count == 1) Text("Nouveau jeu")
+            else MaterialText("${AppLocalizer.text("Nouveaux jeux", LocalAppLanguage.current)} · $count")
+        },
+        text = { Text(if (count == 1) "Configurer ce jeu maintenant ?" else "Voulez-vous configurer chaque jeu maintenant ? Astra passera automatiquement au suivant.") },
+        confirmButton = { TextButton(onClick = onConfigure) { Text("Configurer") } },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Plus tard") } }
+    )
+}
+
+private enum class SetupExit { SkipGame, LeaveSetup }
+
+@Composable
+internal fun NewGameSetupScreen(game: GameEntity, state: AstraUiState, vm: AstraViewModel, onPickCover: (String) -> Unit,
+    snackbar: SnackbarHostState = remember { SnackbarHostState() }) {
+    val assigned by remember(game.id) { vm.gameTags(game.id) }.collectAsStateWithLifecycle<List<TagEntity>?>(null)
     var title by rememberMetadataField(game.id, game.title)
     var description by rememberMetadataField(game.id, game.description)
     var developer by rememberMetadataField(game.id, game.developer)
     var version by rememberMetadataField(game.id, game.version)
     var textTags by rememberSaveable(game.id) { mutableStateOf("") }
-    var selectedTags by remember(game.id) { mutableStateOf(assigned.map { it.id }.toSet()) }
-    var previousAssigned by remember(game.id) { mutableStateOf(assigned.map { it.id }.toSet()) }
+    var selectedTags by rememberSaveable(game.id, stateSaver = idSetSaver) { mutableStateOf(emptySet<String>()) }
+    var previousAssigned by rememberSaveable(game.id, stateSaver = idSetSaver) { mutableStateOf(emptySet<String>()) }
     LaunchedEffect(assigned) {
-        val incoming = assigned.map { it.id }.toSet()
+        val incoming = assigned?.mapTo(hashSetOf()) { it.id } ?: return@LaunchedEffect
         selectedTags = (selectedTags - (previousAssigned - incoming)) + (incoming - previousAssigned)
         previousAssigned = incoming
     }
-    var saving by remember(game.id) { mutableStateOf(false) }
-    var saveError by remember(game.id) { mutableStateOf<String?>(null) }
-    val saveScope = rememberCoroutineScope()
-    var showTags by remember { mutableStateOf(false) }
-    var showCover by remember { mutableStateOf(false) }
+    val submission = rememberDialogSubmission()
+    var showTags by rememberSaveable(game.id) { mutableStateOf(false) }
+    var showCover by rememberSaveable(game.id) { mutableStateOf(false) }
     var showF95 by rememberSaveable(game.id) { mutableStateOf(false) }
+    var discard by rememberSaveable(game.id) { mutableStateOf<SetupExit?>(null) }
     var importedF95TagNames by remember(game.id) { mutableStateOf(emptySet<String>()) }
     LaunchedEffect(state.tags, importedF95TagNames) {
         if (importedF95TagNames.isNotEmpty()) {
@@ -199,61 +210,92 @@ internal fun NewGamesSetupWizard(state: AstraUiState, vm: AstraViewModel, onPick
         }
     }
 
-    ModalBottomSheet(onDismissRequest = vm::dismissGameSetup) {
-        Column(
-            Modifier.fillMaxWidth().fillMaxHeight(.92f).imePadding().navigationBarsPadding()
-                .padding(horizontal = 18.dp, vertical = 4.dp)
-        ) {
-            Text("Configurer ${game.title}", style = MaterialTheme.typography.titleLarge)
-            Text("${state.setupQueue.size} jeu(x) restant(s)", color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Spacer(Modifier.height(10.dp))
-            LazyColumn(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(9.dp), contentPadding = PaddingValues(bottom = 8.dp)) {
-                item {
-                    Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
-                        GameCover(game, Modifier.width(88.dp).aspectRatio(.72f))
-                        Column {
-                            AssistChip(onClick = {}, label = { Text(game.engine.readableEngine()) })
-                            TextButton(onClick = { showCover = true; vm.prepareCoverPicker(game.id) }) { Icon(Icons.Default.ImageSearch, null); Text("Jaquette") }
-                        }
+    val dirty = title != game.title || developer != game.developer.orEmpty() || version != game.version.orEmpty() ||
+        description != game.description.orEmpty() || textTags.isNotBlank() || selectedTags != previousAssigned
+    fun leave(action: SetupExit) {
+        when (action) {
+            SetupExit.SkipGame -> vm.completeGameSetup(game.id)
+            SetupExit.LeaveSetup -> vm.dismissGameSetup()
+        }
+    }
+    fun requestExit(action: SetupExit) {
+        if (!submission.pending) {
+            if (dirty) discard = action else leave(action)
+        }
+    }
+    BackHandler { requestExit(SetupExit.LeaveSetup) }
+    val count = state.setupQueue.size
+    val header: @Composable () -> Unit = {
+        val remaining = if (count > 1) "${AppLocalizer.text("Jeux à configurer", LocalAppLanguage.current)} · $count" else null
+        CompactHeader("Configurer ${game.title}", remaining, onBack = { requestExit(SetupExit.LeaveSetup) }, localizeSubtitle = false)
+    }
+    val artwork: @Composable () -> Unit = {
+        MetadataEditorArtwork(game, submission.pending,
+            onImport = { vm.clearF95Import(); showF95 = true },
+            onChangeCover = { vm.prepareCoverPicker(game.id); showCover = true },
+            engineLabel = game.engine.readableEngine())
+    }
+    val actions: @Composable () -> Unit = {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 6.dp)) {
+            submission.error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            if (submission.pending) LinearProgressIndicator(Modifier.fillMaxWidth())
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = Alignment.CenterVertically) {
+                TextButton(onClick = { requestExit(SetupExit.SkipGame) }, enabled = !submission.pending) { Text("Passer") }
+                Button(onClick = {
+                    submission.submit {
+                        vm.configureScannedGame(game.id,
+                            GameEdits(title, game.originalTitle, developer, version, game.productCode, game.language, description, game.f95Url, game.ryuugamesUrl),
+                            selectedTags, textTags, previousAssigned)
                     }
+                }, modifier = Modifier.weight(1f), enabled = title.isNotBlank() && !submission.pending) {
+                    Text(if (count == 1) "Terminer" else "Enregistrer et suivant")
                 }
-                item { EditField(title, { title = it }, "Nom") }
-                item { EditField(developer, { developer = it }, "Développeur") }
-                item { EditField(version, { version = it }, "Version") }
-                item { EditField(description, { description = it }, "Description", false) }
-                item { TextTagInput(textTags, { textTags = it }) }
-                item { OutlinedButton(onClick = { showTags = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Style, null); Spacer(Modifier.width(6.dp)); Text("Tags (${selectedTags.size})") } }
-                item { OutlinedButton(onClick = { showF95 = true }, Modifier.fillMaxWidth()) { Icon(Icons.Default.Link, null); Spacer(Modifier.width(6.dp)); Text("Importer des métadonnées") } }
-            }
-            Column(Modifier.fillMaxWidth().padding(top = 8.dp, bottom = 6.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                saveError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-                if (saving) LinearProgressIndicator(Modifier.fillMaxWidth())
-                Button(
-                    onClick = {
-                        saving = true; saveError = null
-                        saveScope.launch {
-                            try {
-                                vm.configureScannedGame(
-                                    game.id,
-                                    GameEdits(title, game.originalTitle, developer, version, game.productCode, game.language, description, game.f95Url, game.ryuugamesUrl),
-                                    selectedTags, textTags
-                                )
-                            } catch (cancelled: CancellationException) { throw cancelled }
-                            catch (failure: Exception) { saveError = failure.message ?: "Enregistrement impossible. Réessayez." }
-                            finally { saving = false }
-                        }
-                    }, modifier = Modifier.fillMaxWidth(), enabled = title.isNotBlank() && !saving
-                ) { Text(if (state.setupQueue.size == 1) "Terminer" else "Enregistrer et suivant") }
-                TextButton(onClick = { vm.completeGameSetup(game.id) }, Modifier.fillMaxWidth(), enabled = !saving) { Text("Ignorer ce jeu") }
             }
         }
     }
-    if (showTags) GameTagPickerSheet(state.tags, state.tagCategories, selectedTags, { selectedTags = it; showTags = false }, { showTags = false })
-    if (showCover) CoverPickerSheet(game, coverState, state.settings.openSearchInExternalBrowser, { vm.chooseRemoteCover(game.id, it) }, {
+    Surface(Modifier.fillMaxSize().testTag("new-game-setup"), color = MaterialTheme.colorScheme.background) {
+        BoxWithConstraints(Modifier.fillMaxSize().windowInsetsPadding(WindowInsets.safeDrawing).imePadding(), contentAlignment = Alignment.TopCenter) {
+            val short = maxHeight < 240.dp
+            val sideBySide = maxWidth >= 600.dp
+            val artworkWidth = (maxWidth * .42f).coerceAtMost(300.dp)
+            Column(Modifier.widthIn(max = 920.dp).fillMaxSize()) {
+                if (!short) { header(); HorizontalDivider() }
+                Row(Modifier.weight(1f).fillMaxWidth()) {
+                    if (sideBySide) Column(
+                        Modifier.width(artworkWidth).fillMaxHeight()
+                            .verticalScroll(rememberScrollState()).padding(horizontal = 16.dp, vertical = 12.dp)
+                    ) { artwork() }
+                    LazyColumn(Modifier.weight(1f).fillMaxHeight().testTag("new-game-setup-fields"),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        if (short) item("header") { header() }
+                        if (!sideBySide) item("artwork") { artwork() }
+                        item("title") { MetadataEditField(title, { title = it }, "Nom", enabled = !submission.pending, error = if (title.isBlank()) "Saisissez un titre pour le jeu." else null) }
+                        item("developer") { MetadataEditField(developer, { developer = it }, "Développeur", enabled = !submission.pending) }
+                        item("version") { MetadataEditField(version, { version = it }, "Version", enabled = !submission.pending) }
+                        item("description") { MetadataEditField(description, { description = it }, "Description", multiline = true, enabled = !submission.pending) }
+                        item("textTags") { TextTagInput(textTags, { textTags = it }, enabled = !submission.pending) }
+                        item("tagPicker") { OutlinedButton(onClick = { showTags = true }, modifier = Modifier.fillMaxWidth(), enabled = !submission.pending) {
+                            Icon(Icons.Default.Style, null); Spacer(Modifier.width(6.dp)); Text("Tags (${selectedTags.size})")
+                        } }
+                        if (short) item("actions") { actions() }
+                    }
+                }
+                SnackbarHost(snackbar)
+                if (!short) { HorizontalDivider(); actions() }
+            }
+        }
+    }
+    discard?.let { action ->
+        ConfirmDialog("Quitter sans enregistrer ?", "Vos modifications en cours seront perdues.",
+            onConfirm = { discard = null; leave(action) }, onDismiss = { discard = null },
+            confirmLabel = "Abandonner les modifications", dismissLabel = "Continuer à modifier")
+    }
+    if (showTags) GameTagPickerSheet(state.tags, state.tagCategories, selectedTags, { selected, _ -> selectedTags = selected; showTags = false }, { showTags = false })
+    if (showCover) CoverPickerSheet(game, vm.coverSearch.collectAsStateWithLifecycle().value, state.settings.openSearchInExternalBrowser, { vm.chooseRemoteCover(game.id, it) }, {
         onPickCover(game.id); showCover = false
     }, { vm.removeCover(game.id); showCover = false }, { showCover = false; vm.clearCoverSearch() })
     if (showF95) F95ImportSheet(
-        game, state.tags, f95State, state.settings.openSearchInExternalBrowser, state.settings.f95SessionUser,
+        game, state.tags, vm.f95Import.collectAsStateWithLifecycle().value, state.settings.openSearchInExternalBrowser, state.settings.f95SessionUser,
         onFetch = { vm.fetchF95Metadata(game.id, it) },
         onPrepareSearch = { vm.prepareF95Search(game.id, game.title, it) },
         onFind = { vm.findMetadata(game.id, it) },
@@ -396,14 +438,16 @@ internal fun EditGameDialog(
 }
 
 @Composable
-private fun MetadataEditorArtwork(game: GameEntity, saving: Boolean, onImport: () -> Unit, onChangeCover: () -> Unit, onRemoveCover: () -> Unit) {
+private fun MetadataEditorArtwork(game: GameEntity, saving: Boolean, onImport: () -> Unit, onChangeCover: () -> Unit,
+    onRemoveCover: (() -> Unit)? = null, engineLabel: String? = null) {
     Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Row(horizontalArrangement = Arrangement.spacedBy(14.dp), verticalAlignment = Alignment.CenterVertically) {
             GameCover(game, Modifier.width(72.dp).aspectRatio(.72f))
             Column(Modifier.weight(1f)) {
                 Text("Jaquette", style = MaterialTheme.typography.titleMedium)
+                if (engineLabel != null) Text(engineLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 TextButton(onClick = onChangeCover, enabled = !saving) { Text("Changer") }
-                if (game.coverUri != null) TextButton(onClick = onRemoveCover, enabled = !saving) { Text("Supprimer") }
+                if (game.coverUri != null && onRemoveCover != null) TextButton(onClick = onRemoveCover, enabled = !saving) { Text("Supprimer") }
             }
         }
         OutlinedButton(onClick = onImport, enabled = !saving, modifier = Modifier.fillMaxWidth()) {
@@ -427,10 +471,11 @@ internal fun EditField(value: String, onChange: (String) -> Unit, label: String,
 )
 
 @Composable
-internal fun TextTagInput(value: String, onChange: (String) -> Unit) = OutlinedTextField(
+internal fun TextTagInput(value: String, onChange: (String) -> Unit, enabled: Boolean = true) = OutlinedTextField(
     value = value,
     onValueChange = onChange,
     modifier = Modifier.fillMaxWidth(),
+    enabled = enabled,
     label = { Text("Ajouter des tags") },
     placeholder = { Text("female protagonist, adventure, fantasy") },
     supportingText = { Text("Séparez-les par des virgules ou écrivez [tag] [tag]. Les tags existants seront réutilisés.") },
@@ -439,78 +484,106 @@ internal fun TextTagInput(value: String, onChange: (String) -> Unit) = OutlinedT
     keyboardOptions = KeyboardOptions(capitalization = KeyboardCapitalization.None)
 )
 
+private val tagChoiceSaver = mapSaver<SnapshotStateMap<String, ToggleableState>>(
+    save = { choices -> choices.mapValues { it.value.name } },
+    restore = { saved -> mutableStateMapOf<String, ToggleableState>().apply {
+        saved.forEach { (id, value) -> put(id, ToggleableState.valueOf(value as String)) }
+    } }
+)
+
+private fun tagChoice(id: String, included: Set<String>, excluded: Set<String>?) = when {
+    id in included -> ToggleableState.On
+    excluded != null && id in excluded -> ToggleableState.Indeterminate
+    else -> ToggleableState.Off
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 internal fun GameTagPickerSheet(
     tags: List<TagEntity>, categories: List<TagCategoryEntity>, initial: Set<String>,
-    onSave: (Set<String>) -> Unit, onDismiss: () -> Unit,
-    initialExcluded: Set<String> = emptySet(),
-    onSaveExcluded: ((Set<String>) -> Unit)? = null,
-    title: String = "Choisir les tags"
+    onSave: suspend (Set<String>, Set<String>) -> Unit, onDismiss: () -> Unit,
+    initialExcluded: Set<String>? = null,
+    title: String = "Choisir les tags", allowEmptySelection: Boolean = true
 ) {
-    var included by remember(initial) { mutableStateOf(initial) }
-    var excluded by remember(initialExcluded) { mutableStateOf(initialExcluded) }
-    var category by remember { mutableStateOf("__all__") }
-    var query by remember { mutableStateOf("") }
+    val choices = rememberSaveable(saver = tagChoiceSaver) { mutableStateMapOf<String, ToggleableState>() }
+    var categoryId by rememberSaveable { mutableStateOf<String?>(null) }
+    var uncategorizedOnly by rememberSaveable { mutableStateOf(false) }
+    var query by rememberSaveable { mutableStateOf("") }
+    val selectedCategory = categoryId?.let { id -> categories.firstOrNull { it.id == id } }
+    fun pickCategory(id: String?, withoutCategory: Boolean = false) {
+        categoryId = id
+        uncategorizedOnly = withoutCategory
+    }
+    val available = remember(tags) { tags.mapTo(hashSetOf()) { it.id } }
+    val selection by remember(initial, initialExcluded, available) { derivedStateOf {
+        val included = initial.filterTo(mutableSetOf()) { it in available }
+        val excluded = initialExcluded.orEmpty().filterTo(mutableSetOf()) { it in available }
+        for ((id, choice) in choices) {
+            if (id !in available) continue
+            if (choice == ToggleableState.On) included.add(id) else included.remove(id)
+            if (choice == ToggleableState.Indeterminate) excluded.add(id) else excluded.remove(id)
+        }
+        included to excluded
+    } }
+    val (included, excluded) = selection
+    val submission = rememberDialogSubmission()
     fun cycle(tagId: String) {
-        if (onSaveExcluded == null) {
-            included = included.toggle(tagId)
-            return
+        val next = when (tagChoice(tagId, included, excluded)) {
+            ToggleableState.Off -> ToggleableState.On
+            ToggleableState.On -> if (initialExcluded == null) ToggleableState.Off else ToggleableState.Indeterminate
+            ToggleableState.Indeterminate -> ToggleableState.Off
         }
-        when {
-            tagId in included -> { included = included - tagId; excluded = excluded + tagId }
-            tagId in excluded -> excluded = excluded - tagId
-            else -> included = included + tagId
+        if (next == tagChoice(tagId, initial, initialExcluded)) choices.remove(tagId) else choices[tagId] = next
+        submission.clearError()
+    }
+    val categoryName = selectedCategory?.name
+    val visible = remember(tags, categoryName, uncategorizedOnly, query) {
+        val term = query.trim()
+        tags.filter { tag ->
+            val matchesCategory = when {
+                uncategorizedOnly -> tag.groupName == null
+                categoryName != null -> tag.groupName == categoryName
+                else -> true
+            }
+            matchesCategory && (term.isEmpty() || tag.name.contains(term, ignoreCase = true))
         }
     }
-    val visible = remember(tags, category, query) {
-        tags.filter {
-            (category == "__all__" || (category == "__none__" && it.groupName == null) || it.groupName == category) &&
-                (query.isBlank() || it.name.contains(query.trim(), true))
-        }
-    }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true, confirmValueChange = { it != SheetValue.Hidden || !submission.pending })
+    ModalBottomSheet(onDismissRequest = { if (!submission.pending) onDismiss() }, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().imePadding().padding(bottom = 10.dp)) {
             Row(Modifier.fillMaxWidth().padding(horizontal = 16.dp), verticalAlignment = Alignment.CenterVertically) {
                 Column(Modifier.weight(1f)) {
                     Text(title, style = MaterialTheme.typography.titleLarge)
-                    Text(if (onSaveExcluded != null) "${included.size} inclus · ${excluded.size} exclus" else "${included.size} sélectionné(s)", color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(if (initialExcluded != null) "${included.size} inclus · ${excluded.size} exclus" else "${included.size} sélectionné(s)", color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
-                Button(onClick = { onSave(included); onSaveExcluded?.invoke(excluded) }) { Icon(Icons.Default.Check, null); Text("Valider") }
+                Button(onClick = { submission.submit { onSave(included, excluded) } }, enabled = !submission.pending && (allowEmptySelection || included.isNotEmpty())) {
+                    Icon(Icons.Default.Check, null); Text("Valider")
+                }
             }
-            OutlinedTextField(
-                query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp),
-                placeholder = { Text("Rechercher un tag") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true
-            )
-            LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                item { FilterChip(category == "__all__", { category = "__all__" }, { Text("Tous") }) }
-                items(categories, key = { it.id }) { item -> FilterChip(category == item.name, { category = item.name }, { MaterialText(item.name) }) }
-                item { FilterChip(category == "__none__", { category = "__none__" }, { Text("Sans catégorie") }) }
-            }
-            if (visible.isEmpty()) CenterMessage("Aucun tag dans cette catégorie", modifier = Modifier.height(180.dp))
-            else LazyColumn(Modifier.fillMaxWidth().heightIn(max = 430.dp)) {
+            submission.error?.let { Text(it, Modifier.padding(horizontal = 16.dp), color = MaterialTheme.colorScheme.error) }
+            LazyColumn(Modifier.fillMaxWidth().weight(1f, fill = false).testTag("game-tag-choices")) {
+                item {
+                    OutlinedTextField(
+                        query, { query = it }, Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp), enabled = !submission.pending,
+                        placeholder = { Text("Rechercher un tag") }, leadingIcon = { Icon(Icons.Default.Search, null) }, singleLine = true
+                    )
+                }
+                item {
+                    LazyRow(Modifier.padding(horizontal = 16.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        item { FilterChip(selectedCategory == null && !uncategorizedOnly, { pickCategory(null) }, { Text("Tous") }, enabled = !submission.pending) }
+                        items(categories, key = { it.id }) { item -> FilterChip(item.id == categoryId, { pickCategory(item.id) }, { MaterialText(item.name) }, enabled = !submission.pending) }
+                        item { FilterChip(uncategorizedOnly, { pickCategory(null, withoutCategory = true) }, { Text("Sans catégorie") }, enabled = !submission.pending) }
+                    }
+                }
+                if (visible.isEmpty()) item { CenterMessage("Aucun tag dans cette catégorie", modifier = Modifier.height(180.dp)) }
                 items(visible, key = { it.id }) { tag ->
+                    val choice = tagChoice(tag.id, included, excluded)
                     ListItem(
-                        modifier = Modifier.clickable { cycle(tag.id) }, headlineContent = { MaterialText(tag.name) },
+                        modifier = Modifier.triStateToggleable(choice, enabled = !submission.pending, role = Role.Checkbox) { cycle(tag.id) },
+                        headlineContent = { MaterialText(tag.name) },
                         supportingContent = { tag.groupName?.let { MaterialText(it) } },
                         leadingContent = {
-                            if (onSaveExcluded != null) {
-                                TriStateCheckbox(
-                                    state = when {
-                                        tag.id in included -> ToggleableState.On
-                                        tag.id in excluded -> ToggleableState.Indeterminate
-                                        else -> ToggleableState.Off
-                                    },
-                                    onClick = { cycle(tag.id) },
-                                    colors = CheckboxDefaults.colors(
-                                        checkedColor = MaterialTheme.colorScheme.primary,
-                                        checkmarkColor = MaterialTheme.colorScheme.onPrimary,
-                                        uncheckedColor = MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                )
-                            } else {
-                                Checkbox(tag.id in included, { cycle(tag.id) })
-                            }
+                            TriStateCheckbox(state = choice, onClick = null, enabled = !submission.pending)
                         }
                     )
                 }

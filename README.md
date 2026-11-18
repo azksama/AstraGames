@@ -2,13 +2,11 @@
 
 Astra est une application Android native qui indexe plusieurs dossiers de jeux, détecte leurs moteurs et les lance avec JoiPlay, avec MKXP-Z intégré pour RPG Maker XP/VX/VX Ace, ou avec Winlator, Wine et Box64 intégrés pour Wolf RPG. Le projet est écrit en Kotlin, Jetpack Compose et Material 3.
 
-La préversion **1.12.0-beta.25 (code 53)** simplifie l’édition et l’import des
-métadonnées, répare le chargement des jaquettes F95Zone et améliore les gestes de
-recherche, de recadrage et de déplacement des commandes. Elle conserve les apports
-de la beta.24, dont MKXP-Z et les correctifs de sauvegardes et de mods.
-Les [notes de version](docs/RELEASE_1.12.0-beta.25.md)
-présentent les changements ; le [bilan de validation](docs/VALIDATION_1.12.0-beta.25.md)
-identifie l’APK concerné, les contrôles effectués et leurs limites.
+La préversion **1.12.0-beta.27 (code 55)** ouvre la configuration de chaque jeu
+ajouté en pleine page. Elle améliore aussi le classement par dossiers et tags,
+le suivi des versions de jeux et l’historique des sessions. Les changements,
+l’empreinte de l’APK et les essais sur émulateur figurent dans les
+[notes de version](docs/RELEASE_1.12.0-beta.27.md).
 
 Le moteur Wolf natif expérimental et son analyseur de compatibilité ont été retirés.
 Les anciens choix Automatique/Natif utilisent Winlator. Les sauvegardes natives déjà
@@ -38,13 +36,13 @@ converties en sauvegardes Windows.
 - dossiers et sous-dossiers Astra virtuels navigables, renommables et supprimables sans supprimer les jeux ;
 - panneau de filtres compact par moteur, source, dossier Astra, dossier parent système réel, tags, état et tri, sans exposer les sous-dossiers comme entrées séparées ;
 - collections intelligentes intégrées et personnalisables avec règles moteur, tag recherchable et trié alphabétiquement, dossier, favori, jaquette, disponibilité, dates et durée de jeu ; éditeur avec aperçu réel des résultats et choix de toutes les règles ou au moins une ;
-- résolution guidée des doublons : comparaison côte à côte, choix du principal, fusion des métadonnées et de l’historique, récupération des sauvegardes et stratégie de conflits ;
+- comparaison des doublons avec choix du jeu principal et de la stratégie de récupération des sauvegardes. Pour RPG Maker XP, VX et VX Ace, les bases de jeu et les cartes du dossier `Data` sont distinguées des fichiers de progression.
 - suivi du temps de jeu par sessions et affichage de la durée cumulée ;
 - gestionnaire de runtimes JoiPlay avec détection dynamique des variantes installées, catalogue officiel mis en cache sept jours et notification des mises à jour ;
 - détection des plugins Ren’Py versionnés avec vérification du certificat officiel ; moteur choisi dans un profil reflété dans la bibliothèque et la fiche ;
 - moteurs Godot 3 et Godot 4 disponibles dans les profils, filtres et collections ; lancement via le plugin JoiPlay de la même génération, avec association des plugins installés aux entrées du catalogue sans doublons ;
 - lancement Godot depuis un dossier contenant un seul pack `.pck` séparé ; les projets sources et les packs intégrés aux exécutables sont identifiés, avec un diagnostic demandant l’export ou l’extraction du pack. La compatibilité des jeux reste celle des plugins JoiPlay installés ;
-- suppression d'un jeu avec exclusion persistante des scans, restauration depuis les paramètres et suppression physique optionnelle explicitement confirmée ;
+- deux actions de retrait dans la bibliothèque. **Ignorer le dossier** conserve ses fichiers et permet de le réautoriser dans les paramètres. **Supprimer le jeu et les fichiers** demande une confirmation avec le chemin du dossier.
 - sauvegarde et restauration chiffrée du catalogue, des profils, des jaquettes, des journaux de sauvegardes/mods et des sauvegardes privées prises en charge pour MKXP-Z/Wolf, avec contrôles de propriété ; la clé reste liée à l’installation Android ;
 - choix automatique et manuel de jaquettes dans le moteur sélectionné (Yandex, Google, Qwant, Bing, DuckDuckGo ou Ecosia), sans filtre de contenu ajouté par Astra, sélection de l’image affichée, ouverture navigateur, choix local et recadrage libre ;
 - enrichissement silencieux des nouveaux jeux via VNDB (sans importer ses tags), puis recherche de la page de métadonnées avec le moteur sélectionné et URL canonique conservée dans la fiche ;
@@ -177,7 +175,7 @@ Prérequis : JDK 17 ou supérieur compatible avec Gradle et Android SDK 36.
 Le NDK 29.0.14206865 et CMake 3.22.1 sont fixés dans les fichiers Gradle ;
 AGP sélectionne ses Build Tools. Les contrôles de signature et d'alignement de
 cette préversion utilisent les outils SDK 36.1.0. Voir les
-[instructions de construction](docs/BUILD_1.12.0-beta.25.md).
+[instructions de construction](docs/BUILD_1.12.0-beta.26.md).
 
 ```powershell
 .\gradlew.bat :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
@@ -304,10 +302,10 @@ Une notification ouvre l’écran lorsqu’un APK est prêt. **Télécharger et 
 
 Le fichier doit correspondre à la taille et au SHA-256 annoncés par GitHub, au package Astra, à une version supérieure et à la signature de l’installation actuelle. Ces contrôles sont répétés avant de donner accès au fichier à l’installateur. Les APK non signés sont exclus. Les versions distribuées avec la clé de développement locale peuvent se mettre à jour entre elles ; une installation signée avec une autre clé doit disposer d’un APK compatible.
 
-Le certificat historique de distribution est conservé pour la préversion beta.25.
-La portée du contrôle de mise à jour depuis beta.24 et les empreintes de l’APK sont
-précisées dans le [bilan public](docs/VALIDATION_1.12.0-beta.25.md). Conserver
-l’installation et ses données pour garder l’accès aux archives chiffrées.
+La bêta 27 utilise le même certificat que la bêta 26. Son installation par-dessus
+la bêta 26 a conservé le catalogue, les préférences et une sauvegarde témoin sur
+émulateur. Installer la mise à jour sur l’application existante permet de garder
+l’accès aux archives chiffrées. [Notes de la bêta 27](docs/RELEASE_1.12.0-beta.27.md)
 
 ## Portée de validation
 

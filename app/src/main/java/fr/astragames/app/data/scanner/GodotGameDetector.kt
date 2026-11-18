@@ -1,7 +1,7 @@
 package fr.astragames.app.data.scanner
 
 import android.content.Context
-import androidx.documentfile.provider.DocumentFile
+import fr.astragames.app.core.filesystem.DirectoryEntry
 import fr.astragames.app.core.model.DetectionResult
 import fr.astragames.app.core.model.GameEngine
 import java.io.FileInputStream
@@ -12,11 +12,11 @@ import java.nio.channels.FileChannel
 
 /** Read only bounded headers; never unpack a game's resources to determine its engine. */
 internal object GodotGameDetector {
-    fun detect(context: Context, children: List<DocumentFile>, executable: String?): DetectionResult? {
+    fun detect(context: Context, children: List<DirectoryEntry>, executable: String?): DetectionResult? {
         val files = children.filterNot { it.isDirectory }
-        val packs = files.filter { it.name.orEmpty().endsWith(".pck", ignoreCase = true) }
+        val packs = files.filter { it.name.endsWith(".pck", ignoreCase = true) }
         val matchingPack = packs.firstOrNull {
-            it.name?.substringBeforeLast('.')?.equals(executable?.substringBeforeLast('.'), ignoreCase = true) == true
+            it.name.substringBeforeLast('.').equals(executable?.substringBeforeLast('.'), ignoreCase = true)
         } ?: packs.singleOrNull()
         matchingPack?.let { pack ->
             readEngine(context, pack)?.let { return result(it, pack.name, "En-tête du pack Godot") }
@@ -40,7 +40,7 @@ internal object GodotGameDetector {
     private fun result(engine: GameEngine, entry: String?, evidence: String) =
         DetectionResult(engine, .99f, listOf(evidence), entry)
 
-    private fun readEngine(context: Context, document: DocumentFile, embedded: Boolean = false): GameEngine? = runCatching {
+    private fun readEngine(context: Context, document: DirectoryEntry, embedded: Boolean = false): GameEngine? = runCatching {
         if (!embedded) return@runCatching context.contentResolver.openInputStream(document.uri)?.use {
             packEngine(it.readPrefix(HEADER_BYTES))
         }

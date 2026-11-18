@@ -3,6 +3,7 @@ package fr.astragames.app.data.scanner
 import android.content.Context
 import androidx.core.net.toUri
 import androidx.documentfile.provider.DocumentFile
+import fr.astragames.app.core.filesystem.listDirectoryEntries
 import fr.astragames.app.data.local.GameSourceEntity
 import fr.astragames.app.data.saves.documentDir
 import kotlinx.coroutines.Dispatchers
@@ -22,7 +23,8 @@ class SourceFolderBrowser(private val context: Context) {
         var folder: DocumentFile = root
         for (segment in segments) {
             coroutineContext.ensureActive()
-            folder = folder.findFile(segment)?.takeIf { it.isDirectory && it.canRead() }
+            val child = listDirectoryEntries(context, folder.uri).firstOrNull { it.name == segment && it.isDirectory }
+            folder = child?.let { documentDir(context, it.uri) }?.takeIf { it.canRead() }
                 ?: error("Sous-dossier introuvable ou inaccessible : $segment")
             if (root.uri.scheme == "file") {
                 val base = File(requireNotNull(root.uri.path)).canonicalFile.toPath()
@@ -35,9 +37,9 @@ class SourceFolderBrowser(private val context: Context) {
     }
 
     suspend fun listFolders(source: GameSourceEntity, segments: List<String>): List<String> = withContext(Dispatchers.IO) {
-        resolve(source, segments).listFiles().asSequence()
+        listDirectoryEntries(context, resolve(source, segments).uri).asSequence()
             .filter { it.isDirectory && it.name != ".astra-translation" }
-            .mapNotNull { it.name }
+            .map { it.name }
             .filter { source.includeHiddenFolders || !it.startsWith('.') }
             .sortedWith(String.CASE_INSENSITIVE_ORDER)
             .toList()

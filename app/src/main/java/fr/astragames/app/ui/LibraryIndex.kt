@@ -1,6 +1,8 @@
 package fr.astragames.app.ui
 
 import fr.astragames.app.core.collections.SmartCollectionEvaluator
+import fr.astragames.app.core.collections.FolderHierarchy
+import fr.astragames.app.core.metadata.hasGameUpdate
 import fr.astragames.app.core.search.TagMatcher
 import fr.astragames.app.data.local.CollectionEntity
 import fr.astragames.app.data.local.CollectionRuleEntity
@@ -18,20 +20,23 @@ internal class LibraryIndex(
     collections: List<CollectionEntity>,
     rules: List<CollectionRuleEntity>,
     playStats: List<GamePlayStat>,
+    tagIds: Set<String>,
     now: Long = System.currentTimeMillis()
 ) {
     val gamesById = games.associateBy { it.id }
     val playStatsByGame = playStats.associateBy { it.gameId }
     private val refsByGame = refs.groupBy { it.gameId }
     private val tagsByGame = refsByGame.mapValues { (_, gameRefs) -> gameRefs.mapTo(hashSetOf()) { it.tagId } }
-    private val childrenByFolder = folders.groupBy { it.parentId }
+    private val hierarchy = FolderHierarchy(folders)
     private val titleKeys = games.associate { it.id to it.title.lowercase(Locale.ROOT) }
     private val rulesByCollection = rules.groupBy { it.collectionId }
-    private val folderIdsByRoot = rules.asSequence().filter { it.field == "FOLDER" }
-        .map { it.value }.distinct().associateWith(::descendantFolderIds)
+    private val folderIdsByRoot = hierarchy.ruleMemberships(rules)
     val collectionGames = collections.associate { collection ->
         val collectionRules = rulesByCollection[collection.id].orEmpty()
-        collection.id to games.filter { game ->
+        val valid = collectionRules.isNotEmpty() && collectionRules.all { rule ->
+            SmartCollectionEvaluator.isValidRule(rule.field, rule.operator, rule.value, tagIds::contains, hierarchy::contains)
+        }
+        collection.id to if (!valid) emptyList() else games.filter { game ->
             SmartCollectionEvaluator.matches(
                 collection, collectionRules, game, refsByGame[game.id].orEmpty(),
                 folders, playStatsByGame[game.id], now, folderIdsByRoot
@@ -46,7 +51,7 @@ internal class LibraryIndex(
         systemFolders: List<SystemFolderFilter>,
         latestVersions: Map<String, String>
     ): List<GameEntity> {
-        val folderIds = filters.folderId?.let { folderIdsByRoot[it] ?: descendantFolderIds(it) }
+        val folderIds = filters.folderId?.let { folderIdsByRoot[it] ?: hierarchy.descendantsOf(it) }
         val collectionIds = filters.collectionId?.let { collectionGameIds[it].orEmpty() }
         val systemIds = filters.systemFolderId?.let { selected ->
             systemFolders.firstOrNull { it.id == selected }?.gameIds.orEmpty()
@@ -71,21 +76,12 @@ internal class LibraryIndex(
             LibrarySort.LAST_PLAYED -> compareByDescending<GameEntity> { it.lastPlayedAt ?: Long.MIN_VALUE }.then(titleOrder)
             LibrarySort.MOST_PLAYED -> compareByDescending<GameEntity> { it.playCount }.then(titleOrder)
             LibrarySort.NEVER_PLAYED -> compareBy<GameEntity> { it.playCount > 0 }.then(titleOrder)
-            LibrarySort.UPDATE_AVAILABLE -> compareByDescending<GameEntity> { game ->
-                val latest = latestVersions[game.id]
-                latest != null && game.version != null && latest != game.version
-            }.then(titleOrder)
+            LibrarySort.UPDATE_AVAILABLE -> {
+                val updatedIds = matching.filter { hasGameUpdate(it.version, latestVersions[it.id]) }.mapTo(hashSetOf()) { it.id }
+                compareByDescending<GameEntity> { it.id in updatedIds }.then(titleOrder)
+            }
         }
         return matching.sortedWith(order)
     }
 
-    private fun descendantFolderIds(rootId: String): Set<String> {
-        val visited = mutableSetOf<String>()
-        val pending = ArrayDeque<String>().apply { add(rootId) }
-        while (pending.isNotEmpty()) {
-            val id = pending.removeFirst()
-            if (visited.add(id)) childrenByFolder[id].orEmpty().forEach { pending.add(it.id) }
-        }
-        return visited
-    }
 }

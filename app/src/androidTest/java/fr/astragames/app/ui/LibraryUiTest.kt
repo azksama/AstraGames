@@ -205,7 +205,7 @@ class LibraryUiTest {
                 tags = listOf(TagEntity("exploration", "Exploration", "exploration")),
                 categories = emptyList(),
                 initial = emptySet(),
-                onSave = { saved = it },
+                onSave = { included, _ -> saved = included },
                 onDismiss = {}
             )
         }

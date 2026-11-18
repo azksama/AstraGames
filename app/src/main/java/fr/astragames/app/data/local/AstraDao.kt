@@ -7,6 +7,9 @@ import androidx.room.Query
 import androidx.room.Transaction
 import kotlinx.coroutines.flow.Flow
 
+// Each bulk tag insert binds one batch of game IDs and one batch of tag IDs.
+private const val TAG_PAIR_BATCH_SIZE = 450
+
 @Dao
 interface AstraDao {
     @Query("SELECT * FROM games WHERE hidden = 0 ORDER BY title COLLATE NOCASE")
@@ -18,20 +21,26 @@ interface AstraDao {
     @Query("SELECT * FROM games WHERE id = :id LIMIT 1")
     suspend fun getGame(id: String): GameEntity?
 
+    @Query("SELECT EXISTS(SELECT 1 FROM games WHERE id = :id)")
+    suspend fun gameExists(id: String): Boolean
+
+    @Query("SELECT COUNT(*) FROM games WHERE id IN (:ids)")
+    suspend fun countGamesByIds(ids: List<String>): Int
+
     @Query("SELECT id FROM games")
     suspend fun getGameIds(): List<String>
 
     @Query("SELECT * FROM games")
     suspend fun getAllGames(): List<GameEntity>
 
-    @Query("UPDATE game_sources SET gamesCount = (SELECT COUNT(*) FROM games WHERE games.sourceId = game_sources.id)")
+    @Query("UPDATE game_sources SET gamesCount = (SELECT COUNT(*) FROM games WHERE games.sourceId = game_sources.id AND missing = 0)")
     suspend fun refreshSourceGameCounts()
 
     @Query("SELECT * FROM games WHERE sourceId = :sourceId")
     suspend fun getGamesForSource(sourceId: String): List<GameEntity>
 
-    @Query("SELECT * FROM games WHERE fingerprint = :fingerprint LIMIT 1")
-    suspend fun findGameByFingerprint(fingerprint: String): GameEntity?
+    @Query("SELECT * FROM games WHERE fingerprint = :fingerprint")
+    suspend fun getGamesByFingerprint(fingerprint: String): List<GameEntity>
 
     @Query("SELECT * FROM games WHERE documentUri = :documentUri LIMIT 1")
     suspend fun findGameByDocumentUri(documentUri: String): GameEntity?
@@ -55,8 +64,11 @@ interface AstraDao {
     @Query("DELETE FROM game_search WHERE gameId = :gameId")
     suspend fun deleteSearch(gameId: String)
 
-    @Query("UPDATE games SET missing = 1 WHERE sourceId = :sourceId")
-    suspend fun markSourceGamesMissing(sourceId: String)
+    @Query("SELECT id FROM games WHERE sourceId = :sourceId AND missing = 0")
+    suspend fun getPresentGameIds(sourceId: String): List<String>
+
+    @Query("UPDATE games SET missing = 1 WHERE sourceId = :sourceId AND id IN (:ids)")
+    suspend fun markSourceGamesMissing(sourceId: String, ids: List<String>)
 
     @Query("UPDATE games SET missing = 0 WHERE id = :id")
     suspend fun markGameFound(id: String)
@@ -66,24 +78,29 @@ interface AstraDao {
 
     @Transaction
     suspend fun reconcileSourceGames(sourceId: String, foundIds: List<String>) {
-        markSourceGamesMissing(sourceId)
-        foundIds.chunked(900).forEach { markSourceGamesFound(sourceId, it) }
+        val present = getPresentGameIds(sourceId).toHashSet()
+        val found = foundIds.toHashSet()
+        (present - found).chunked(900).forEach { markSourceGamesMissing(sourceId, it) }
+        (found - present).chunked(900).forEach { markSourceGamesFound(sourceId, it) }
     }
 
     @Query("SELECT COUNT(*) FROM games WHERE sourceId = :sourceId AND missing = 1")
     suspend fun countMissing(sourceId: String): Int
 
     @Query("UPDATE games SET favorite = NOT favorite WHERE id = :id")
-    suspend fun toggleFavorite(id: String)
+    suspend fun toggleFavorite(id: String): Int
 
     @Query("UPDATE games SET lastPlayedAt = :at, playCount = playCount + 1, missing = 0 WHERE id = :id")
-    suspend fun recordLaunch(id: String, at: Long)
+    suspend fun recordLaunch(id: String, at: Long): Int
 
     @Query("UPDATE games SET coverUri = :coverUri WHERE id = :id")
-    suspend fun setCover(id: String, coverUri: String?)
+    suspend fun setCover(id: String, coverUri: String?): Int
 
     @Query("UPDATE games SET coverUri = :coverUri WHERE id = :id AND (coverUri IS NULL OR TRIM(coverUri) = '')")
     suspend fun setCoverIfMissing(id: String, coverUri: String): Int
+
+    @Query("SELECT EXISTS(SELECT 1 FROM games WHERE coverUri IN (:uris) OR bannerUri IN (:uris) OR iconUri IN (:uris))")
+    suspend fun isArtworkReferenced(uris: List<String>): Boolean
 
     @Transaction
     suspend fun mergeMetadata(id: String, values: fr.astragames.app.core.metadata.MetadataValues, replaceExisting: Boolean = false): Boolean {
@@ -112,10 +129,9 @@ interface AstraDao {
     @Query("UPDATE games SET ryuugamesUrl = :url WHERE id = :id")
     suspend fun setRyuugamesUrl(id: String, url: String?)
 
-    @Query("UPDATE games SET libraryFolderId = :folderId WHERE id = :id")
-    suspend fun setGameFolder(id: String, folderId: String?)
-
-    @Query("UPDATE games SET title = :title, originalTitle = :originalTitle, developer = :developer, version = :version, productCode = :productCode, language = :language, description = :description, f95Url = :f95Url WHERE id = :id")
+    @Query("""UPDATE games SET title = :title, originalTitle = :originalTitle, developer = :developer, version = :version,
+        productCode = :productCode, language = :language, description = :description, f95Url = :f95Url,
+        ryuugamesUrl = :ryuugamesUrl WHERE id = :id""")
     suspend fun updateGameFieldsRaw(
         id: String,
         title: String,
@@ -125,7 +141,8 @@ interface AstraDao {
         productCode: String?,
         language: String?,
         description: String?,
-        f95Url: String?
+        f95Url: String?,
+        ryuugamesUrl: String?
     )
 
     @Transaction
@@ -141,10 +158,10 @@ interface AstraDao {
         f95Url: String?,
         ryuugamesUrl: String? = null
     ) {
-        updateGameFieldsRaw(id, title, originalTitle, developer, version, productCode, language, description, f95Url)
-        setRyuugamesUrl(id, ryuugamesUrl)
-        val updatedGame = getGame(id)
-        if (updatedGame != null) upsertGame(updatedGame)
+        updateGameFieldsRaw(id, title, originalTitle, developer, version, productCode, language, description, f95Url, ryuugamesUrl)
+        val game = checkNotNull(getGame(id)) { "Jeu introuvable." }
+        deleteSearch(id)
+        insertSearchRaw(game.toSearchEntity())
     }
 
     @Query("DELETE FROM games WHERE id = :id")
@@ -177,6 +194,9 @@ interface AstraDao {
     @Query("SELECT * FROM game_sources ORDER BY displayName COLLATE NOCASE")
     fun observeSources(): Flow<List<GameSourceEntity>>
 
+    @Query("SELECT treeUri FROM game_sources")
+    suspend fun getSourceTreeUris(): List<String>
+
     @Query("SELECT * FROM game_sources WHERE id = :id LIMIT 1")
     suspend fun getSource(id: String): GameSourceEntity?
 
@@ -185,6 +205,14 @@ interface AstraDao {
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertSource(source: GameSourceEntity)
+
+    @Query("UPDATE game_sources SET lastScanStatus = 'RUNNING', lastError = NULL WHERE id = :sourceId")
+    suspend fun startSourceScan(sourceId: String)
+
+    @Query("""UPDATE game_sources SET lastScanAt = :finishedAt, lastScanStatus = :status, lastError = :error,
+        gamesCount = (SELECT COUNT(*) FROM games WHERE games.sourceId = :sourceId AND missing = 0)
+        WHERE id = :sourceId""")
+    suspend fun finishSourceScan(sourceId: String, finishedAt: Long, status: String, error: String?)
 
     @Query("UPDATE game_sources SET enabled = NOT enabled WHERE id = :id")
     suspend fun toggleSource(id: String)
@@ -270,6 +298,12 @@ interface AstraDao {
     @Query("SELECT * FROM tags ORDER BY groupName, name COLLATE NOCASE")
     suspend fun getTags(): List<TagEntity>
 
+    @Query("SELECT EXISTS(SELECT 1 FROM tags WHERE id = :id)")
+    suspend fun tagExists(id: String): Boolean
+
+    @Query("SELECT COUNT(*) FROM tags WHERE id IN (:ids)")
+    suspend fun countTagsByIds(ids: List<String>): Int
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertTags(tags: List<TagEntity>): List<Long>
 
@@ -285,11 +319,16 @@ interface AstraDao {
     @Query("INSERT OR IGNORE INTO game_tags (gameId, tagId) SELECT gameId, :keepId FROM game_tags WHERE tagId = :removedId")
     suspend fun copyTagReferences(keepId: String, removedId: String)
 
+    @Query("UPDATE collection_rules SET value = :keepId WHERE field = 'TAG' AND value = :removedId")
+    suspend fun retargetTagRules(keepId: String, removedId: String)
+
     @Transaction
     suspend fun mergeTags(keepId: String, removedId: String) {
         if (keepId == removedId) return
-        require(getTags().any { it.id == keepId }) { "Le tag à conserver est introuvable." }
+        require(tagExists(keepId)) { "Le tag à conserver est introuvable." }
+        if (!tagExists(removedId)) return
         copyTagReferences(keepId, removedId)
+        retargetTagRules(keepId, removedId)
         deleteGameTagRefs(listOf(removedId))
         deleteTagsRaw(listOf(removedId))
     }
@@ -304,7 +343,7 @@ interface AstraDao {
     }
 
     @Query("UPDATE tags SET groupName = :categoryName WHERE id IN (:tagIds)")
-    suspend fun moveTagsToCategory(tagIds: List<String>, categoryName: String?)
+    suspend fun moveTagsToCategory(tagIds: List<String>, categoryName: String?): Int
 
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun addGameTag(ref: GameTagCrossRef)
@@ -327,17 +366,49 @@ interface AstraDao {
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     suspend fun insertGameTags(refs: List<GameTagCrossRef>)
 
+    @Query("""
+        INSERT OR IGNORE INTO game_tags (gameId, tagId)
+        SELECT games.id, tags.id FROM games CROSS JOIN tags
+        WHERE games.id IN (:gameIds) AND tags.id IN (:tagIds)
+    """)
+    suspend fun insertGameTagPairs(gameIds: List<String>, tagIds: List<String>)
+
+    @Transaction
+    suspend fun addTagsToGames(gameIds: Set<String>, tagIds: Set<String>) {
+        if (gameIds.isEmpty()) return
+        val gameBatches = gameIds.chunked(TAG_PAIR_BATCH_SIZE)
+        val tagBatches = tagIds.chunked(TAG_PAIR_BATCH_SIZE)
+        for (ids in gameBatches) {
+            check(countGamesByIds(ids) == ids.size) { "Un jeu sélectionné a été retiré de la bibliothèque." }
+        }
+        for (ids in tagBatches) {
+            check(countTagsByIds(ids) == ids.size) { "Un tag sélectionné a été supprimé. Vérifiez votre sélection." }
+        }
+        for (games in gameBatches) {
+            for (tags in tagBatches) insertGameTagPairs(games, tags)
+        }
+    }
+
+    @Query("DELETE FROM game_tags WHERE gameId = :gameId AND tagId IN (:tagIds)")
+    suspend fun removeGameTags(gameId: String, tagIds: List<String>)
+
     @Transaction
     suspend fun replaceGameTags(gameId: String, tagIds: Set<String>) {
         clearGameTags(gameId)
-        insertGameTags(tagIds.map { GameTagCrossRef(gameId, it) })
+        addTagsToGames(setOf(gameId), tagIds)
     }
 
-    @Query("SELECT * FROM tag_categories ORDER BY sortOrder, name COLLATE NOCASE")
+    @Query("SELECT * FROM tag_categories ORDER BY sortOrder, name COLLATE NOCASE, id")
     fun observeTagCategories(): Flow<List<TagCategoryEntity>>
 
-    @Query("SELECT * FROM tag_categories ORDER BY sortOrder, name COLLATE NOCASE")
+    @Query("SELECT * FROM tag_categories ORDER BY sortOrder, name COLLATE NOCASE, id")
     suspend fun getTagCategories(): List<TagCategoryEntity>
+
+    @Query("SELECT * FROM tag_categories WHERE id = :id")
+    suspend fun getTagCategory(id: String): TagCategoryEntity?
+
+    @Query("UPDATE tag_categories SET sortOrder = :order WHERE id = :id")
+    suspend fun setTagCategoryOrder(id: String, order: Int)
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertTagCategory(category: TagCategoryEntity)
@@ -357,6 +428,12 @@ interface AstraDao {
     @Query("SELECT * FROM library_folders ORDER BY sortOrder, name COLLATE NOCASE")
     suspend fun getFolders(): List<LibraryFolderEntity>
 
+    @Query("SELECT * FROM library_folders WHERE id = :id")
+    suspend fun getFolder(id: String): LibraryFolderEntity?
+
+    @Query("UPDATE library_folders SET name = :name WHERE id = :id")
+    suspend fun renameFolder(id: String, name: String): Int
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsertFolder(folder: LibraryFolderEntity)
 
@@ -372,19 +449,22 @@ interface AstraDao {
     @Insert
     suspend fun insertPlaySession(session: PlaySessionEntity)
 
-    @Query("SELECT * FROM play_sessions WHERE endedAt IS NULL ORDER BY startedAt DESC LIMIT 1")
-    suspend fun getActivePlaySession(): PlaySessionEntity?
+    @Query("SELECT MIN(startedAt) FROM play_sessions WHERE endedAt IS NULL")
+    suspend fun firstOpenSessionStart(): Long?
 
-    @Query("UPDATE play_sessions SET endedAt = :endedAt, durationMs = :durationMs WHERE id = :id")
+    @Query("SELECT * FROM play_sessions WHERE startedAt >= :firstStart ORDER BY startedAt DESC, rowid DESC")
+    suspend fun sessionsSince(firstStart: Long): List<PlaySessionEntity>
+
+    @Query("UPDATE play_sessions SET endedAt = :endedAt, durationMs = :durationMs WHERE id = :id AND endedAt IS NULL")
     suspend fun finishPlaySession(id: String, endedAt: Long, durationMs: Long)
 
-    @Query("SELECT * FROM play_sessions WHERE endedAt IS NOT NULL ORDER BY startedAt DESC LIMIT :limit")
+    @Query("SELECT * FROM play_sessions WHERE endedAt IS NOT NULL ORDER BY startedAt DESC, rowid DESC LIMIT :limit")
     suspend fun getPlayHistory(limit: Int = 200): List<PlaySessionEntity>
 
-    @Query("SELECT play_sessions.* FROM play_sessions JOIN games ON play_sessions.gameId = games.id WHERE play_sessions.endedAt IS NOT NULL AND games.hidden = 0 ORDER BY play_sessions.startedAt DESC LIMIT :limit")
+    @Query("SELECT play_sessions.* FROM play_sessions JOIN games ON play_sessions.gameId = games.id WHERE play_sessions.endedAt IS NOT NULL AND games.hidden = 0 ORDER BY play_sessions.startedAt DESC, play_sessions.rowid DESC LIMIT :limit")
     fun observePlayHistory(limit: Int = 200): Flow<List<PlaySessionEntity>>
 
-    @Query("DELETE FROM play_sessions WHERE id = :id")
+    @Query("DELETE FROM play_sessions WHERE id = :id AND endedAt IS NOT NULL")
     suspend fun deletePlaySession(id: String)
 
     @Query("DELETE FROM play_sessions WHERE endedAt IS NOT NULL AND endedAt < :before")
@@ -396,11 +476,19 @@ interface AstraDao {
     @Query("UPDATE play_sessions SET gameId = :primaryId WHERE gameId = :secondaryId")
     suspend fun movePlaySessions(primaryId: String, secondaryId: String)
 
-    @Query("SELECT gameId, COALESCE(SUM(durationMs), 0) AS totalDurationMs, MAX(startedAt) AS lastSessionAt FROM play_sessions WHERE endedAt IS NOT NULL GROUP BY gameId")
+    @Query("""
+        SELECT gameId,
+               SUM(MAX(0, COALESCE(durationMs, MIN(endedAt - startedAt, $MAX_SESSION_DURATION_MS)))) AS totalDurationMs,
+               MAX(startedAt) AS lastSessionAt
+        FROM play_sessions WHERE endedAt IS NOT NULL GROUP BY gameId
+    """)
     fun observePlayStats(): Flow<List<GamePlayStat>>
 
     @Query("SELECT * FROM collections WHERE builtinKey IS NULL ORDER BY sortOrder, name COLLATE NOCASE")
     fun observeCollections(): Flow<List<CollectionEntity>>
+
+    @Query("SELECT * FROM collections WHERE id = :id AND builtinKey IS NULL")
+    suspend fun getCustomCollection(id: String): CollectionEntity?
 
     @Query("SELECT * FROM collection_rules ORDER BY rowid")
     fun observeCollectionRules(): Flow<List<CollectionRuleEntity>>
@@ -431,18 +519,10 @@ interface AstraDao {
     }
 
     @Query("UPDATE games SET favorite = :favorite WHERE id IN (:ids)")
-    suspend fun setGamesFavorite(ids: List<String>, favorite: Boolean)
+    suspend fun setGamesFavorite(ids: List<String>, favorite: Boolean): Int
 
     @Query("UPDATE games SET libraryFolderId = :folderId WHERE id IN (:ids)")
-    suspend fun setGamesFolder(ids: List<String>, folderId: String?)
-
-    @Query("UPDATE games SET title = :title, originalTitle = :originalTitle, aliases = :aliases, coverUri = :coverUri, bannerUri = :bannerUri, iconUri = :iconUri, description = :description, developer = :developer, version = :version, productCode = :productCode, language = :language, f95Url = :f95Url, releaseDate = :releaseDate, dateAdded = :dateAdded, lastPlayedAt = :lastPlayedAt, playCount = :playCount, favorite = :favorite, keywords = :keywords WHERE id = :id")
-    suspend fun updateMergedGame(
-        id: String, title: String, originalTitle: String?, aliases: String,
-        coverUri: String?, bannerUri: String?, iconUri: String?, description: String?, developer: String?,
-        version: String?, productCode: String?, language: String?, f95Url: String?, releaseDate: Long?, dateAdded: Long,
-        lastPlayedAt: Long?, playCount: Int, favorite: Boolean, keywords: String
-    )
+    suspend fun setGamesFolder(ids: List<String>, folderId: String?): Int
 
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertScanHistory(history: ScanHistoryEntity)
@@ -561,6 +641,9 @@ interface AstraDao {
 
     @Query("SELECT * FROM mod_installations WHERE gameId = :gameId ORDER BY installedAt DESC")
     fun observeInstallationsForGame(gameId: String): Flow<List<ModInstallationEntity>>
+
+    @Query("SELECT EXISTS(SELECT 1 FROM mod_installations WHERE gameId = :gameId)")
+    suspend fun hasInstallationsForGame(gameId: String): Boolean
 
     @Query("SELECT * FROM mod_installations WHERE modId = :modId")
     suspend fun getInstallationsForMod(modId: String): List<ModInstallationEntity>

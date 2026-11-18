@@ -114,6 +114,8 @@ data class LibraryFolderEntity(
     val sortOrder: Int = 0
 )
 
+internal const val MAX_SESSION_DURATION_MS = 12L * 60 * 60 * 1_000
+
 @Entity(tableName = "play_sessions", indices = [Index("gameId")])
 data class PlaySessionEntity(
     @androidx.room.PrimaryKey val id: String,

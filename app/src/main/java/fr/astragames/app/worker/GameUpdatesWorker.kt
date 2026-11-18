@@ -1,24 +1,22 @@
 package fr.astragames.app.worker
 
-import fr.astragames.app.core.runCatchingCancellable
 import android.content.Context
 import androidx.work.CoroutineWorker
 import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.ExistingWorkPolicy
 import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.Operation
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import fr.astragames.app.AstraApplication
 import fr.astragames.app.core.metadata.F95Session
-import fr.astragames.app.data.local.GameEntity
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
-/** Vérifie périodiquement les versions des threads F95Zone liés et notifie les nouvelles mises à jour. */
+/** Vérifie les fiches F95Zone et Ryuugames liées et signale les nouvelles versions. */
 class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : CoroutineWorker(appContext, params) {
-    override suspend fun doWork(): Result {
+    override suspend fun doWork(): Result = try {
         val app = applicationContext as AstraApplication
         val settings = app.container.settings.settings.first()
         app.container.f95Zone.setSession(
@@ -26,41 +24,12 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
                 F95Session(settings.f95SessionUser, settings.f95SessionXfUser, settings.f95SessionXfSession)
             else null
         )
-        val games = app.container.repository.games.first().filter { (!it.f95Url.isNullOrBlank() || !it.ryuugamesUrl.isNullOrBlank()) && it.version != null }
-        val gameIds = games.mapTo(mutableSetOf()) { it.id }
-        val found = mutableListOf<Pair<GameEntity, String>>()
-        val latest = settings.f95LatestVersions.split('|').mapNotNull { entry ->
-            val id = entry.substringBefore(':')
-            val version = entry.substringAfter(':', "")
-            if (id in gameIds && version.isNotBlank()) id to version else null
-        }.toMap().toMutableMap()
-        var failures = 0
-        games.forEach { game ->
-            val version = runCatchingCancellable {
-                game.f95Url?.let { app.container.f95Zone.fetchVersion(it) }
-                    ?: game.ryuugamesUrl?.let { app.container.ryuugames.fetch(it).version }
-            }.getOrNull()
-            if (version == null) failures++ else latest.remove(game.id)
-            if (version != null && version != game.version) {
-                latest[game.id] = version
-                found += game to version
-            }
-            delay(1_000)
-        }
-        if (latest.isEmpty()) {
-            app.container.settings.setF95LatestVersions("")
-            return if (failures > 0) Result.retry() else Result.success()
-        }
-        app.container.settings.setF95LatestVersions(latest.entries.joinToString("|") { "${it.key}:${it.value}" })
-        val notified = settings.f95NotifiedUpdates.split("|").filter(String::isNotBlank).toSet()
-        val newOnes = found.filter { (game, version) -> "${game.id}:$version" !in notified }
-        if (newOnes.isNotEmpty()) {
-            val fingerprint = newOnes.joinToString("|") { "${it.first.id}:${it.second}" }
-            if (notifyUpdates(newOnes.map { it.first.title to it.second })) {
-                app.container.settings.setF95NotifiedUpdates((notified + fingerprint).joinToString("|"))
-            }
-        }
-        return if (failures > 0) Result.retry() else Result.success()
+        val result = app.container.gameVersionChecker.check(includeUnversioned = false, notify = ::notifyUpdates)
+        if (result.failures > 0) Result.retry() else Result.success()
+    } catch (_: java.io.IOException) {
+        Result.retry()
+    } catch (_: android.database.sqlite.SQLiteException) {
+        Result.retry()
     }
 
     private fun notifyUpdates(items: List<Pair<String, String>>): Boolean {
@@ -73,18 +42,17 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
         private const val CHANNEL_ID = "game_updates"
         private const val NOTIFICATION_ID = 2_107
 
-        fun schedule(context: Context, interval: String = "DAY_7") {
+        internal fun schedule(context: Context, interval: String = "DAY_7", workName: String = UNIQUE_NAME): Operation {
             val manager = WorkManager.getInstance(context)
             if (interval == "LAUNCH") {
-                manager.cancelUniqueWork(UNIQUE_NAME)
-                manager.enqueueUniqueWork(
-                    "$UNIQUE_NAME-launch",
-                    ExistingWorkPolicy.REPLACE,
+                manager.cancelUniqueWork(workName)
+                return manager.enqueueUniqueWork(
+                    "$workName-launch",
+                    ExistingWorkPolicy.KEEP,
                     OneTimeWorkRequestBuilder<GameUpdatesWorker>().setConstraints(networkConstraints()).build()
                 )
-                return
             }
-            manager.cancelUniqueWork("$UNIQUE_NAME-launch")
+            manager.cancelUniqueWork("$workName-launch")
             val days = when (interval) {
                 "DAY_1" -> 1L
                 "DAY_3" -> 3L
@@ -92,8 +60,8 @@ class GameUpdatesWorker(appContext: Context, params: WorkerParameters) : Corouti
                 "DAY_30" -> 30L
                 else -> 7L
             }
-            manager.enqueueUniquePeriodicWork(
-                UNIQUE_NAME,
+            return manager.enqueueUniquePeriodicWork(
+                workName,
                 ExistingPeriodicWorkPolicy.UPDATE,
                 PeriodicWorkRequestBuilder<GameUpdatesWorker>(days, TimeUnit.DAYS).setConstraints(networkConstraints()).build()
             )

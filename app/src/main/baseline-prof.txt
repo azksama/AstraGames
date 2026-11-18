@@ -1,6 +1,10 @@
 HSPLfr/astragames/app/MainActivity;->**(**)**
 HSPLfr/astragames/app/AstraApplication;->**(**)**
 HSPLfr/astragames/app/ui/AstraAppKt;->**(**)**
+SPLfr/astragames/app/ui/HomeScreenKt;->HomeScreen(**)**
+SPLfr/astragames/app/ui/LibraryScreensKt;->LibraryScreen(**)**
+SPLfr/astragames/app/ui/LibraryScreensKt;->FilterStrip(**)**
+SPLfr/astragames/app/ui/LibraryScreensKt;->EmptyLibrary(**)**
 HSPLfr/astragames/app/ui/AstraViewModel;->**(**)**
 HSPLfr/astragames/app/data/local/AstraDatabase;->**(**)**
 HSPLfr/astragames/app/data/local/AstraDao_Impl;->**(**)**

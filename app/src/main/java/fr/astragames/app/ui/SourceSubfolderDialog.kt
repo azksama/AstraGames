@@ -24,59 +24,57 @@ internal fun SourceSubfolderDialog(
     onScan: (List<String>) -> Unit,
     onDismiss: () -> Unit
 ) {
-    var path by rememberSaveable(source.id) { mutableStateOf(arrayListOf<String>()) }
+    var path by rememberSaveable(source.id) { mutableStateOf<List<String>>(emptyList()) }
     var retry by remember { mutableIntStateOf(0) }
-    var loadedPath by remember { mutableStateOf<List<String>?>(null) }
-    var folders by remember { mutableStateOf(emptyList<String>()) }
-    var error by remember { mutableStateOf<String?>(null) }
-    LaunchedEffect(source.id, path.toList(), retry) {
-        loadedPath = null
-        error = null
+    val selectedPath = path
+    var folders by remember(source.id, selectedPath, retry) { mutableStateOf<List<String>?>(null) }
+    var error by remember(source.id, selectedPath, retry) { mutableStateOf<String?>(null) }
+    LaunchedEffect(source.id, selectedPath, retry) {
         try {
-            folders = loadFolders(path.toList())
-            loadedPath = path.toList()
+            folders = loadFolders(selectedPath)
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (failure: Exception) {
             error = failure.message ?: "Impossible de lire ce dossier"
         }
     }
-    val ready = loadedPath == path.toList()
+    val entries = folders
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Scanner un sous-dossier") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                MaterialText((listOf(source.displayName) + path).joinToString(" / "))
-                Text("Seul le dossier choisi sera analysé.", style = MaterialTheme.typography.bodySmall)
-                if (path.isNotEmpty()) TextButton(onClick = { path = ArrayList(path.dropLast(1)) }) {
-                    Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
-                    Spacer(Modifier.width(8.dp))
-                    Text("Dossier parent")
-                }
-                Box(Modifier.fillMaxWidth().heightIn(min = 120.dp, max = 300.dp)) {
-                    when {
-                        error != null -> Column {
-                            Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
-                            TextButton(onClick = { retry++ }) { Text("Réessayer") }
-                        }
-                        !ready -> CircularProgressIndicator(Modifier.align(Alignment.Center))
-                        folders.isEmpty() -> Text("Aucun sous-dossier", Modifier.padding(vertical = 16.dp))
-                        else -> LazyColumn {
-                            items(folders, key = { it }) { name ->
-                                ListItem(
-                                    modifier = Modifier.clickable { path = ArrayList(path + name) },
-                                    headlineContent = { MaterialText(name) },
-                                    leadingContent = { Icon(Icons.Default.Folder, null) }
-                                )
-                            }
+            LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                item {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        MaterialText((listOf(source.displayName) + path).joinToString(" / "), Modifier.weight(1f))
+                        if (path.isNotEmpty()) TextButton(onClick = { path = path.dropLast(1) }) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, null)
+                            Text("Dossier parent")
                         }
                     }
                 }
+                when {
+                    error != null -> item {
+                        Text(error.orEmpty(), color = MaterialTheme.colorScheme.error)
+                        TextButton(onClick = { retry++ }) { Text("Réessayer") }
+                    }
+                    entries == null -> item {
+                        Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+                    }
+                    entries.isEmpty() -> item { Text("Aucun sous-dossier", Modifier.padding(vertical = 16.dp)) }
+                    else -> items(entries) { name ->
+                        ListItem(
+                            modifier = Modifier.clickable { path = selectedPath + name },
+                            headlineContent = { MaterialText(name) },
+                            leadingContent = { Icon(Icons.Default.Folder, null) }
+                        )
+                    }
+                }
+                if (path.isEmpty()) item { Text("Seul le dossier choisi sera analysé.", style = MaterialTheme.typography.bodySmall) }
             }
         },
         confirmButton = {
-            TextButton(onClick = { onScan(path.toList()) }, enabled = path.isNotEmpty() && ready && error == null) {
+            TextButton(onClick = { onScan(selectedPath) }, enabled = selectedPath.isNotEmpty() && entries != null) {
                 Text("Scanner ce dossier")
             }
         },

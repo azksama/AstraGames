@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
@@ -32,27 +33,33 @@ import fr.astragames.app.data.local.TagEntity
 
 @Composable
 internal fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () -> Unit, onBack: () -> Unit) {
-    var categoriesMode by remember { mutableStateOf(false) }
-    var mergesMode by remember { mutableStateOf(false) }
+    var categoriesMode by rememberSaveable { mutableStateOf(false) }
+    var mergesMode by rememberSaveable { mutableStateOf(false) }
     var tagQuery by rememberSaveable { mutableStateOf("") }
-    var selected by remember { mutableStateOf(emptySet<String>()) }
-    var editingTag by remember { mutableStateOf<TagEntity?>(null) }
-    var tagDialog by remember { mutableStateOf(false) }
-    var editingCategory by remember { mutableStateOf<TagCategoryEntity?>(null) }
-    var categoryDialog by remember { mutableStateOf(false) }
-    var moveDialog by remember { mutableStateOf(false) }
-    var deleteCategory by remember { mutableStateOf<TagCategoryEntity?>(null) }
-    var confirmDeleteTags by remember { mutableStateOf(false) }
-    BackHandler(selected.isNotEmpty()) { selected = emptySet() }
-    LaunchedEffect(state.tags) { selected = selected.intersect(state.tags.mapTo(hashSetOf()) { it.id }) }
+    var selected by rememberSaveable(stateSaver = idSetSaver) { mutableStateOf(emptySet<String>()) }
+    var editingTagId by rememberSaveable { mutableStateOf<String?>(null) }
+    var tagDialog by rememberSaveable { mutableStateOf(false) }
+    var editingCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
+    var categoryDialog by rememberSaveable { mutableStateOf(false) }
+    var moveDialog by rememberSaveable { mutableStateOf(false) }
+    var deletingCategoryId by rememberSaveable { mutableStateOf<String?>(null) }
+    var confirmDeleteTags by rememberSaveable { mutableStateOf(false) }
+    val editingTag = editingTagId?.let { id -> state.tags.firstOrNull { it.id == id } }
+    val editingCategory = editingCategoryId?.let { id -> state.tagCategories.firstOrNull { it.id == id } }
+    BackHandler(selected.isNotEmpty() && !moveDialog && !confirmDeleteTags && !tagDialog) { selected = emptySet() }
+    LaunchedEffect(state.tags, state.settingsLoaded, moveDialog, confirmDeleteTags) {
+        if (state.settingsLoaded && !moveDialog && !confirmDeleteTags && selected.isNotEmpty()) {
+            selected = selected.intersect(state.tags.mapTo(hashSetOf()) { it.id })
+        }
+    }
 
     ScrollingScaffold(
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             CompactHeader(if (mergesMode) "Fusions de tags" else if (categoriesMode) "Catégories de tags" else "Tags", "${state.tags.size} tags", onBack = onBack) {
                 if (!mergesMode) IconButton(onClick = {
-                    if (categoriesMode) { editingCategory = null; categoryDialog = true } else { editingTag = null; tagDialog = true }
-                }) { Icon(Icons.Default.Add, "Ajouter") }
+                    if (categoriesMode) { editingCategoryId = null; categoryDialog = true } else { editingTagId = null; tagDialog = true }
+                }) { Icon(Icons.Default.Add, AppLocalizer.text("Ajouter", LocalAppLanguage.current)) }
             }
         }
     ) { padding ->
@@ -74,7 +81,7 @@ internal fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () 
                 }
             }
             if (mergesMode) TagMergesManager(state, vm)
-            else if (categoriesMode) CategoryManager(state, vm, { editingCategory = it; categoryDialog = true }, { deleteCategory = it })
+            else if (categoriesMode) CategoryManager(state, vm, { editingCategoryId = it.id; categoryDialog = true }, { deletingCategoryId = it.id })
             else {
                 OutlinedTextField(
                     value = tagQuery,
@@ -85,24 +92,45 @@ internal fun TagsScreen(state: AstraUiState, vm: AstraViewModel, onPickTags: () 
                     textStyle = MaterialTheme.typography.bodySmall,
                     singleLine = true
                 )
-                TagManager(state, selected, tagQuery, { selected = selected.toggle(it) }, { editingTag = it; tagDialog = true })
+                TagManager(state, selected, tagQuery, { selected = selected.toggle(it) }, { editingTagId = it.id; tagDialog = true })
             }
         }
     }
-    if (tagDialog) TagEditDialog(editingTag, state.tagCategories, {
-        if (editingTag == null) vm.createTag(it.first, it.second) else vm.editTag(editingTag!!, it.first, it.second); tagDialog = false
-    }, { tagDialog = false })
-    if (categoryDialog) NameDialog(if (editingCategory == null) "Nouvelle catégorie" else "Renommer la catégorie", editingCategory?.name.orEmpty(), {
-        if (editingCategory == null) vm.createTagCategory(it) else vm.renameTagCategory(editingCategory!!, it); categoryDialog = false
-    }, { categoryDialog = false })
-    if (moveDialog) CategoryChoiceDialog(state.tagCategories, { vm.moveTagsToCategory(selected, it); selected = emptySet(); moveDialog = false }, { moveDialog = false })
+    if (tagDialog && (editingTagId == null || editingTag != null)) {
+        TagEditDialog(editingTag, state.tagCategories, onSave = { name, categoryId, changed ->
+            if (editingTag == null) vm.createTag(name, categoryId)
+            else vm.editTag(editingTag, name, categoryId, changed)
+            tagDialog = false
+        }, onDismiss = { tagDialog = false })
+    }
+    if (categoryDialog && (editingCategoryId == null || editingCategory != null)) {
+        NameDialog(
+            title = if (editingCategory == null) "Nouvelle catégorie" else "Renommer la catégorie",
+            initial = editingCategory?.name.orEmpty(),
+            onSave = { name ->
+                if (editingCategory == null) vm.createTagCategory(name)
+                else vm.renameTagCategory(editingCategory, name)
+                categoryDialog = false
+            },
+            onDismiss = { categoryDialog = false },
+            draftKey = editingCategoryId.orEmpty()
+        )
+    }
+    if (moveDialog) CategoryChoiceDialog(state.tagCategories, onChoice = { categoryId ->
+        vm.moveTagsToCategory(selected, categoryId)
+        selected = emptySet()
+        moveDialog = false
+    }, onDismiss = { moveDialog = false })
     if (confirmDeleteTags) ConfirmDialog("Supprimer les tags sélectionnés ?", "Les tags seront retirés de tous les jeux associés.", {
-        vm.deleteTags(selected); selected = emptySet(); confirmDeleteTags = false
+        vm.deleteTags(selected)
+        selected = emptySet()
+        confirmDeleteTags = false
     }, { confirmDeleteTags = false })
-    deleteCategory?.let { category ->
+    deletingCategoryId?.let { id -> state.tagCategories.firstOrNull { it.id == id } }?.let { category ->
         ConfirmDialog("Supprimer « ${category.name} » ?", "Les tags seront conservés sans catégorie.", {
-            vm.deleteTagCategory(category); deleteCategory = null
-        }, { deleteCategory = null })
+            vm.deleteTagCategory(category)
+            deletingCategoryId = null
+        }, { deletingCategoryId = null })
     }
 }
 
@@ -154,21 +182,27 @@ internal fun MergeSuggestionCard(suggestion: TagMergeSuggestion, onMerge: (TagEn
 }
 @Composable
 internal fun TagManager(state: AstraUiState, selected: Set<String>, query: String, onToggle: (String) -> Unit, onEdit: (TagEntity) -> Unit) {
-    val filteredTags = state.tags.filter { query.isBlank() || it.name.contains(query.trim(), ignoreCase = true) }
-    val ordered = state.tagCategories.map { it.name }
-    val other = filteredTags.mapNotNull { it.groupName }.filterNot(ordered.toSet()::contains).distinct().sorted()
-    val groups: List<Pair<String?, List<TagEntity>>> = (ordered + other).map { it to filteredTags.filter { tag -> tag.groupName == it } } +
-        (null to filteredTags.filter { it.groupName == null })
+    val groups = remember(state.tags, state.tagCategories, query) {
+        val term = query.trim()
+        val byCategory = state.tags.asSequence().filter { term.isEmpty() || it.name.contains(term, ignoreCase = true) }
+            .groupBy { it.groupName }
+        val known = state.tagCategories.mapTo(linkedSetOf()) { it.name }
+        val legacy = byCategory.keys.filterNotNull().filterNot(known::contains).sorted()
+        buildList<Pair<String?, List<TagEntity>>> {
+            for (name in known + legacy) byCategory[name]?.let { add(name to it) }
+            byCategory[null]?.let { add(null to it) }
+        }
+    }
     if (state.tags.isEmpty()) CenterMessage("Aucun tag. Utilisez + pour en créer un directement.", Modifier.fillMaxSize())
-    else if (filteredTags.isEmpty()) CenterMessage("Aucun résultat pour cette recherche.", Modifier.fillMaxSize())
+    else if (groups.isEmpty()) CenterMessage("Aucun résultat pour cette recherche.", Modifier.fillMaxSize())
     else LazyColumn(contentPadding = PaddingValues(bottom = PageBottomPadding)) {
-        groups.filter { it.second.isNotEmpty() }.forEach { (category, tags) ->
+        groups.forEach { (category, tags) ->
             item(key = "h:" + (category?.let { "named:$it" } ?: "uncategorized")) { MaterialText(category ?: AppLocalizer.text("Sans catégorie"), Modifier.padding(start = 16.dp, top = 14.dp, bottom = 5.dp).semantics { heading() }, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurface) }
-            items(tags, key = { it.id }) { tag ->
+            items(tags, key = { "tag:" + it.id }) { tag ->
                 RoundedListItem(
                     modifier = Modifier.toggleable(tag.id in selected, role = Role.Checkbox) { onToggle(tag.id) }, headlineContent = { MaterialText(tag.name) },
                     leadingContent = { Checkbox(tag.id in selected, null) },
-                    trailingContent = { IconButton(onClick = { onEdit(tag) }) { Icon(Icons.Default.Edit, "Modifier") } }
+                    trailingContent = { IconButton(onClick = { onEdit(tag) }) { Icon(Icons.Default.Edit, AppLocalizer.text("Modifier", LocalAppLanguage.current)) } }
                 )
             }
         }
@@ -178,12 +212,16 @@ internal fun TagManager(state: AstraUiState, selected: Set<String>, query: Strin
 @Composable
 internal fun CategoryManager(state: AstraUiState, vm: AstraViewModel, onEdit: (TagCategoryEntity) -> Unit, onDelete: (TagCategoryEntity) -> Unit) {
     if (state.tagCategories.isEmpty()) CenterMessage("Créez des catégories puis classez plusieurs tags en une fois.", Modifier.fillMaxSize())
-    else LazyColumn(contentPadding = PaddingValues(bottom = PageBottomPadding)) {
-        items(state.tagCategories, key = { it.id }) { category ->
-            TagCategoryCard(category, state.tags.count { it.groupName == category.name },
-                onMoveUp = { vm.moveTagCategory(category.id, -1) },
-                onMoveDown = { vm.moveTagCategory(category.id, 1) },
-                onEdit = { onEdit(category) }, onDelete = { onDelete(category) })
+    else {
+        val counts = remember(state.tags) { state.tags.groupingBy { it.groupName }.eachCount() }
+        LazyColumn(contentPadding = PaddingValues(bottom = PageBottomPadding)) {
+            itemsIndexed(state.tagCategories, key = { _, category -> category.id }) { index, category ->
+                TagCategoryCard(category, counts[category.name] ?: 0,
+                    onMoveUp = { vm.moveTagCategory(category.id, -1) },
+                    onMoveDown = { vm.moveTagCategory(category.id, 1) },
+                    onEdit = { onEdit(category) }, onDelete = { onDelete(category) },
+                    canMoveUp = index > 0, canMoveDown = index < state.tagCategories.lastIndex)
+            }
         }
     }
 }
@@ -192,7 +230,8 @@ internal fun CategoryManager(state: AstraUiState, vm: AstraViewModel, onEdit: (T
 internal fun TagCategoryCard(
     category: TagCategoryEntity, tagCount: Int,
     onMoveUp: () -> Unit, onMoveDown: () -> Unit,
-    onEdit: () -> Unit, onDelete: () -> Unit
+    onEdit: () -> Unit, onDelete: () -> Unit,
+    canMoveUp: Boolean = true, canMoveDown: Boolean = true
 ) {
     // Four 48 dp actions alongside a leading icon leave no readable title on a compact phone.
     Column(Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 8.dp)) {
@@ -205,8 +244,8 @@ internal fun TagCategoryCard(
             }
         }
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-            IconButton(onClick = onMoveUp, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.ArrowUpward, AppLocalizer.text("Monter")) }
-            IconButton(onClick = onMoveDown, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.ArrowDownward, AppLocalizer.text("Descendre")) }
+            IconButton(onClick = onMoveUp, enabled = canMoveUp, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.ArrowUpward, AppLocalizer.text("Monter")) }
+            IconButton(onClick = onMoveDown, enabled = canMoveDown, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.ArrowDownward, AppLocalizer.text("Descendre")) }
             IconButton(onClick = onEdit, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.Edit, AppLocalizer.text("Renommer")) }
             IconButton(onClick = onDelete, modifier = Modifier.size(48.dp)) { Icon(Icons.Default.DeleteOutline, AppLocalizer.text("Supprimer")) }
         }

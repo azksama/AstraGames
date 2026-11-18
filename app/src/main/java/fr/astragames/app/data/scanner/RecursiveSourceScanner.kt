@@ -1,10 +1,14 @@
 package fr.astragames.app.data.scanner
 
 import android.content.Context
+import android.provider.DocumentsContract
 import androidx.core.net.toUri
-import androidx.documentfile.provider.DocumentFile
+import fr.astragames.app.core.filesystem.DirectoryEntry
 import fr.astragames.app.core.filesystem.FileAccessResolver
 import fr.astragames.app.core.filesystem.GameFolders
+import fr.astragames.app.core.filesystem.listDirectoryEntries
+import fr.astragames.app.core.filesystem.requireCompleteListing
+import fr.astragames.app.data.saves.documentDir
 import fr.astragames.app.core.model.GameLauncherType
 import fr.astragames.app.core.model.DetectionResult
 import fr.astragames.app.core.model.GameEngine
@@ -25,6 +29,8 @@ import kotlinx.coroutines.ensureActive
 import java.util.Locale
 import kotlinx.coroutines.withContext
 import java.util.UUID
+import java.io.File
+import java.nio.file.Files
 import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.cancellation.CancellationException
 
@@ -102,16 +108,16 @@ class RecursiveSourceScanner(
         val foundIds = mutableSetOf<String>()
         try {
         dao.insertScanHistory(ScanHistoryEntity(historyId, sourceId, startedAt))
-        dao.upsertSource(source.copy(lastScanStatus = ScanStatus.RUNNING.name, lastError = null))
+        dao.startSourceScan(sourceId)
         val knownGamesByUri = dao.getGamesForSource(sourceId).associateBy { it.documentUri }
         val exclusions = (dao.getExclusions(sourceId).mapNotNull { it.folderNamePattern } + DEFAULT_EXCLUSIONS)
             .map { it.lowercase(Locale.ROOT) }.toSet()
-        val root = selectedRoot ?: fr.astragames.app.data.saves.documentDir(context, source.treeUri.toUri())
+        val root = selectedRoot ?: documentDir(context, source.treeUri.toUri())
         if (root == null || !root.exists() || !root.canRead()) {
             val message = "Permission de stockage absente ou expirée"
             val finishedAt = System.currentTimeMillis()
             val item = ScanReportItem(source.displayName, null, ScanReportItemStatus.ERROR, message)
-            dao.upsertSource(source.copy(lastScanAt = finishedAt, lastScanStatus = ScanStatus.FAILED.name, lastError = message))
+            dao.finishSourceScan(sourceId, finishedAt, ScanStatus.FAILED.name, message)
             dao.insertScanHistory(ScanHistoryEntity(id = historyId, sourceId = sourceId, startedAt = startedAt, finishedAt = finishedAt, errors = 1))
             dao.insertScanReportItems(listOf(item.toEntity(historyId, sourceId)))
             return@withContext ScanReport(
@@ -122,7 +128,19 @@ class RecursiveSourceScanner(
         // Keep exclusions until the user restores them, including while a volume is offline.
         val ignoredFolders = dao.getIgnoredFolders()
 
-        suspend fun walk(directory: DocumentFile, relativePath: String, depth: Int) {
+        fun readChildren(directory: DirectoryEntry, path: String): List<DirectoryEntry>? = try {
+            listDirectoryEntries(context, directory.uri)
+        } catch (error: CancellationException) {
+            throw error
+        } catch (error: Exception) {
+            val location = path.ifBlank { source.displayName }
+            val message = "Lecture impossible de $location : ${error.message ?: "accès au dossier refusé"}"
+            errors += message
+            reportItems += ScanReportItem(location, null, ScanReportItemStatus.ERROR, message)
+            null
+        }
+
+        suspend fun walk(directory: DirectoryEntry, relativePath: String, depth: Int) {
             coroutineContext.ensureActive()
             require(depth <= 128 && visited.size < 100_000) { "Source trop profonde ou trop volumineuse : limitez le dossier à analyser." }
             if (!visited.add(directory.uri.toString())) return
@@ -160,73 +178,63 @@ class RecursiveSourceScanner(
                 visitedFolders = visited.size,
                 foundGames = found
             )
-            val children = runCatching {
-                check(directory.canRead()) { "Accès au dossier refusé" }
-                directory.listFiles().toList()
-            }.getOrElse {
-                val message = "Lecture impossible: ${directory.name ?: relativePath}"
-                errors += message
-                reportItems += ScanReportItem(
-                    relativePath.ifBlank { source.displayName }, null, ScanReportItemStatus.ERROR, message
-                )
-                return
-            }
+            val children = readChildren(directory, relativePath) ?: return
+            val errorsBeforeSignatures = errors.size
             val signatureNames = buildSet<String> {
                 var decisiveSignatureFound = false
-                fun addDescendants(folder: DocumentFile, prefix: String, remainingDepth: Int) {
+                fun addDescendants(folder: DirectoryEntry, prefix: String, remainingDepth: Int) {
                     if (remainingDepth <= 0 || decisiveSignatureFound || size >= MAX_SIGNATURE_ENTRIES) return
-                    runCatching {
-                        folder.listFiles().sortedBy { nested ->
-                            if (nested.name.orEmpty().lowercase(Locale.ROOT) in SIGNATURE_PRIORITY_NAMES) 0 else 1
-                        }.forEach { nested ->
-                            if (decisiveSignatureFound || size >= MAX_SIGNATURE_ENTRIES) return@forEach
-                            val nestedPath = "$prefix/${nested.name.orEmpty()}"
-                            add(nestedPath)
-                            decisiveSignatureFound = nestedPath.isDecisiveSignature()
-                            if (nested.isDirectory) addDescendants(nested, nestedPath, remainingDepth - 1)
-                        }
+                    val nestedEntries = readChildren(folder, listOf(relativePath, prefix).filter(String::isNotEmpty).joinToString("/")) ?: return
+                    for (nested in nestedEntries.sortedBy { it.name.lowercase(Locale.ROOT) !in SIGNATURE_PRIORITY_NAMES }) {
+                        if (decisiveSignatureFound || size >= MAX_SIGNATURE_ENTRIES) break
+                        val nestedPath = "$prefix/${nested.name}"
+                        add(nestedPath)
+                        decisiveSignatureFound = nestedPath.isDecisiveSignature()
+                        if (nested.isDirectory) addDescendants(nested, nestedPath, remainingDepth - 1)
                     }
                 }
                 children.forEach { child ->
-                    val name = child.name.orEmpty()
+                    val name = child.name
                     add(name)
-                    if (source.recursive && child.isDirectory && name.lowercase(Locale.ROOT) in setOf("www", "js", "game", "renpy", "tyrano", "data")) {
+                    if (source.recursive && child.isDirectory && name.lowercase(Locale.ROOT) in SIGNATURE_FOLDERS) {
                         addDescendants(child, name, if (name.equals("game", true)) 4 else 3)
                     }
                 }
             }
             val executable = children.asSequence()
-                .filter { !it.isDirectory && it.name.orEmpty().endsWith(".exe", ignoreCase = true) }
-                .sortedBy { executableFile ->
-                    val name = executableFile.name.orEmpty().lowercase(Locale.ROOT)
+                .filter { !it.isDirectory && it.name.endsWith(".exe", ignoreCase = true) }
+                .minByOrNull { executableFile ->
+                    val name = executableFile.name.lowercase(Locale.ROOT)
                     when {
                         name == "game.exe" -> 0
                         IGNORED_EXECUTABLE_MARKERS.any(name::contains) -> 2
                         else -> 1
                     }
                 }
-                .firstOrNull()
-            val detection = EngineSignatureDetector.detect(signatureNames)
-                ?: GodotGameDetector.detect(context, children, executable?.name)
-                ?: executable?.let {
-                DetectionResult(GameEngine.UNKNOWN, .25f, listOf("Exécutable détecté"), it.name)
+            val detection = if (errors.size == errorsBeforeSignatures) {
+                EngineSignatureDetector.detect(signatureNames)
+                    ?: GodotGameDetector.detect(context, children, executable?.name)
+                    ?: executable?.let { DetectionResult(GameEngine.UNKNOWN, .25f, listOf("Exécutable détecté"), it.name) }
+            } else {
+                // A game with unreadable signatures must not be reclassified through its own subfolders.
+                if (executable != null) return
+                null
             }
             if (detection != null) {
                 found++
-                val rawName = directory.name ?: "Jeu sans titre"
+                val rawName = directory.name
                 val normalized = GameTitleNormalizer.normalize(rawName)
                 val executableName = if (detection.engine in setOf(GameEngine.GODOT_3, GameEngine.GODOT_4)) {
                     detection.executableName
                 } else executable?.name ?: detection.executableName
                 val fingerprint = GameFingerprint.create(detection.engine, normalized.title, normalized.productCode, executableName)
                 val existing = dao.findGameByDocumentUri(directory.uri.toString())
-                    ?: dao.findGameByFingerprint(fingerprint)?.takeIf { previous ->
-                        // An accessible copy is a duplicate, not a move of the existing record.
-                        runCatching { fr.astragames.app.data.saves.documentDir(context, previous.documentUri.toUri())?.exists() != true }.getOrDefault(false)
-                    }
+                    ?: dao.getGamesByFingerprint(fingerprint).filter { previous ->
+                        previous.id !in foundIds && previousLocationIsMissing(previous)
+                    }.singleOrNull()
                 val now = System.currentTimeMillis()
                 val cover = children.firstOrNull {
-                    !it.isDirectory && it.name.orEmpty().lowercase(Locale.ROOT) in COVER_NAMES
+                    !it.isDirectory && it.name.lowercase(Locale.ROOT) in COVER_NAMES
                 }?.uri?.toString()
                 val physicalPath = fileAccessResolver.physicalPath(source.treeUri.toUri(), relativePath)
                 val itemStatus = when {
@@ -261,7 +269,7 @@ class RecursiveSourceScanner(
                     ryuugamesUrl = existing?.ryuugamesUrl,
                     releaseDate = existing?.releaseDate,
                     dateAdded = existing?.dateAdded ?: now,
-                    lastModified = directory.lastModified(),
+                    lastModified = directory.lastModified,
                     lastPlayedAt = existing?.lastPlayedAt,
                     playCount = existing?.playCount ?: 0,
                     favorite = existing?.favorite ?: false,
@@ -273,6 +281,7 @@ class RecursiveSourceScanner(
                     fingerprint = fingerprint
                 )
                 dao.upsertGame(game)
+                if (existing != null && existing.sourceId != sourceId) dao.refreshSourceGameCounts()
                 foundIds += game.id
                 reportItems += ScanReportItem(
                     relativePath.ifBlank { source.displayName }, game.title, itemStatus,
@@ -290,10 +299,10 @@ class RecursiveSourceScanner(
             if (source.recursive) {
                 children.asSequence()
                     .filter { it.isDirectory }
-                    .filter { it.name != ".astra-translation" && (source.includeHiddenFolders || !it.name.orEmpty().startsWith('.')) }
+                    .filter { it.name != ".astra-translation" && (source.includeHiddenFolders || !it.name.startsWith('.')) }
                     .forEach { child ->
-                        val childRelative = listOf(relativePath, child.name.orEmpty()).filter { it.isNotBlank() }.joinToString("/")
-                        if (child.name.orEmpty().lowercase(Locale.ROOT) in exclusions) {
+                        val childRelative = listOf(relativePath, child.name).filter { it.isNotBlank() }.joinToString("/")
+                        if (child.name.lowercase(Locale.ROOT) in exclusions) {
                             ignored++
                             reportItems += ScanReportItem(
                                 childRelative, null, ScanReportItemStatus.IGNORED,
@@ -305,11 +314,13 @@ class RecursiveSourceScanner(
         }
 
         try {
-            walk(root, selectedPath, 0)
+            walk(DirectoryEntry(root.uri, root.name ?: source.displayName, true, root.lastModified(), 0), selectedPath, 0)
         } catch (error: CancellationException) {
             throw error
         } catch (error: Exception) {
-            errors += (error.message ?: "Erreur de scan")
+            val message = error.message ?: "Erreur de scan"
+            errors += message
+            reportItems += ScanReportItem(selectedPath.ifBlank { source.displayName }, null, ScanReportItemStatus.ERROR, message)
         }
         val finishedAt = System.currentTimeMillis()
         val status = if (errors.isEmpty()) ScanStatus.SUCCESS else if (found > 0) ScanStatus.PARTIAL else ScanStatus.FAILED
@@ -327,14 +338,7 @@ class RecursiveSourceScanner(
                 )
             }
         }
-        dao.upsertSource(
-            source.copy(
-                lastScanAt = finishedAt,
-                lastScanStatus = status.name,
-                gamesCount = if (targeted) dao.getGamesForSource(sourceId).count { !it.missing } else found,
-                lastError = errors.firstOrNull()
-            )
-        )
+        dao.finishSourceScan(sourceId, finishedAt, status.name, errors.firstOrNull())
         dao.insertScanHistory(
             ScanHistoryEntity(
                 id = historyId, sourceId = sourceId, startedAt = startedAt, finishedAt = finishedAt,
@@ -352,7 +356,7 @@ class RecursiveSourceScanner(
         } catch (error: CancellationException) {
             withContext(NonCancellable) {
                 val finishedAt = System.currentTimeMillis()
-                dao.upsertSource(source.copy(lastScanAt = finishedAt, lastScanStatus = ScanStatus.PARTIAL.name, lastError = "Scan interrompu"))
+                dao.finishSourceScan(sourceId, finishedAt, ScanStatus.PARTIAL.name, "Scan interrompu")
                 dao.insertScanHistory(ScanHistoryEntity(
                     id = historyId, sourceId = sourceId, startedAt = startedAt, finishedAt = finishedAt,
                     gamesFound = found, gamesAdded = added, gamesUpdated = updated, gamesUnchanged = unchanged,
@@ -363,6 +367,37 @@ class RecursiveSourceScanner(
         }
     }
 
+    }
+
+    private suspend fun previousLocationIsMissing(game: GameEntity): Boolean {
+        val tree = dao.getSource(game.sourceId)?.treeUri?.toUri() ?: return false
+        val uri = game.documentUri.toUri()
+        try {
+            if (documentDir(context, tree)?.canRead() != true) return false
+            if (uri.scheme == "file") return Files.notExists(File(requireNotNull(uri.path)).toPath())
+            val id = GameFolders.documentId(uri)
+            val document = DocumentsContract.buildDocumentUriUsingTree(tree, id)
+            val columns = arrayOf(DocumentsContract.Document.COLUMN_DOCUMENT_ID)
+            context.contentResolver.query(document, columns, null, null, null)?.use { cursor ->
+                val present = cursor.moveToFirst()
+                cursor.requireCompleteListing()
+                return !present
+            }
+            // ExternalStorageProvider can return a null cursor for a moved document.
+            // Confirm the absent path against complete listings inside the original grant.
+            if (tree.authority != "com.android.externalstorage.documents") return false
+            val prefix = GameFolders.externalChildPrefix(GameFolders.documentId(tree))
+            if (!id.startsWith(prefix)) return false
+            var parent = tree
+            for (part in id.removePrefix(prefix).split('/')) {
+                parent = listDirectoryEntries(context, parent).firstOrNull { it.name == part }?.uri ?: return true
+            }
+            return false
+        } catch (error: CancellationException) {
+            throw error
+        } catch (_: Exception) {
+            return false
+        }
     }
 
     companion object {
@@ -376,6 +411,7 @@ class RecursiveSourceScanner(
             "unins", "uninstall", "setup", "crash", "update", "config", "notification", "helper"
         )
         private val SIGNATURE_PRIORITY_NAMES = setOf("js", "data", "game", "renpy", "tyrano", "basicdata", "game.dat")
+        private val SIGNATURE_FOLDERS = setOf("www", "js", "game", "renpy", "tyrano", "data")
 
         private fun String.isDecisiveSignature(): Boolean {
             val path = lowercase(Locale.ROOT)

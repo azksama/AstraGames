@@ -40,6 +40,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.testTagsAsResourceId
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.sp
 import fr.astragames.app.R
@@ -73,6 +75,7 @@ internal enum class Destination(val route: String, val description: String, val 
 
 internal val menuDestinations = Destination.entries.filter { it.visibleInMenu }
 internal val topLevelRoutes = Destination.entries.map { it.route }.toSet()
+private const val GameSetupRoute = "game-setup"
 internal val LocalPageBottomPadding = staticCompositionLocalOf { 32.dp }
 internal val PageBottomPadding: androidx.compose.ui.unit.Dp @Composable get() = LocalPageBottomPadding.current
 internal val NavigationContentHeight: androidx.compose.ui.unit.Dp
@@ -133,42 +136,53 @@ fun AstraApp(
                     val entry by navController.currentBackStackEntryAsState()
                     val route = entry?.destination?.route.orEmpty()
                     val topLevel = route.isBlank() || route in topLevelRoutes
-                    BoxWithConstraints(Modifier.fillMaxSize()) {
+                    BoxWithConstraints(Modifier.fillMaxSize().semantics { testTagsAsResourceId = true }) {
                         val wide = maxWidth >= 840.dp || (maxWidth >= 600.dp && maxHeight < 480.dp)
                         Scaffold(
                             contentWindowInsets = WindowInsets(0, 0, 0, 0),
                             snackbarHost = {
                                 // The floating navigation is outside Scaffold's bottomBar slot.
                                 // Reserve its full height so messages never cover its touch targets.
-                                SnackbarHost(snackbar, Modifier.navigationBarsPadding().padding(
+                                if (route != GameSetupRoute) SnackbarHost(snackbar, Modifier.navigationBarsPadding().padding(
                                     bottom = if (topLevel && !wide) NavigationContentHeight + 16.dp else 0.dp
                                 ))
                             }
                         ) { padding ->
-                            if (topLevel && wide) {
-                                Row(Modifier.padding(padding).fillMaxSize()) {
-                                    CompactNavigationRail(route, navController)
-                                    Box(Modifier.weight(1f).navigationBarsPadding().then(if (route in menuDestinations.map { it.route }) Modifier.pullDownSearch(route, navController).topLevelSwipe(route, navController) else Modifier)) { AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder) }
-                                }
-                            } else Box(Modifier.padding(padding).fillMaxSize()) {
-                                Box(
-                                    Modifier.fillMaxSize()
-                                        .then(if (topLevel) Modifier.navigationBarsPadding() else Modifier)
-                                        .then(if (route in menuDestinations.map { it.route }) Modifier.pullDownSearch(route, navController).topLevelSwipe(route, navController) else Modifier)
-                                ) { CompositionLocalProvider(LocalPageBottomPadding provides if (topLevel) NavigationContentHeight + 40.dp else 24.dp) {
-                                    AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
-                                } }
-                                if (topLevel) {
-                                    CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter))
-
+                            Row(Modifier.padding(padding).fillMaxSize()) {
+                                if (topLevel && wide) CompactNavigationRail(route, navController)
+                                Box(Modifier.weight(1f).fillMaxHeight()) {
+                                    val bottomPadding = when {
+                                        !topLevel -> 24.dp
+                                        wide -> 32.dp
+                                        else -> NavigationContentHeight + 40.dp
+                                    }
+                                    Box(
+                                        Modifier.fillMaxSize()
+                                            .then(if (topLevel) Modifier.navigationBarsPadding() else Modifier)
+                                            .then(if (route in menuDestinations.map { it.route }) Modifier.pullDownSearch(route, navController).topLevelSwipe(route, navController) else Modifier)
+                                    ) {
+                                        CompositionLocalProvider(LocalPageBottomPadding provides bottomPadding) {
+                                            AppNavHost(navController, visibleState, viewModel, onPickSource, onPickTags, onPickCover, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder, snackbar)
+                                        }
+                                    }
+                                    if (topLevel && !wide) CompactBottomNavigation(route, navController, Modifier.align(Alignment.BottomCenter))
                                 }
                             }
                         }
                     }
                     if (visibleState.scanProgress.active) ScanProgressOverlay(visibleState.scanProgress, viewModel::cancelSyncs)
-                    if (scanReports.isNotEmpty()) ScanReportDialog(scanReports, viewModel::dismissScanReports)
-                    if (visibleState.setupQueue.isNotEmpty() && scanReports.isEmpty()) {
-                        NewGamesSetupWizard(visibleState, viewModel, onPickCover)
+                    val offerSetup = visibleState.setupQueue.isNotEmpty() && route.isNotEmpty() && route != GameSetupRoute
+                    val openSetup = { navController.navigate(GameSetupRoute) { launchSingleTop = true } }
+                    if (scanReports.isNotEmpty()) {
+                        ScanReportDialog(scanReports, onDismiss = {
+                            if (offerSetup) viewModel.dismissGameSetup()
+                            viewModel.dismissScanReports()
+                        }, onConfigure = if (offerSetup) ({
+                            openSetup()
+                            viewModel.dismissScanReports()
+                        }) else null)
+                    } else if (offerSetup && !visibleState.scanning) {
+                        NewGamesSetupInvitation(visibleState.setupQueue.size, openSetup, viewModel::dismissGameSetup)
                     }
                 }
             }
@@ -336,7 +350,7 @@ internal fun NavIcon(destination: Destination, selected: Boolean, onClick: () ->
     val focused by interactions.collectIsFocusedAsState()
     val shape = RoundedCornerShape(26.dp)
     Box(
-        modifier.widthIn(min = 48.dp, max = 96.dp).heightIn(min = 56.dp).clip(shape)
+        modifier.testTag("astra_nav_${destination.route}").widthIn(min = 48.dp, max = 96.dp).heightIn(min = 56.dp).clip(shape)
             .background(if (selected) MaterialTheme.colorScheme.secondaryContainer else androidx.compose.ui.graphics.Color.Transparent)
             .then(if (focused) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, shape) else Modifier)
             .selectable(selected = selected, interactionSource = interactions, indication = ripple(color = MaterialTheme.colorScheme.onSurface), role = Role.Tab, onClick = onClick),
@@ -377,7 +391,8 @@ internal fun Destination.icon() = when (this) {
 internal fun AppNavHost(
     nav: NavHostController, state: AstraUiState, vm: AstraViewModel,
     onPickSource: () -> Unit, onPickTags: () -> Unit, onPickCover: (String) -> Unit,
-    onPickBackupFolder: () -> Unit, onRestoreBackup: () -> Unit, onOpenBackupFolder: () -> Unit
+    onPickBackupFolder: () -> Unit, onRestoreBackup: () -> Unit, onOpenBackupFolder: () -> Unit,
+    snackbar: SnackbarHostState
 ) {
     NavHost(
         navController = nav,
@@ -400,6 +415,16 @@ internal fun AppNavHost(
         composable(Destination.TAGS.route) { TagsScreen(state, vm, onPickTags, nav::popBackStack) }
         composable(Destination.SETTINGS.route) {
             SettingsScreen(state, vm, onPickSource, { nav.navigate(Destination.TAGS.route) }, onPickBackupFolder, onRestoreBackup, onOpenBackupFolder)
+        }
+        composable(GameSetupRoute) {
+            val game = state.setupQueue.firstOrNull()
+            if (game == null) {
+                LaunchedEffect(Unit) {
+                    if (nav.currentDestination?.route == GameSetupRoute) nav.popBackStack()
+                }
+            } else key(game.id) {
+                NewGameSetupScreen(game, state, vm, onPickCover, snackbar)
+            }
         }
         composable("game/{id}", listOf(navArgument("id") { type = NavType.StringType })) {
             GameDetailScreen(

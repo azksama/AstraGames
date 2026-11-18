@@ -11,7 +11,10 @@ import fr.astragames.app.data.backup.BackupManager
 import fr.astragames.app.data.repository.GameRepository
 import fr.astragames.app.data.repository.SaveConflictStrategy
 import fr.astragames.app.data.scanner.RecursiveSourceScanner
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -38,7 +41,7 @@ class AstraDatabaseTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         val dao = database.dao()
         dao.upsertGame(game().copy(engine = "UNKNOWN"))
-        val repository = GameRepository(context, dao, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database))
+        val repository = GameRepository(context, database, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database))
         assertEquals("UNKNOWN", repository.games.first().single().engine)
         repository.saveLaunchProfile(LaunchProfileEntity(gameId = "g1", engineOverride = "WOLF_RPG"))
         assertEquals("WOLF_RPG", repository.games.first().single().engine)
@@ -56,7 +59,7 @@ class AstraDatabaseTest {
         val dao = database.dao()
         dao.upsertGame(game())
         dao.upsertInstallation(ModInstallationEntity("install", "mod", "g1", 1, null, "OVERLAY", "INSTALLED"))
-        val repository = GameRepository(context, dao, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database))
+        val repository = GameRepository(context, database, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database))
         org.junit.Assert.assertTrue(runCatching { repository.deleteGame("g1", false) }.isFailure)
         org.junit.Assert.assertNotNull(dao.getGame("g1"))
         assertEquals(1, dao.observeInstallationsForGame("g1").first().size)
@@ -65,6 +68,89 @@ class AstraDatabaseTest {
     @Test fun gameAndFtsIndexStayInSync() = runTest {
         database.dao().upsertGame(game())
         assertEquals("g1", database.dao().searchGames("wind*").first().single().id)
+    }
+
+    @Test fun failedSessionStartPreservesThePreviousSession() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dao = database.dao()
+        val repository = GameRepository(context, database, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database))
+        dao.upsertGame(game())
+        val previous = PlaySessionEntity("previous", "g1", System.currentTimeMillis() - 10_000)
+        dao.insertPlaySession(previous)
+        val sql = database.openHelper.writableDatabase
+        sql.execSQL("CREATE TRIGGER refuse_session BEFORE INSERT ON play_sessions BEGIN SELECT RAISE(ABORT, 'session write refused'); END")
+        try {
+            repository.recordLaunch("g1", trackSession = true)
+            org.junit.Assert.fail("Starting the session should fail")
+        } catch (_: android.database.sqlite.SQLiteException) { }
+        assertTrue("The previous session should still be open", dao.getPlayHistory().isEmpty())
+        assertEquals(0, dao.getGame("g1")!!.playCount)
+        sql.execSQL("DROP TRIGGER refuse_session")
+        repository.recordLaunch("g1", trackSession = true)
+        assertEquals(1, dao.getGame("g1")!!.playCount)
+        assertEquals(previous.id, dao.getPlayHistory().single().id)
+        repository.finishActivePlaySession()
+        assertEquals(2, dao.getPlayHistory().size)
+    }
+
+    @Test fun recoveringOverlappingSessionsUsesTheNextLaunchAndKeepsCompletedHistory() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dao = database.dao()
+        val repository = GameRepository(context, database, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database))
+        dao.upsertGame(game())
+        val base = System.currentTimeMillis() - 60_000
+        val completed = PlaySessionEntity("completed", "g1", base + 10_000, base + 14_000, 4_000)
+        dao.insertPlaySession(PlaySessionEntity("old", "g1", base))
+        dao.insertPlaySession(completed)
+        dao.insertPlaySession(PlaySessionEntity("same-instant", "g1", base + 20_000))
+        dao.insertPlaySession(PlaySessionEntity("recent", "g1", base + 20_000))
+        repository.finishActivePlaySession()
+        val history = dao.getPlayHistory().associateBy { it.id }
+        assertEquals(4, history.size)
+        assertEquals(completed, history["completed"])
+        assertEquals(base + 10_000, history.getValue("old").endedAt)
+        assertEquals(10_000L, history.getValue("old").durationMs)
+        assertEquals(0L, history.getValue("same-instant").durationMs)
+        assertTrue(requireNotNull(history.getValue("recent").durationMs) >= 40_000L)
+        repository.finishActivePlaySession()
+        assertEquals(history, dao.getPlayHistory().associateBy { it.id })
+    }
+
+    @Test fun simultaneousLaunchesRecordEachGameOnceAndRespectDisabledHistory() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dao = database.dao()
+        val repository = GameRepository(context, database, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database))
+        val ids = List(8) { "play-$it" }
+        ids.forEach { dao.upsertGame(game().copy(id = it, documentUri = "content://play/$it")) }
+        coroutineScope { ids.forEach { launch(Dispatchers.Default) { repository.recordLaunch(it, trackSession = true) } } }
+        assertEquals(ids.size - 1, dao.getPlayHistory().size)
+        repository.recordLaunch("deleted", trackSession = true)
+        assertEquals(ids.size - 1, dao.getPlayHistory().size)
+        repository.recordLaunch(ids.first(), trackSession = false)
+        assertNull(dao.firstOpenSessionStart())
+        val sessions = dao.getPlayHistory()
+        assertEquals(ids.toSet(), sessions.map { it.gameId }.toSet())
+        assertEquals(ids.size, sessions.size)
+        assertEquals(2, dao.getGame(ids.first())!!.playCount)
+        ids.drop(1).forEach { assertEquals(1, dao.getGame(it)!!.playCount) }
+        assertTrue(sessions.sortedBy { it.startedAt }.zipWithNext().all { (a, b) -> a.endedAt!! <= b.startedAt || a.startedAt == b.startedAt })
+    }
+
+    @Test fun sessionDurationIsBoundedAfterClockChangesOrAnOvernightExit() = runTest {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dao = database.dao()
+        val repository = GameRepository(context, database, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database))
+        dao.upsertGame(game())
+        val now = System.currentTimeMillis()
+        val hour = 3_600_000L
+        dao.insertPlaySession(PlaySessionEntity("overnight", "g1", now - 24 * hour))
+        repository.finishActivePlaySession()
+        dao.insertPlaySession(PlaySessionEntity("future", "g1", now + hour))
+        repository.finishActivePlaySession()
+        val sessions = dao.getPlayHistory().associateBy { it.id }
+        assertEquals(12 * hour, sessions.getValue("overnight").durationMs)
+        assertEquals(0L, sessions.getValue("future").durationMs)
+        assertEquals(now + hour, sessions.getValue("future").endedAt)
     }
 
     @Test fun punctuationAndVersionUpdatesRemainSearchable() = runTest {
@@ -106,7 +192,7 @@ class AstraDatabaseTest {
         dao.upsertTag(TagEntity("existing", "Ren'Py", "ren'py", "Moteurs"))
         val repository = GameRepository(
             context,
-            dao,
+            database,
             RecursiveSourceScanner(context, dao, FileAccessResolver(context)),
             BackupManager(context, database)
         )
@@ -126,7 +212,7 @@ class AstraDatabaseTest {
         dao.upsertTag(TagEntity("adventure", "Adventure", "adventure", "Genres"))
         val repository = GameRepository(
             context,
-            dao,
+            database,
             RecursiveSourceScanner(context, dao, FileAccessResolver(context)),
             BackupManager(context, database)
         )
@@ -207,7 +293,7 @@ class AstraDatabaseTest {
         dao.insertPlaySession(PlaySessionEntity("p1", "g1", 100, 1_100, 1_000))
         dao.insertPlaySession(PlaySessionEntity("p2", "g2", 200, 2_200, 2_000))
         val repository = GameRepository(
-            context, dao, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database)
+            context, database, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database)
         )
 
         repository.mergeDuplicate("g1", "g2", migrateSaves = false, SaveConflictStrategy.KEEP_PRIMARY, deleteSecondaryFiles = false)
@@ -230,7 +316,7 @@ class AstraDatabaseTest {
         dao.upsertGame(game().copy(id = "g2", documentUri = "content://g2"))
         dao.upsertInstallation(ModInstallationEntity("i1", "m1", "g2", 4, "1.0", "OVERLAY", "INSTALLED"))
         val repository = GameRepository(
-            context, dao, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database)
+            context, database, RecursiveSourceScanner(context, dao, FileAccessResolver(context)), BackupManager(context, database)
         )
 
         val failure = runCatching { repository.deleteGames(linkedSetOf("g1", "g2")) }.exceptionOrNull()

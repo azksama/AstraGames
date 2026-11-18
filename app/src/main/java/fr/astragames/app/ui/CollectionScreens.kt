@@ -27,6 +27,7 @@ import fr.astragames.app.core.model.*
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.CollectionEntity
 import fr.astragames.app.data.local.LibraryFolderEntity
+import java.util.UUID
 
 @Composable
 internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit) {
@@ -34,15 +35,18 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
     var currentId by rememberSaveable { mutableStateOf<String?>(null) }
     var smartKey by rememberSaveable { mutableStateOf<String?>(null) }
     var customCollectionId by rememberSaveable { mutableStateOf<String?>(null) }
-    var creating by remember { mutableStateOf(false) }
-    var editing by remember { mutableStateOf<LibraryFolderEntity?>(null) }
+    var newFolderId by rememberSaveable { mutableStateOf<String?>(null) }
+    var newFolderParent by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingFolderId by rememberSaveable { mutableStateOf<String?>(null) }
     var deleting by remember { mutableStateOf<LibraryFolderEntity?>(null) }
-    var editingCollection by remember { mutableStateOf<CollectionEntity?>(null) }
-    var collectionEditor by remember { mutableStateOf(false) }
+    var newCollectionId by rememberSaveable { mutableStateOf<String?>(null) }
+    var editingCollectionId by rememberSaveable { mutableStateOf<String?>(null) }
     var deletingCollection by remember { mutableStateOf<CollectionEntity?>(null) }
     val current = state.folders.firstOrNull { it.id == currentId }
-    LaunchedEffect(currentId, state.folders) { if (currentId != null && current == null) currentId = null }
-    val visibleFolders = state.folders.filter { it.parentId == currentId }
+    LaunchedEffect(currentId, state.folders, state.settingsLoaded) { if (state.settingsLoaded && currentId != null && current == null) currentId = null }
+    val childrenByParent = remember(state.folders) { state.folders.groupBy { it.parentId } }
+    val visibleFolders = childrenByParent[currentId].orEmpty()
+    val editingCollection = state.collections.firstOrNull { it.id == editingCollectionId }
     val now = System.currentTimeMillis()
     val smartCollections = listOf(
         SmartCollection("favorites", "Favoris", Icons.Default.Favorite) { it.favorite },
@@ -138,7 +142,7 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
                                     var menu by remember { mutableStateOf(false) }
                                     CompactActionButton({ menu = true }, Icons.Default.MoreHoriz, "Actions rapides")
                                     DropdownMenu(menu, { menu = false }) {
-                                        DropdownMenuItem(text = { Text("Modifier") }, onClick = { menu = false; editingCollection = collection; collectionEditor = true })
+                                        DropdownMenuItem(text = { Text("Modifier") }, onClick = { menu = false; editingCollectionId = collection.id })
                                         DropdownMenuItem(text = { Text("Supprimer") }, onClick = { menu = false; deletingCollection = collection })
                                     }
                                 }
@@ -148,7 +152,7 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
                     }
                 }
                 item {
-                    Button(onClick = { editingCollection = null; collectionEditor = true }, Modifier.fillMaxWidth().padding(top = 14.dp).heightIn(min = 50.dp)) {
+                    Button(onClick = { editingCollectionId = null; newCollectionId = UUID.randomUUID().toString() }, Modifier.fillMaxWidth().padding(top = 14.dp).heightIn(min = 50.dp)) {
                         Icon(Icons.Default.Add, null, Modifier.size(18.dp)); Spacer(Modifier.width(8.dp)); Text("Créer une collection intelligente")
                     }
                 }
@@ -156,7 +160,7 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
             }
             item {
                 FilledTonalButton(
-                    onClick = { creating = true },
+                    onClick = { newFolderParent = currentId; newFolderId = UUID.randomUUID().toString() },
                     modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).heightIn(min = 40.dp),
                     contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp)
                 ) {
@@ -167,11 +171,11 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
                 RoundedListItem(
                     modifier = Modifier.clickable { currentId = folder.id },
                     headlineContent = { MaterialText(folder.name) },
-                    supportingContent = { Text("${state.folders.count { it.parentId == folder.id }} sous-dossier(s)") },
+                    supportingContent = { Text("${childrenByParent[folder.id].orEmpty().size} sous-dossier(s)") },
                     leadingContent = { Icon(Icons.Default.Folder, null) },
                     trailingContent = {
                         Row {
-                            CompactActionButton({ editing = folder }, Icons.Default.Edit, "Modifier")
+                            CompactActionButton({ editingFolderId = folder.id }, Icons.Default.Edit, "Modifier")
                             CompactActionButton({ deleting = folder }, Icons.Default.Delete, "Supprimer")
                             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, "Ouvrir", Modifier.align(Alignment.CenterVertically))
                         }
@@ -191,20 +195,28 @@ internal fun CollectionsScreen(state: AstraUiState, vm: AstraViewModel, onGame: 
             if (visibleFolders.isEmpty() && displayedGames.isEmpty()) item { CenterMessage("Aucun dossier ni jeu ici", Modifier.fillMaxWidth().height(120.dp)) }
         })
     }
-    if (creating) NameDialog("Nouvelle collection", "", { name -> vm.createFolder(name, currentId); creating = false }, { creating = false })
-    editing?.let { folder -> NameDialog("Modifier le dossier", folder.name, { name -> vm.renameFolder(folder, name); editing = null }, { editing = null }) }
+    newFolderId?.let { draftId ->
+        NameDialog("Nouvelle collection", "", { name -> vm.createFolder(name, newFolderParent, draftId); newFolderId = null }, { newFolderId = null })
+    }
+    state.folders.firstOrNull { it.id == editingFolderId }?.let { folder ->
+        NameDialog("Modifier le dossier", folder.name, { name -> vm.renameFolder(folder, name); editingFolderId = null }, { editingFolderId = null })
+    }
     deleting?.let { folder -> ConfirmDialog(
         "Supprimer ${folder.name} ?",
-        "Les jeux ne seront pas supprimés. Ses sous-dossiers remonteront au niveau actuel.",
+        "Les jeux classés directement ici passeront dans « Sans dossier ». Les sous-dossiers remonteront d’un niveau avec leurs jeux.",
         { vm.deleteFolder(folder); deleting = null },
         { deleting = null }
     ) }
-    if (collectionEditor) SmartCollectionEditorDialog(
+    if (newCollectionId != null || editingCollection != null) SmartCollectionEditorDialog(
         collection = editingCollection,
         existingRules = editingCollection?.let { selected -> state.collectionRules.filter { it.collectionId == selected.id } }.orEmpty(),
         state = state,
-        onSave = { id, name, mode, rules -> vm.saveCollection(id, name, mode, rules) { collectionEditor = false } },
-        onDismiss = { collectionEditor = false }
+        onSave = { id, name, mode, rules ->
+            vm.saveCollection(id, name, mode, rules, newCollectionId)
+            editingCollectionId = null
+            newCollectionId = null
+        },
+        onDismiss = { editingCollectionId = null; newCollectionId = null }
     )
     deletingCollection?.let { collection -> ConfirmDialog(
         "Supprimer ${collection.name} ?", "Les jeux et leurs fichiers seront conservés.",

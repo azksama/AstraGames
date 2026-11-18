@@ -26,7 +26,7 @@ import fr.astragames.app.core.model.LibraryViewMode
 @Composable
 internal fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit, onBack: () -> Unit) {
     var engineMenu by remember { mutableStateOf(false) }
-    var tagsMenu by remember { mutableStateOf(false) }
+    var tagsMenu by rememberSaveable { mutableStateOf(false) }
     var systemFolderMenu by remember { mutableStateOf(false) }
     val focusRequester = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
@@ -138,10 +138,9 @@ internal fun SearchScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Stri
     }
     if (tagsMenu) GameTagPickerSheet(
         state.tags, state.tagCategories, state.filters.tagIds,
-        { vm.setTagFilters(it); tagsMenu = false },
+        { included, excluded -> vm.setTagFilters(included, excluded); tagsMenu = false },
         { tagsMenu = false },
         initialExcluded = state.filters.excludedTagIds,
-        onSaveExcluded = vm::setExcludedTagFilters,
         title = "Filtrer les tags"
     )
 }

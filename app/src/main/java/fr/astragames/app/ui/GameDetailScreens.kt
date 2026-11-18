@@ -44,6 +44,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.compose.*
 import coil3.compose.AsyncImage
 import fr.astragames.app.core.model.*
+import fr.astragames.app.core.metadata.hasGameUpdate
 import fr.astragames.app.data.local.GameEntity
 import fr.astragames.app.data.local.LaunchProfileEntity
 
@@ -78,16 +79,14 @@ internal fun GameDetailScreen(
     var confirmGameRemoval by rememberSaveable(id) { mutableStateOf(false) }
     var showTools by rememberSaveable(id) { mutableStateOf(false) }
     val item = game?.let { fr.astragames.app.launcher.LaunchProfileResolver.displayGame(it, launchProfile) }
-    var confirmUpdate by rememberSaveable(id) { mutableStateOf(false) }
+    var confirmingVersion by rememberSaveable(id) { mutableStateOf<String?>(null) }
+    var installedAtConfirmation by rememberSaveable(id) { mutableStateOf<String?>(null) }
     val latestUpdate = latestVersions[id]
-    if (confirmUpdate && latestUpdate != null && item != null) {
-        AlertDialog(
-            onDismissRequest = { confirmUpdate = false },
-            title = { Text("Mise à jour effectuée ?") },
-            text = { Text("Avez-vous effectué la mise à jour vers la version ${latestUpdate} ?") },
-            confirmButton = { TextButton(onClick = { vm.confirmGameUpdate(item.id, latestUpdate); confirmUpdate = false }) { Text("Oui") } },
-            dismissButton = { TextButton(onClick = { confirmUpdate = false }) { Text("Non") } }
-        )
+    confirmingVersion?.let { shown ->
+        ConfirmDialog("Mise à jour effectuée ?", "Avez-vous effectué la mise à jour vers la version $shown ?", {
+            vm.confirmGameUpdate(id, shown, installedAtConfirmation)
+            confirmingVersion = null
+        }, { confirmingVersion = null }, confirmLabel = "Oui", dismissLabel = "Non")
     }
     val diagnostic = compatibilityByGame[id]
     LaunchedEffect(id, item?.missing, item?.engine, item?.executableName, launchProfile) {
@@ -124,8 +123,11 @@ internal fun GameDetailScreen(
                         SummaryStat("Moteur", item.engine.readableEngine(), Modifier.weight(1f))
                     }
                 }
-                if (latestUpdate != null && latestUpdate != item.version) item {
-                    Surface(onClick = { confirmUpdate = true }, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
+                if (!latestUpdate.isNullOrBlank() && (item.version.isNullOrBlank() || hasGameUpdate(item.version, latestUpdate))) item {
+                    Surface(onClick = {
+                        installedAtConfirmation = item.version
+                        confirmingVersion = latestUpdate
+                    }, modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp), shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.secondaryContainer) {
                         Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                             Icon(Icons.Default.Update, null, Modifier.size(20.dp))
                             Text("Nouvelle version disponible : ${latestUpdate}", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
@@ -224,9 +226,16 @@ internal fun GameDetailScreen(
         onDeleteGame = { edit = false; confirmGameRemoval = true },
         onDismiss = { edit = false }
     )
-    if (item != null && pickTags) GameTagPickerSheet(state.tags, state.tagCategories, assignedTags.map { it.id }.toSet(), {
-        vm.setGameTags(item.id, it); pickTags = false
-    }, { pickTags = false })
+    if (item != null && pickTags) {
+        val initial = remember(assignedTags, state.tags) {
+            val assigned = assignedTags.mapTo(hashSetOf()) { it.id }
+            state.tags.mapNotNullTo(hashSetOf()) { it.id.takeIf(assigned::contains) }
+        }
+        GameTagPickerSheet(state.tags, state.tagCategories, initial, { selected, _ ->
+            vm.setGameTags(item.id, selected, initial)
+            pickTags = false
+        }, { pickTags = false })
+    }
     if (item != null && pickCover) CoverPickerSheet(item, coverState, state.settings.openSearchInExternalBrowser, { vm.chooseRemoteCover(item.id, it) }, {
         onPickCover(item.id); pickCover = false
     }, { vm.removeCover(item.id); pickCover = false }, { pickCover = false; vm.clearCoverSearch() })

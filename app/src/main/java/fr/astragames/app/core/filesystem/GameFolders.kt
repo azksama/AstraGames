@@ -8,8 +8,8 @@ import java.io.File
 
 /** Compare documents, not grant URLs: two selected trees can expose the same folder. */
 object GameFolders {
-    fun documentId(uri: Uri): String = if (uri.pathSegments.contains("document"))
-        DocumentsContract.getDocumentId(uri) else DocumentsContract.getTreeDocumentId(uri)
+    fun documentId(uri: Uri): String = if (DocumentsContract.isTreeUri(uri) && uri.pathSegments.size == 2)
+        DocumentsContract.getTreeDocumentId(uri) else DocumentsContract.getDocumentId(uri)
 
     fun same(first: String, second: String): Boolean = runCatching {
         val a = Uri.parse(first)
@@ -31,7 +31,7 @@ object GameFolders {
         if (a.scheme != "content" || b.scheme != "content" || a.authority != b.authority) return false
         // This provider explicitly uses volume:path IDs; other providers have opaque IDs.
         if (a.authority == "com.android.externalstorage.documents") return runCatching {
-            documentId(b).startsWith(documentId(a).trimEnd('/') + "/")
+            documentId(b).startsWith(externalChildPrefix(documentId(a)))
         }.getOrDefault(false)
         return runCatching {
             val parentDocument = DocumentsContract.buildDocumentUriUsingTree(a, documentId(a))
@@ -40,4 +40,7 @@ object GameFolders {
             else DocumentsContract.findDocumentPath(context.contentResolver, childDocument)?.path?.contains(documentId(a)) == true
         }.getOrDefault(false)
     }
+
+    internal fun externalChildPrefix(id: String): String =
+        if (id.substringAfter(':', id).isEmpty()) id else id.trimEnd('/') + "/"
 }

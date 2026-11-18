@@ -12,10 +12,11 @@ import fr.astragames.app.core.model.ThemeMode
 import fr.astragames.app.core.security.KeystoreCrypto
 import java.util.Base64
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
-private val Context.dataStore by preferencesDataStore("astra_settings")
+internal val Context.dataStore by preferencesDataStore("astra_settings")
 
 data class AstraSettings(
     val onboardingCompleted: Boolean = false,
@@ -37,8 +38,6 @@ data class AstraSettings(
     val f95SessionUser: String? = null,
     val f95SessionXfUser: String? = null,
     val f95SessionXfSession: String? = null,
-    val f95NotifiedUpdates: String = "",
-    val f95LatestVersions: String = "",
     val updateCheckInterval: String = "DAY_7",
     val lockBiometricEnabled: Boolean = false,
     val lockPinEnabled: Boolean = false,
@@ -49,6 +48,7 @@ data class AstraSettings(
 )
 
 class SettingsRepository(private val context: Context) {
+    internal val gameUpdates = GameUpdatePreferences(context.dataStore)
     val settings: Flow<AstraSettings> = context.dataStore.data.map { values ->
         AstraSettings(
             onboardingCompleted = values[ONBOARDING] ?: false,
@@ -68,8 +68,6 @@ class SettingsRepository(private val context: Context) {
             joiPlayCatalogFetchedAt = values[JOIPLAY_CATALOG_FETCHED_AT] ?: 0L,
             joiPlayNotifiedVersions = values[JOIPLAY_NOTIFIED_VERSIONS].orEmpty(),
             f95SessionUser = values[F95_SESSION_USER],
-            f95NotifiedUpdates = values[F95_NOTIFIED_UPDATES].orEmpty(),
-            f95LatestVersions = values[F95_LATEST_VERSIONS].orEmpty(),
             updateCheckInterval = values[UPDATE_CHECK_INTERVAL] ?: "DAY_7",
             lockBiometricEnabled = values[LOCK_BIOMETRIC] ?: false,
             lockPinEnabled = values[LOCK_PIN_ENABLED] ?: false,
@@ -84,7 +82,7 @@ class SettingsRepository(private val context: Context) {
                 runCatching { String(KeystoreCrypto.decrypt(Base64.getDecoder().decode(encoded))) }.getOrNull()
             }
         )
-    }
+    }.distinctUntilChanged()
 
     suspend fun completeOnboarding() = context.dataStore.edit { it[ONBOARDING] = true }
     suspend fun setLanguage(value: AppLanguage) = context.dataStore.edit { it[LANGUAGE] = value.code }
@@ -110,10 +108,6 @@ class SettingsRepository(private val context: Context) {
         it[F95_SESSION_XF_USER] = Base64.getEncoder().encodeToString(KeystoreCrypto.encrypt(xfUser.toByteArray()))
         it[F95_SESSION_XF_SESSION] = Base64.getEncoder().encodeToString(KeystoreCrypto.encrypt(xfSession.toByteArray()))
     }
-
-    suspend fun setF95NotifiedUpdates(value: String) = context.dataStore.edit { it[F95_NOTIFIED_UPDATES] = value }
-
-    suspend fun setF95LatestVersions(value: String) = context.dataStore.edit { it[F95_LATEST_VERSIONS] = value }
 
     suspend fun setUpdateCheckInterval(value: String) = context.dataStore.edit { it[UPDATE_CHECK_INTERVAL] = value }
 
@@ -174,8 +168,6 @@ class SettingsRepository(private val context: Context) {
         private val F95_SESSION_USER = stringPreferencesKey("f95_session_user")
         private val F95_SESSION_XF_USER = stringPreferencesKey("f95_session_xf_user")
         private val F95_SESSION_XF_SESSION = stringPreferencesKey("f95_session_xf_session")
-        private val F95_NOTIFIED_UPDATES = stringPreferencesKey("f95_notified_updates")
-        private val F95_LATEST_VERSIONS = stringPreferencesKey("f95_latest_versions")
         private val UPDATE_CHECK_INTERVAL = stringPreferencesKey("update_check_interval")
         private val LOCK_BIOMETRIC = booleanPreferencesKey("lock_biometric")
         private val LOCK_PIN_ENABLED = booleanPreferencesKey("lock_pin_enabled")

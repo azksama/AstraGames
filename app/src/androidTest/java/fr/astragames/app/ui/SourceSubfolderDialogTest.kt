@@ -4,6 +4,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.junit4.StateRestorationTester
 import fr.astragames.app.data.local.GameSourceEntity
 import fr.astragames.app.settings.AppLanguage
 import org.junit.Assert.assertEquals
@@ -15,7 +16,8 @@ class SourceSubfolderDialogTest {
 
     @Test fun chooseNestedFolderWithoutSelectingTheParentSource() {
         var selected: List<String>? = null
-        compose.setContent {
+        val restoration = StateRestorationTester(compose)
+        restoration.setContent {
             CompositionLocalProvider(LocalAppLanguage provides AppLanguage.FRENCH) {
                 MaterialTheme {
                     SourceSubfolderDialog(
@@ -31,12 +33,17 @@ class SourceSubfolderDialogTest {
                 }
             }
         }
+        fun showRow(label: String): SemanticsNodeInteraction {
+            compose.onNode(hasScrollToIndexAction()).performScrollToNode(hasText(label))
+            return compose.onNodeWithText(label).assertIsDisplayed()
+        }
         compose.onNodeWithText("Scanner ce dossier").assertIsNotEnabled()
-        compose.onNodeWithText("Wolf").performClick()
-        compose.onNodeWithText("Nouveaux").performClick()
-        compose.onNodeWithText("Aucun sous-dossier").assertExists()
-        compose.onNodeWithText("Dossier parent").performClick()
-        compose.onNodeWithText("Nouveaux").assertExists()
+        showRow("Wolf").performClick()
+        restoration.emulateSavedInstanceStateRestore()
+        showRow("Nouveaux").performClick()
+        showRow("Aucun sous-dossier")
+        showRow("Dossier parent").performClick()
+        showRow("Nouveaux")
         compose.onNodeWithText("Scanner ce dossier").performClick()
         compose.runOnIdle { assertEquals(listOf("Wolf"), selected) }
     }

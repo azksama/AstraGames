@@ -24,8 +24,10 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.material3.Text as MaterialText
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Brush
@@ -48,27 +50,30 @@ import fr.astragames.app.data.local.GameEntity
 internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (String) -> Unit, onPickSource: () -> Unit, onSearch: () -> Unit = {}) {
     var columnsMenu by remember { mutableStateOf(false) }
     var selectionMenu by remember { mutableStateOf(false) }
-    var selectedGames by remember { mutableStateOf(emptySet<String>()) }
+    var selectedGames by rememberSaveable(stateSaver = idSetSaver) { mutableStateOf(emptySet<String>()) }
     var quickGame by remember { mutableStateOf<GameEntity?>(null) }
-    var bulkFolder by remember { mutableStateOf(false) }
-    var bulkTags by remember { mutableStateOf(false) }
+    var bulkFolder by rememberSaveable { mutableStateOf(false) }
+    var bulkTags by rememberSaveable { mutableStateOf(false) }
     var bulkDelete by remember { mutableStateOf(false) }
     var deleteFiles by remember { mutableStateOf(true) }
     var removalGames by remember { mutableStateOf<List<GameEntity>>(emptyList()) }
     var showDuplicates by remember { mutableStateOf(false) }
     val coverBlur = LocalCoverBlurState.current
-    BackHandler(selectedGames.isNotEmpty()) { selectedGames = emptySet() }
-    LaunchedEffect(state.games) {
-        selectedGames = selectedGames.intersect(state.games.mapTo(mutableSetOf()) { it.id })
+    BackHandler(selectedGames.isNotEmpty() && !bulkTags && !bulkFolder && !bulkDelete) { selectedGames = emptySet() }
+    LaunchedEffect(state.games, state.settingsLoaded, bulkTags, bulkFolder) {
+        if (state.settingsLoaded && !bulkTags && !bulkFolder && selectedGames.isNotEmpty()) {
+            selectedGames = selectedGames.intersect(state.games.mapTo(hashSetOf()) { it.id })
+        }
     }
     ScrollingScaffold(
+        modifier = Modifier.testTag("astra_game_library"),
         contentWindowInsets = WindowInsets(0, 0, 0, 0),
         topBar = {
             Column {
             CompactHeader(if (selectedGames.isEmpty()) { if (LandscapeLayout) "Tous les jeux" else "Astra" } else "${selectedGames.size} sélectionné(s)", if (LandscapeLayout) "${state.filteredGames.size} jeux" else null) {
                 if (selectedGames.isNotEmpty()) {
                     Box {
-                        IconButton(onClick = { selectionMenu = true }) { Icon(Icons.Default.MoreVert, AppLocalizer.text("Actions rapides")) }
+                        IconButton(onClick = { selectionMenu = true }) { Icon(Icons.Default.MoreVert, AppLocalizer.text("Actions de la sélection", LocalAppLanguage.current)) }
                         DropdownMenu(selectionMenu, { selectionMenu = false }) {
                             DropdownMenuItem(text = { Text("Ajouter aux favoris") }, leadingIcon = { Icon(Icons.Default.FavoriteBorder, null) }, onClick = { vm.setGamesFavorite(selectedGames); selectionMenu = false })
                             DropdownMenuItem(text = { Text("Ajouter des tags") }, leadingIcon = { Icon(Icons.Default.Style, null) }, onClick = { bulkTags = true; selectionMenu = false })
@@ -146,9 +151,11 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
     if (bulkFolder) GameFolderDialog(state.folders, null, {
         vm.setGamesFolder(selectedGames, it); selectedGames = emptySet(); bulkFolder = false
     }, { bulkFolder = false })
-    if (bulkTags) GameTagPickerSheet(state.tags, state.tagCategories, emptySet(), {
-        vm.addTagsToGames(selectedGames, it); selectedGames = emptySet(); bulkTags = false
-    }, { bulkTags = false })
+    if (bulkTags) GameTagPickerSheet(state.tags, state.tagCategories, emptySet(), { tags, _ ->
+        vm.addTagsToGames(selectedGames, tags)
+        selectedGames = emptySet()
+        bulkTags = false
+    }, { bulkTags = false }, allowEmptySelection = false)
     if (showDuplicates) DuplicatesDialog(state, vm) { showDuplicates = false }
     if (bulkDelete) RemoveGamesDialog(
         removalGames, deleteFiles,
@@ -158,7 +165,7 @@ internal fun LibraryScreen(state: AstraUiState, vm: AstraViewModel, onGame: (Str
 
 @Composable
 internal fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
-    var showFilters by remember { mutableStateOf(false) }
+    var showFilters by rememberSaveable { mutableStateOf(false) }
     val activeCount = with(state.filters) {
         listOfNotNull(sourceId, folderId, collectionId, systemFolderId, query.takeIf { it.isNotBlank() }, engine, (tagIds + excludedTagIds).takeIf { it.isNotEmpty() }, missingOnly.takeIf { it }, sort.takeIf { it != LibrarySort.TITLE }).size
     }
@@ -185,7 +192,7 @@ internal fun FilterStrip(state: AstraUiState, vm: AstraViewModel) {
 
 @Composable
 internal fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDismiss: () -> Unit) {
-    var pickTags by remember { mutableStateOf(false) }
+    var pickTags by rememberSaveable { mutableStateOf(false) }
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false, decorFitsSystemWindows = false)) {
         AstraDialogSystemBars()
         Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -244,10 +251,9 @@ internal fun LibraryFiltersDialog(state: AstraUiState, vm: AstraViewModel, onDis
     }
     if (pickTags) GameTagPickerSheet(
         state.tags, state.tagCategories, state.filters.tagIds,
-        { vm.setTagFilters(it); pickTags = false },
+        { included, excluded -> vm.setTagFilters(included, excluded); pickTags = false },
         { pickTags = false },
         initialExcluded = state.filters.excludedTagIds,
-        onSaveExcluded = { vm.setExcludedTagFilters(it) },
         title = "Filtrer les tags"
     )
 }

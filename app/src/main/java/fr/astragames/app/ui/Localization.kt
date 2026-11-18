@@ -432,6 +432,11 @@ object AppLocalizer {
         t("Rétablir la détection automatique", "Restore automatic detection", "Restaurar detección automática", "Восстановить автоматическое определение", "Automatische Erkennung wiederherstellen", "恢复自动检测", "自動検出に戻す"),
         t("Terminer", "Finish", "Terminar", "Завершить", "Fertigstellen", "完成", "完了"),
         t("Enregistrer et suivant", "Save and next", "Guardar y siguiente", "Сохранить и далее", "Speichern und weiter", "保存并继续", "保存して次へ"),
+        t("Nouveau jeu", "New game", "Nuevo juego", "Новая игра", "Neues Spiel", "新游戏", "新しいゲーム"),
+        t("Nouveaux jeux", "New games", "Nuevos juegos", "Новые игры", "Neue Spiele", "新游戏", "新しいゲーム"),
+        t("Configurer ce jeu maintenant ?", "Set up this game now?", "¿Configurar este juego ahora?", "Настроить эту игру сейчас?", "Dieses Spiel jetzt einrichten?", "现在设置此游戏吗？", "このゲームを今すぐ設定しますか？"),
+        t("Jeux à configurer", "Games to set up", "Juegos por configurar", "Игры для настройки", "Einzurichtende Spiele", "待设置的游戏", "設定待ちのゲーム"),
+        t("Passer", "Skip", "Omitir", "Пропустить", "Überspringen", "跳过", "スキップ"),
         t("Ignorer ce jeu", "Skip this game", "Omitir este juego", "Пропустить игру", "Dieses Spiel überspringen", "跳过此游戏", "このゲームをスキップ"),
         t("Voulez-vous configurer chaque jeu maintenant ? Astra passera automatiquement au suivant.", "Would you like to configure each game now? Astra will move to the next one automatically.", "¿Quieres configurar cada juego ahora? Astra pasará al siguiente automáticamente.", "Настроить каждую игру сейчас? Astra автоматически перейдёт к следующей.", "Möchtest du jedes Spiel jetzt konfigurieren? Astra wechselt automatisch zum nächsten.", "现在配置每个游戏吗？Astra 会自动进入下一个。", "今すぐ各ゲームを設定しますか？Astra が自動的に次へ進みます。"),
         t("Plus tard", "Later", "Más tarde", "Позже", "Später", "稍后", "後で"),
@@ -487,6 +492,13 @@ object AppLocalizer {
         t("Tag créé", "Tag created", "Etiqueta creada", "Тег создан", "Tag erstellt", "标签已创建", "タグを作成しました"),
         t("Tag modifié", "Tag updated", "Etiqueta modificada", "Тег изменён", "Tag geändert", "标签已修改", "タグを変更しました"),
         t("Catégorie appliquée", "Category applied", "Categoría aplicada", "Категория применена", "Kategorie angewendet", "分类已应用", "カテゴリを適用しました"),
+        t("Catégorie introuvable.", "Category not found.", "Categoría no encontrada.", "Категория не найдена.", "Kategorie nicht gefunden.", "未找到分类。", "カテゴリが見つかりません。"),
+        t("Saisissez un nom pour la catégorie.", "Enter a category name.", "Introduce un nombre para la categoría.", "Введите название категории.", "Gib einen Kategorienamen ein.", "请输入分类名称。", "カテゴリ名を入力してください。"),
+        t("Une catégorie porte déjà ce nom.", "A category already has this name.", "Ya hay una categoría con este nombre.", "Категория с таким названием уже существует.", "Eine Kategorie mit diesem Namen existiert bereits.", "已存在同名分类。", "同じ名前のカテゴリが既にあります。"),
+        t("Tag introuvable.", "Tag not found.", "Etiqueta no encontrada.", "Тег не найден.", "Tag nicht gefunden.", "未找到标签。", "タグが見つかりません。"),
+        t("Saisissez un nom pour le tag.", "Enter a tag name.", "Introduce un nombre para la etiqueta.", "Введите название тега.", "Gib einen Tag-Namen ein.", "请输入标签名称。", "タグ名を入力してください。"),
+        t("Ces tags ont déjà été supprimés.", "These tags have already been deleted.", "Estas etiquetas ya se han eliminado.", "Эти теги уже удалены.", "Diese Tags wurden bereits gelöscht.", "这些标签已被删除。", "これらのタグは既に削除されています。"),
+        t("Un tag porte déjà ce nom.", "A tag already has this name.", "Ya hay una etiqueta con este nombre.", "Тег с таким названием уже существует.", "Ein Tag mit diesem Namen existiert bereits.", "已存在同名标签。", "同じ名前のタグが既にあります。"),
         t("Collection intelligente enregistrée", "Smart collection saved", "Colección inteligente guardada", "Умная коллекция сохранена", "Intelligente Sammlung gespeichert", "智能收藏已保存", "スマートコレクションを保存しました"),
         t("Collection supprimée", "Collection deleted", "Colección eliminada", "Коллекция удалена", "Sammlung gelöscht", "收藏已删除", "コレクションを削除しました"),
         t("Jaquette enregistrée", "Cover saved", "Carátula guardada", "Обложка сохранена", "Cover gespeichert", "封面已保存", "カバーを保存しました"),
@@ -525,7 +537,19 @@ object AppLocalizer {
         t("Sans dossier", "No folder", "Sin carpeta", "Без папки", "Kein Ordner", "无文件夹", "フォルダなし"),
         t("Jeux dans ce dossier", "Games in this folder", "Juegos en esta carpeta", "Игры в этой папке", "Spiele in diesem Ordner", "此文件夹中的游戏", "このフォルダのゲーム"),
         t("Mes collections intelligentes", "My smart collections", "Mis colecciones inteligentes", "Мои умные коллекции", "Meine intelligenten Sammlungen", "我的智能收藏", "マイスマートコレクション"),
-        t("Les jeux ne seront pas supprimés. Ses sous-dossiers remonteront au niveau actuel.", "Games will not be deleted. Its subfolders will move up one level.", "Los juegos no se eliminarán. Sus subcarpetas subirán al nivel actual.", "Игры не будут удалены. Подпапки поднимутся на текущий уровень.", "Spiele werden nicht gelöscht. Unterordner werden eine Ebene nach oben verschoben.", "游戏不会删除，子文件夹会移动到当前层级。", "ゲームは削除されず、サブフォルダが現在の階層に移動します。"),
+        t("Les jeux classés directement ici passeront dans « Sans dossier ». Les sous-dossiers remonteront d’un niveau avec leurs jeux.", "Games directly in this folder will move to “No folder”. Subfolders will move up one level with their games.", "Los juegos de esta carpeta pasarán a «Sin carpeta». Las subcarpetas subirán un nivel con sus juegos.", "Игры из самой папки перейдут в раздел «Без папки». Подпапки поднимутся на один уровень вместе со своими играми.", "Spiele direkt in diesem Ordner wechseln zu „Kein Ordner“. Unterordner werden mit ihren Spielen eine Ebene nach oben verschoben.", "此文件夹中的直属游戏将移至“无文件夹”。子文件夹将连同其中的游戏一起移至上一级。", "このフォルダ直下のゲームは「フォルダなし」に移動します。サブフォルダは中のゲームと一緒に1つ上の階層に移動します。"),
+        t("Le dossier choisi a été supprimé.", "The selected folder was deleted.", "La carpeta seleccionada se ha eliminado.", "Выбранная папка удалена.", "Der ausgewählte Ordner wurde gelöscht.", "所选文件夹已删除。", "選択したフォルダは削除されました。"),
+        t("Un jeu sélectionné a été retiré de la bibliothèque.", "A selected game was removed from the library.", "Uno de los juegos seleccionados se ha retirado de la biblioteca.", "Одна из выбранных игр удалена из библиотеки.", "Ein ausgewähltes Spiel wurde aus der Bibliothek entfernt.", "有一款选中的游戏已从游戏库中移除。", "選択したゲームの一つがライブラリから削除されました。"),
+        t("Un tag sélectionné a été supprimé. Vérifiez votre sélection.", "A selected tag was deleted. Review your selection.", "Se ha eliminado una etiqueta seleccionada. Revisa tu selección.", "Один из выбранных тегов удалён. Проверьте свой выбор.", "Ein ausgewähltes Tag wurde gelöscht. Prüfe deine Auswahl.", "一个选中的标签已删除。请检查你的选择。", "選択したタグの一つが削除されました。選択内容を確認してください。"),
+        t("Donnez un nom au dossier.", "Enter a folder name.", "Escribe un nombre para la carpeta.", "Введите название папки.", "Gib einen Ordnernamen ein.", "请输入文件夹名称。", "フォルダ名を入力してください。"),
+        t("Le dossier parent a été supprimé.", "The parent folder was deleted.", "La carpeta superior se ha eliminado.", "Родительская папка удалена.", "Der übergeordnete Ordner wurde gelöscht.", "上级文件夹已删除。", "親フォルダは削除されました。"),
+        t("Ce dossier a été supprimé.", "This folder was deleted.", "Esta carpeta se ha eliminado.", "Эта папка удалена.", "Dieser Ordner wurde gelöscht.", "此文件夹已删除。", "このフォルダは削除されました。"),
+        t("Donnez un nom à la collection.", "Enter a collection name.", "Escribe un nombre para la colección.", "Введите название коллекции.", "Gib einen Namen für die Sammlung ein.", "请输入收藏名称。", "コレクション名を入力してください。"),
+        t("Ajoutez au moins une règle.", "Add at least one rule.", "Añade al menos una regla.", "Добавьте хотя бы одно правило.", "Füge mindestens eine Regel hinzu.", "请至少添加一条规则。", "ルールを1つ以上追加してください。"),
+        t("Mode de collection inconnu.", "Unknown collection mode.", "Modo de colección desconocido.", "Неизвестный режим коллекции.", "Unbekannter Sammlungsmodus.", "未知的收藏模式。", "不明なコレクションモードです。"),
+        t("Cette collection a été supprimée.", "This collection was deleted.", "Esta colección se ha eliminado.", "Эта коллекция удалена.", "Diese Sammlung wurde gelöscht.", "此收藏已删除。", "このコレクションは削除されました。"),
+        t("Le tag à conserver est introuvable.", "The tag you want to keep could not be found.", "No se ha encontrado la etiqueta que quieres conservar.", "Не удалось найти тег, который нужно сохранить.", "Das Tag, das du behalten möchtest, wurde nicht gefunden.", "找不到要保留的标签。", "残すタグが見つかりません。"),
+        t("Enregistrement impossible.", "Could not save changes.", "No se han podido guardar los cambios.", "Не удалось сохранить изменения.", "Änderungen konnten nicht gespeichert werden.", "无法保存更改。", "変更を保存できませんでした。"),
         t("Les jeux de cette source seront retirés de la bibliothèque Astra. Aucun fichier ne sera supprimé du téléphone.", "Games from this source will be removed from the Astra library. No phone files will be deleted.", "Los juegos de esta fuente se quitarán de la biblioteca Astra. No se eliminarán archivos del teléfono.", "Игры из этого источника будут удалены из библиотеки Astra. Файлы на телефоне не будут удалены.", "Spiele dieser Quelle werden aus der Astra-Bibliothek entfernt. Keine Dateien auf dem Telefon werden gelöscht.", "此来源的游戏会从 Astra 资料库中移除，不会删除手机上的文件。", "このソースのゲームを Astra ライブラリから削除します。スマートフォンのファイルは削除されません。"),
         t("Retirer la source", "Remove source", "Eliminar fuente", "Удалить источник", "Quelle entfernen", "移除来源", "ソースを削除"),
         t("Chemin du dossier", "Folder path", "Ruta de la carpeta", "Путь к папке", "Ordnerpfad", "文件夹路径", "フォルダのパス"),
@@ -597,6 +621,7 @@ object AppLocalizer {
         t("Image", "Image", "Imagen", "Изображение", "Bild", "图片", "画像"),
         t("JoiPlay", "JoiPlay", "JoiPlay", "JoiPlay", "JoiPlay", "JoiPlay", "JoiPlay"),
         t("Actions rapides", "Quick actions", "Acciones rápidas", "Быстрые действия", "Schnellaktionen", "快捷操作", "クイックアクション"),
+        t("Actions de la sélection", "Actions for selected games", "Acciones para los juegos seleccionados", "Действия с выбранными играми", "Aktionen für ausgewählte Spiele", "所选游戏的操作", "選択したゲームの操作"),
         t("Changer de vue", "Change view", "Cambiar vista", "Сменить вид", "Ansicht wechseln", "切换视图", "表示を切り替え"),
         t("Chargement…", "Loading…", "Cargando…", "Загрузка…", "Laden…", "加载中…", "読み込み中…"),
         t("Nombre de colonnes", "Number of columns", "Número de columnas", "Количество столбцов", "Anzahl der Spalten", "列数", "列数"),
@@ -664,6 +689,12 @@ object AppLocalizer {
         t("Mise à jour effectuée", "Update done", "Actualización realizada", "Обновление выполнено", "Update durchgeführt", "更新已完成", "アップデート完了"),
         t("Outils", "Tools", "Herramientas", "Инструменты", "Werkzeuge", "工具", "ツール"),
         t("Historique", "History", "Historial", "История", "Verlauf", "历史", "履歴"),
+        t("Effacer", "Clear", "Borrar", "Очистить", "Leeren", "清除", "消去"),
+        t("Effacer l’historique ?", "Clear play history?", "¿Borrar el historial de juego?", "Очистить историю игр?", "Spielverlauf leeren?", "清除游戏历史记录？", "プレイ履歴を消去しますか？"),
+        t("Toutes les sessions terminées seront supprimées.", "All completed play sessions will be deleted.", "Se eliminarán todas las sesiones de juego finalizadas.", "Все завершённые игровые сессии будут удалены.", "Alle abgeschlossenen Spielsitzungen werden gelöscht.", "将删除所有已结束的游戏记录。", "終了したプレイセッションをすべて削除します。"),
+        t("Aucune session enregistrée", "No play sessions recorded", "No hay sesiones de juego registradas", "Нет записанных игровых сессий", "Keine Spielsitzungen aufgezeichnet", "暂无游戏记录", "プレイ履歴はまだありません"),
+        t("Historique effacé", "Play history cleared", "Historial de juego borrado", "История игр очищена", "Spielverlauf geleert", "游戏历史记录已清除", "プレイ履歴を消去しました"),
+        t("La version installée a changé. Rouvrez la confirmation.", "The installed version has changed. Reopen the confirmation.", "La versión instalada ha cambiado. Vuelve a abrir la confirmación.", "Установленная версия изменилась. Откройте подтверждение снова.", "Die installierte Version hat sich geändert. Öffne die Bestätigung erneut.", "已安装的版本已更改。请重新打开确认窗口。", "インストール済みのバージョンが変わりました。確認画面を開き直してください。"),
         t("Historique de jeux", "Play history", "Historial de partidas", "История игр", "Spielverlauf", "游戏历史", "プレイ履歴"),
         t("Verrouillage biometrique", "Biometric lock", "Bloqueo biometrico", "Биометрическая блокировка", "Biometrische Sperre", "生物识别锁定", "生体認証ロック"),
         t("Verrouillage par code", "PIN lock", "Bloqueo por codigo", "Блокировка кодом", "Codesperre", "密码锁定", "PINロック"),
@@ -718,6 +749,17 @@ object AppLocalizer {
             }
         }
         fun count(pattern: Regex, value: (Int) -> String): String? = pattern.matchEntire(source)?.groupValues?.get(1)?.toIntOrNull()?.let(value)
+        count(dynamicPattern("Vérifiez la règle (\\d+) avant d’enregistrer la collection\\.")) { number ->
+            when (language) {
+                AppLanguage.ENGLISH -> "Check rule $number before saving the collection."
+                AppLanguage.SPANISH -> "Revisa la regla $number antes de guardar la colección."
+                AppLanguage.RUSSIAN -> "Проверьте правило № $number перед сохранением коллекции."
+                AppLanguage.GERMAN -> "Prüfe Regel $number, bevor du die Sammlung speicherst."
+                AppLanguage.CHINESE -> "请先检查第 $number 条规则，再保存收藏。"
+                AppLanguage.JAPANESE -> "コレクションを保存する前にルール $number を確認してください。"
+                AppLanguage.FRENCH -> source
+            }
+        }?.let { return it }
         count(dynamicPattern("(\\d+) colonnes")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number columns"; AppLanguage.SPANISH -> "$number columnas"; AppLanguage.RUSSIAN -> "$number столбцов"; AppLanguage.GERMAN -> "$number Spalten"; AppLanguage.CHINESE -> "$number 列"; AppLanguage.JAPANESE -> "$number 列"; AppLanguage.FRENCH -> source
         } }?.let { return it }
@@ -828,6 +870,9 @@ object AppLocalizer {
         } }?.let { return it }
         count(dynamicPattern("(\\d+) tag\\(s\\) sélectionné\\(s\\)")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number tag(s) selected"; AppLanguage.SPANISH -> "$number etiqueta(s) seleccionada(s)"; AppLanguage.RUSSIAN -> "Выбрано тегов: $number"; AppLanguage.GERMAN -> "$number Tag(s) ausgewählt"; AppLanguage.CHINESE -> "已选择 $number 个标签"; AppLanguage.JAPANESE -> "$number 個のタグを選択"; AppLanguage.FRENCH -> source
+        } }?.let { return it }
+        count(dynamicPattern("(\\d+) tag\\(s\\) supprimé\\(s\\)")) { number -> when (language) {
+            AppLanguage.ENGLISH -> "$number tag(s) deleted"; AppLanguage.SPANISH -> "$number etiqueta(s) eliminada(s)"; AppLanguage.RUSSIAN -> "Удалено тегов: $number"; AppLanguage.GERMAN -> "$number Tag(s) gelöscht"; AppLanguage.CHINESE -> "已删除 $number 个标签"; AppLanguage.JAPANESE -> "$number 個のタグを削除しました"; AppLanguage.FRENCH -> source
         } }?.let { return it }
         count(dynamicPattern("(\\d+) jeu\\(x\\) ignoré\\(s\\) pendant les scans")) { number -> when (language) {
             AppLanguage.ENGLISH -> "$number game(s) ignored during scans"; AppLanguage.SPANISH -> "$number juego(s) ignorado(s) durante los escaneos"; AppLanguage.RUSSIAN -> "Игнорировано игр при сканировании: $number"; AppLanguage.GERMAN -> "$number Spiel(e) beim Scannen ignoriert"; AppLanguage.CHINESE -> "扫描时忽略了 $number 个游戏"; AppLanguage.JAPANESE -> "スキャンで $number 本のゲームを無視"; AppLanguage.FRENCH -> source
